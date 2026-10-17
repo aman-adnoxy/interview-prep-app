@@ -48,7 +48,7 @@ export async function getSectionProgress(sectionId) {
 export async function getAllProgress() {
   try {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const tx = db.transaction(STORE_PROGRESS, 'readonly');
       const store = tx.objectStore(STORE_PROGRESS);
       const req = store.getAll();
@@ -60,10 +60,17 @@ export async function getAllProgress() {
         }
         resolve(map);
       };
-      req.onerror = () => reject(req.error);
+      req.onerror = () => {
+        console.error('IndexedDB read error:', req.error);
+        resolve({});
+      };
+      tx.onerror = () => {
+        console.error('IndexedDB transaction error:', tx.error);
+        resolve({});
+      };
     });
   } catch (err) {
-    console.error('Failed to get all progress:', err);
+    console.error('Failed to get all progress from IndexedDB:', err);
     return {};
   }
 }
@@ -71,15 +78,23 @@ export async function getAllProgress() {
 export async function saveSectionProgress(progressData) {
   try {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const tx = db.transaction(STORE_PROGRESS, 'readwrite');
       const store = tx.objectStore(STORE_PROGRESS);
-      const req = store.put({
+      store.put({
         ...progressData,
         updatedAt: new Date().toISOString(),
       });
-      req.onsuccess = () => resolve(true);
-      req.onerror = () => reject(req.error);
+      // Resolve when the entire transaction has committed
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.error('IndexedDB write transaction failed:', tx.error);
+        resolve(false);
+      };
+      tx.onabort = () => {
+        console.error('IndexedDB write transaction aborted:', tx.error);
+        resolve(false);
+      };
     });
   } catch (err) {
     console.error('Failed to save progress to IndexedDB:', err);
@@ -109,17 +124,33 @@ export async function recordQuizAttempt(attempt) {
 export async function getQuizAttempts(sectionId) {
   try {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const tx = db.transaction(STORE_ATTEMPTS, 'readonly');
       const store = tx.objectStore(STORE_ATTEMPTS);
       const index = store.index('sectionId');
       const req = index.getAll(sectionId);
       req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
+      req.onerror = () => resolve([]);
     });
   } catch (err) {
     console.error('Failed to get attempts:', err);
     return [];
+  }
+}
+
+export async function clearAllProgress() {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction([STORE_PROGRESS, STORE_ATTEMPTS], 'readwrite');
+      tx.objectStore(STORE_PROGRESS).clear();
+      tx.objectStore(STORE_ATTEMPTS).clear();
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (err) {
+    console.error('Failed to clear progress:', err);
+    return false;
   }
 }
 

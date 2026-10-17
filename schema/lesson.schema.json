@@ -207,7 +207,9 @@
             "table",
             "execution_plan",
             "scenario",
-            "text"
+            "text",
+            "diagram",
+            "interactive_stepper"
           ]
         },
         "title": {
@@ -219,6 +221,29 @@
         "content": {
           "type": "string",
           "minLength": 1
+        },
+        "format": {
+          "type": "string",
+          "enum": ["svg", "mermaid", "ascii", "interactive"]
+        },
+        "alt": {
+          "type": "string"
+        },
+        "learningPoint": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["stepNumber", "title", "description"],
+            "properties": {
+              "stepNumber": { "type": "integer" },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "highlightNode": { "type": "string" }
+            }
+          }
         }
       }
     },

@@ -6,11 +6,12 @@ import {
   BookOpen, 
   CheckCircle, 
   Zap, 
-  Heart 
+  Heart,
+  Settings
 } from 'lucide-react';
 import { sound } from '../services/sound';
 
-export default function Header({ activeTab, onTabChange, completedCount = 0 }) {
+export default function Header({ activeTab, onTabChange, completedCount = 0, onOpenSettings }) {
   return (
     <header className="app-header">
       <div className="header-top">
@@ -27,21 +28,24 @@ export default function Header({ activeTab, onTabChange, completedCount = 0 }) {
         <div className="header-stats">
           {/* Flame streak */}
           <div className="stat-pill flame" title="3 Day Streak">
-            <Flame size={18} fill="#f59e0b" className="stat-icon flame" />
+            <Flame size={17} fill="#f59e0b" className="stat-icon flame" />
             <span className="stat-val">3</span>
           </div>
 
-          {/* Gems / Mastery points */}
+          {/* Mastery points */}
           <div className="stat-pill gem" title="Mastered Sections">
-            <Trophy size={16} className="stat-icon gem" />
+            <Trophy size={15} className="stat-icon gem" />
             <span className="stat-val">{completedCount}</span>
           </div>
 
-          {/* Hearts */}
-          <div className="stat-pill heart" title="5 Hearts">
-            <Heart size={16} fill="#ff4b4b" className="stat-icon heart" />
-            <span className="stat-val">5</span>
-          </div>
+          {/* Settings button */}
+          <button 
+            className="btn-header-settings" 
+            title="Settings & Storage"
+            onClick={() => { sound.playTap(); onOpenSettings(); }}
+          >
+            <Settings size={18} />
+          </button>
         </div>
       </div>
 
@@ -146,12 +150,24 @@ export default function Header({ activeTab, onTabChange, completedCount = 0 }) {
         }
         .stat-icon.gem { color: #8b5cf6; }
 
-        .stat-pill.heart {
-          background: #fff1f2;
-          color: #e11d48;
-          border: 1.5px solid #fecdd3;
+        .btn-header-settings {
+          background: #f1f5f9;
+          border: 1.5px solid #e2e8f0;
+          border-radius: var(--radius-sm);
+          width: 34px;
+          height: 34px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #64748b;
+          cursor: pointer;
+          transition: all 0.12s ease;
         }
-        .stat-icon.heart { color: #ff4b4b; }
+        .btn-header-settings:hover {
+          color: #1e293b;
+          border-color: #cbd5e1;
+          transform: translateY(-1px);
+        }
 
         .header-tabs {
           display: flex;

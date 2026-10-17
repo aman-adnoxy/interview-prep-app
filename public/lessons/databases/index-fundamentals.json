@@ -59,6 +59,32 @@
       "explanation": "In PostgreSQL, B-tree is the default index type and is suitable for common equality and range comparisons, as well as ordered access patterns. Its balanced tree structure lets the engine navigate keys without checking every indexed entry. Other index types serve different workloads.",
       "examples": [
         {
+          "type": "diagram",
+          "title": "Interactive B-Tree Index Search (Target: Key 25)",
+          "format": "interactive",
+          "interactiveType": "btree-search",
+          "content": "B-Tree search traversal",
+          "alt": "A root node directs the search for key 25 to the middle leaf node.",
+          "learningPoint": "A balanced search tree reduces node visits from O(N) table rows down to O(log N) page reads. Leaf nodes are linked for fast range scans.",
+          "steps": [
+            {
+              "stepNumber": 1,
+              "title": "Start at the Root Node",
+              "description": "Inspect the root's separator keys [20 | 40]. The target key is 25. Compare 25 with 20 and 40."
+            },
+            {
+              "stepNumber": 2,
+              "title": "Evaluate the Key Boundary",
+              "description": "Because 20 < 25 < 40, the engine determines the record must reside in the middle subtree. It follows the middle child pointer down one level."
+            },
+            {
+              "stepNumber": 3,
+              "title": "Match in Target Leaf Page",
+              "description": "The engine lands on leaf [22 | 25 | 31], identifies key 25, and reads the tuple ID (TID) to fetch the row or satisfy an index scan."
+            }
+          ]
+        },
+        {
           "type": "sql",
           "title": "Equality and range filters",
           "language": "sql",

@@ -133,10 +133,12 @@ export default function TopicLearningPath({
                   <button
                     className={`chunky-stone ${isCompleted ? 'completed' : ''} ${isCurrent ? 'active' : ''} ${isLocked ? 'locked' : ''}`}
                     onClick={() => {
+                      if (isLocked) return;
                       sound.playTap();
                       onSelectSection(section);
                     }}
-                    title={section.title}
+                    disabled={isLocked}
+                    title={isLocked ? 'Complete earlier sections to unlock' : section.title}
                   >
                     {isCompleted ? (
                       <Check size={32} color="#ffffff" strokeWidth={3} />
@@ -155,14 +157,21 @@ export default function TopicLearningPath({
                   </button>
 
                   {/* Section Label Card below stone */}
-                  <div className="stone-label-box" onClick={() => { sound.playTap(); onSelectSection(section); }}>
+                  <div 
+                    className={`stone-label-box ${isLocked ? 'locked-box' : ''}`} 
+                    onClick={() => {
+                      if (isLocked) return;
+                      sound.playTap();
+                      onSelectSection(section);
+                    }}
+                  >
                     <div className="label-badge-row">
                       <span className={`badge badge-${section.difficulty || 'beginner'}`}>
                         {section.difficulty}
                       </span>
                       {isCompleted && (
                         <span className="passed-badge">
-                          {prog?.lastScore}/{section.questionCount} Correct
+                          {prog?.bestScore ?? prog?.lastScore}/{section.questionCount} Correct
                         </span>
                       )}
                     </div>
@@ -381,6 +390,16 @@ export default function TopicLearningPath({
           border-color: #cbd5e1;
           transform: translateY(-2px);
           box-shadow: 0 6px 0 #cbd5e1;
+        }
+
+        .stone-label-box.locked-box {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        .stone-label-box.locked-box:hover {
+          transform: none;
+          box-shadow: 0 4px 0 #e2e8f0;
+          border-color: #e2e8f0;
         }
 
         .label-badge-row {

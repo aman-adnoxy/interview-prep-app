@@ -11,9 +11,11 @@ import {
   AlertTriangle,
   RotateCcw,
   Sparkles,
-  Bookmark
+  Bookmark,
+  Layers
 } from 'lucide-react';
 import { sound } from '../services/sound';
+import DiagramBlock from './DiagramBlock';
 
 export default function LessonView({
   lesson,
@@ -142,30 +144,36 @@ export default function LessonView({
             {currentConcept.examples && currentConcept.examples.length > 0 && (
               <div className="examples-section">
                 <div className="section-label">PRACTICAL EXAMPLE & APPLICATION</div>
-                {currentConcept.examples.map((ex, exIdx) => (
-                  <div key={exIdx} className={`duo-example-card duo-example-${ex.type}`}>
-                    <div className="example-top-bar">
-                      <span className="example-tag">
-                        {ex.type === 'sql' && <Terminal size={15} />}
-                        {ex.type === 'code' && <Code2 size={15} />}
-                        {ex.type === 'scenario' && <AlertTriangle size={15} />}
-                        {ex.type === 'text' && <FileText size={15} />}
-                        <span>{ex.title || ex.type.toUpperCase()}</span>
-                      </span>
-                      <span className="lang-pill">{ex.language || ex.type}</span>
-                    </div>
+                {currentConcept.examples.map((ex, exIdx) => {
+                  if (ex.type === 'diagram' || ex.type === 'interactive_stepper') {
+                    return <DiagramBlock key={exIdx} example={ex} />;
+                  }
 
-                    {ex.type === 'sql' || ex.type === 'code' ? (
-                      <div className="code-display">
-                        <pre><code>{ex.content}</code></pre>
+                  return (
+                    <div key={exIdx} className={`duo-example-card duo-example-${ex.type}`}>
+                      <div className="example-top-bar">
+                        <span className="example-tag">
+                          {ex.type === 'sql' && <Terminal size={15} />}
+                          {ex.type === 'code' && <Code2 size={15} />}
+                          {ex.type === 'scenario' && <AlertTriangle size={15} />}
+                          {ex.type === 'text' && <FileText size={15} />}
+                          <span>{ex.title || ex.type.toUpperCase()}</span>
+                        </span>
+                        <span className="lang-pill">{ex.language || ex.type}</span>
                       </div>
-                    ) : (
-                      <div className="text-display">
-                        <p>{ex.content}</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
+
+                      {ex.type === 'sql' || ex.type === 'code' ? (
+                        <div className="code-display">
+                          <pre><code>{ex.content}</code></pre>
+                        </div>
+                      ) : (
+                        <div className="text-display">
+                          <p>{ex.content}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

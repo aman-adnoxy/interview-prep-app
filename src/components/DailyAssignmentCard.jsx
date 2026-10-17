@@ -18,7 +18,8 @@ export default function DailyAssignmentCard({
   progress,
   onStartLesson,
   onStartQuiz,
-  onOpenScenario
+  onOpenScenario,
+  onOpenHistory
 }) {
   const today = getTodayKolkataString();
   const isCompleted = progress?.completed;
@@ -84,7 +85,7 @@ export default function DailyAssignmentCard({
           <CheckCircle2 size={22} className="status-icon done" />
           <div className="status-text">
             <strong>Section Mastered!</strong>
-            <span>Best score: {lastScore ?? questionCount}/{questionCount} questions correct</span>
+            <span>Best score: {progress?.bestScore ?? progress?.lastScore ?? questionCount}/{questionCount} questions correct</span>
           </div>
         </div>
       ) : (
@@ -121,8 +122,17 @@ export default function DailyAssignmentCard({
             onClick={() => { sound.playTap(); onOpenScenario(); }}
           >
             <Briefcase size={16} />
-            <span>Interview Case</span>
+            <span>Case Study</span>
           </button>
+          {progress?.attemptsCount > 0 && (
+            <button 
+              className="btn btn-secondary sub-action-btn history-pill-btn" 
+              onClick={() => { sound.playTap(); onOpenHistory(); }}
+              title="View past quiz attempts"
+            >
+              <span>{progress.attemptsCount} Attempts</span>
+            </button>
+          )}
         </div>
       </div>
 

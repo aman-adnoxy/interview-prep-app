@@ -7,12 +7,15 @@ import LessonView from './components/LessonView';
 import QuizExperience from './components/QuizExperience';
 import CompletionSummary from './components/CompletionSummary';
 import InterviewScenarioView from './components/InterviewScenarioView';
+import HistoryModal from './components/HistoryModal';
+import SettingsModal from './components/SettingsModal';
 
 import { fetchManifest, fetchLesson, resolveActiveAssignment } from './services/api';
 import { 
   getAllProgress, 
   saveSectionProgress, 
-  recordQuizAttempt 
+  recordQuizAttempt,
+  clearAllProgress 
 } from './services/storage';
 import { sound } from './services/sound';
 
@@ -72,7 +75,14 @@ export default function App() {
 
   // Load lesson when user selects or changes active section
   const loadSectionContent = async (section) => {
-    if (!section?.lessonPath) return null;
+    if (!section?.lessonPath) {
+      setCurrentLesson(null);
+      return null;
+    }
+    // If the currently loaded lesson already matches this section, don't refetch
+    if (currentLesson && currentLesson.sectionId === section.id) {
+      return currentLesson;
+    }
     try {
       setLoading(true);
       const lessonData = await fetchLesson(section.lessonPath);
@@ -102,7 +112,7 @@ export default function App() {
 
   const handleStartLesson = async () => {
     sound.playTap();
-    if (!currentLesson && activeSection) {
+    if (activeSection) {
       await loadSectionContent(activeSection);
     }
     setViewState('lesson');
@@ -110,7 +120,7 @@ export default function App() {
 
   const handleStartQuiz = async () => {
     sound.playTap();
-    if (!currentLesson && activeSection) {
+    if (activeSection) {
       await loadSectionContent(activeSection);
     }
     setViewState('quiz');
@@ -118,7 +128,7 @@ export default function App() {
 
   const handleOpenScenario = async () => {
     sound.playTap();
-    if (!currentLesson && activeSection) {
+    if (activeSection) {
       await loadSectionContent(activeSection);
     }
     setViewState('scenario');
@@ -132,17 +142,22 @@ export default function App() {
     if (sectionId) {
       const isPassed = score / total >= 0.75;
       const existingProg = progressMap[sectionId] || {};
+      const bestScore = Math.max(existingProg.bestScore ?? 0, score);
       
       const updatedProg = {
         sectionId,
         completed: existingProg.completed || isPassed,
         lastScore: score,
+        bestScore,
         totalQuestions: total,
         attemptsCount: (existingProg.attemptsCount || 0) + 1,
         lastAttemptDate: new Date().toISOString()
       };
 
-      await saveSectionProgress(updatedProg);
+      const saved = await saveSectionProgress(updatedProg);
+      if (!saved) {
+        console.warn('Could not persist progress to IndexedDB');
+      }
       await recordQuizAttempt({
         sectionId,
         score,
@@ -156,6 +171,12 @@ export default function App() {
       if (!existingProg.completed && isPassed) {
         const nextIncomplete = resolveActiveAssignment(manifest, newMap);
         setActiveSection(nextIncomplete);
+        // Preload next section's lesson immediately so stale content is impossible
+        if (nextIncomplete?.lessonPath) {
+          loadSectionContent(nextIncomplete);
+        } else {
+          setCurrentLesson(null);
+        }
       }
     }
 
@@ -199,6 +220,20 @@ export default function App() {
     );
   }
 
+  // Modal state
+  const [showHistory, setShowHistory] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const handleResetProgress = async () => {
+    await clearAllProgress();
+    setProgressMap({});
+    const initialActive = resolveActiveAssignment(manifest, {});
+    setActiveSection(initialActive);
+    if (initialActive?.lessonPath) {
+      loadSectionContent(initialActive);
+    }
+  };
+
   return (
     <div className="app-container">
       {/* Top Header shown on Home views */}
@@ -207,6 +242,7 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={(tab) => { sound.playTap(); setActiveTab(tab); }}
           completedCount={completedCount}
+          onOpenSettings={() => setShowSettings(true)}
         />
       )}
 
@@ -221,11 +257,19 @@ export default function App() {
                 onStartLesson={handleStartLesson}
                 onStartQuiz={handleStartQuiz}
                 onOpenScenario={handleOpenScenario}
+                onOpenHistory={() => setShowHistory(true)}
               />
             ) : (
-              <div className="empty-home p-4 text-center">
-                <h3>Curriculum Completed!</h3>
-                <p>You have mastered all published technical interview sections.</p>
+              <div className="curriculum-completed-card animate-slide-up">
+                <div className="owl-trophy-badge">🏆</div>
+                <h2>Curriculum Completed!</h2>
+                <p>You have mastered all published technical interview sections in the curriculum.</p>
+                <button 
+                  className="btn btn-secondary mt-3"
+                  onClick={() => { sound.playTap(); setActiveTab('curriculum'); }}
+                >
+                  Explore Course Tracks
+                </button>
               </div>
             )}
           </>
@@ -285,6 +329,27 @@ export default function App() {
         )}
       </main>
 
+      {/* Audit Trail History Modal */}
+      {showHistory && (
+        <HistoryModal
+          sectionId={activeSection?.id || 'index-fundamentals'}
+          sectionTitle={activeSection?.title || 'Section Quiz'}
+          onClose={() => setShowHistory(false)}
+          onRetakeQuiz={() => {
+            setShowHistory(false);
+            setViewState('quiz');
+          }}
+        />
+      )}
+
+      {/* Preferences & Settings Modal */}
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          onResetProgress={handleResetProgress}
+        />
+      )}
+
       <style>{`
         .app-container {
           display: flex;
@@ -296,9 +361,32 @@ export default function App() {
           flex: 1;
         }
 
-        .empty-home {
+        .curriculum-completed-card {
+          margin: 30px 16px;
           padding: 40px 20px;
+          background: #ffffff;
+          border: 2px solid #a7f3d0;
+          border-radius: var(--radius-lg);
           text-align: center;
+          box-shadow: 0 4px 0 #a7f3d0;
+        }
+
+        .owl-trophy-badge {
+          font-size: 3.5rem;
+          margin-bottom: 12px;
+        }
+
+        .curriculum-completed-card h2 {
+          font-size: 1.5rem;
+          font-weight: 900;
+          color: #065f46;
+          margin-bottom: 6px;
+        }
+
+        .curriculum-completed-card p {
+          font-size: 0.92rem;
+          color: #047857;
+          line-height: 1.5;
         }
       `}</style>
     </div>

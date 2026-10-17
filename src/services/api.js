@@ -41,16 +41,19 @@ export async function fetchLesson(lessonPath) {
 export function resolveActiveAssignment(manifest, progressMap) {
   if (!manifest || !manifest.topics) return null;
 
-  // Flatten all sections in order
+  // Flatten all published sections in order
   const allSections = [];
   for (const topic of manifest.topics) {
     if (topic.sections && topic.sections.length > 0) {
       for (const section of topic.sections) {
-        allSections.push({
-          ...section,
-          topicId: topic.id,
-          topicTitle: topic.title,
-        });
+        // Enforce published status
+        if (section.status === 'published') {
+          allSections.push({
+            ...section,
+            topicId: topic.id,
+            topicTitle: topic.title,
+          });
+        }
       }
     }
   }
@@ -63,7 +66,8 @@ export function resolveActiveAssignment(manifest, progressMap) {
     return !prog || !prog.completed;
   });
 
-  return currentIncomplete || allSections[0];
+  // When all published sections are completed, return null so UI can show completion state
+  return currentIncomplete || null;
 }
 
 export function getTodayKolkataString() {
