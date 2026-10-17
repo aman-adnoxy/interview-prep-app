@@ -3,19 +3,11 @@ import {
   ArrowLeft, 
   ArrowRight, 
   Lightbulb, 
-  Terminal, 
-  Code2, 
-  FileText, 
-  CheckCircle,
-  HelpCircle,
   AlertTriangle,
-  RotateCcw,
-  Sparkles,
   Bookmark,
-  Layers
 } from 'lucide-react';
 import { sound } from '../services/sound';
-import DiagramBlock from './DiagramBlock';
+import ContentBlock from './ContentBlock';
 
 export default function LessonView({
   lesson,
@@ -122,9 +114,9 @@ export default function LessonView({
               <h1 className="concept-main-title">
                 {currentConcept.title.replace(/^\d+\.\s*/, '')}
               </h1>
-              <p className="concept-explanation-text">
-                {currentConcept.explanation}
-              </p>
+              <div className="concept-explanation-text">
+                {currentConcept.blocks?.filter(block => block.type === 'paragraph').length === 0 && <p>{currentConcept.title}</p>}
+              </div>
             </div>
 
             {/* Mental Model Callout on first card */}
@@ -135,47 +127,15 @@ export default function LessonView({
                 </div>
                 <div className="callout-text">
                   <strong>Mental Model:</strong>
-                  <p>{lesson.mentalModel}</p>
+                  <ContentBlock block={lesson.mentalModel} />
                 </div>
               </div>
             )}
 
-            {/* Examples (SQL, code, or scenario) strictly formatted */}
-            {currentConcept.examples && currentConcept.examples.length > 0 && (
-              <div className="examples-section">
-                <div className="section-label">PRACTICAL EXAMPLE & APPLICATION</div>
-                {currentConcept.examples.map((ex, exIdx) => {
-                  if (ex.type === 'diagram' || ex.type === 'interactive_stepper') {
-                    return <DiagramBlock key={exIdx} example={ex} />;
-                  }
-
-                  return (
-                    <div key={exIdx} className={`duo-example-card duo-example-${ex.type}`}>
-                      <div className="example-top-bar">
-                        <span className="example-tag">
-                          {ex.type === 'sql' && <Terminal size={15} />}
-                          {ex.type === 'code' && <Code2 size={15} />}
-                          {ex.type === 'scenario' && <AlertTriangle size={15} />}
-                          {ex.type === 'text' && <FileText size={15} />}
-                          <span>{ex.title || ex.type.toUpperCase()}</span>
-                        </span>
-                        <span className="lang-pill">{ex.language || ex.type}</span>
-                      </div>
-
-                      {ex.type === 'sql' || ex.type === 'code' ? (
-                        <div className="code-display">
-                          <pre><code>{ex.content}</code></pre>
-                        </div>
-                      ) : (
-                        <div className="text-display">
-                          <p>{ex.content}</p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="examples-section">
+              <div className="section-label">EXPLANATION & EXAMPLES</div>
+              {(currentConcept.blocks || []).map((block, blockIdx) => <ContentBlock key={currentConcept.id + '-' + blockIdx} block={block} />)}
+            </div>
           </div>
         )}
 
@@ -196,7 +156,7 @@ export default function LessonView({
               {lesson.tradeoffsAndPitfalls?.map((item, idx) => (
                 <div key={idx} className="tradeoff-box">
                   <span className="tradeoff-num">{idx + 1}</span>
-                  <p className="tradeoff-text">{item}</p>
+                  <ContentBlock block={item} />
                 </div>
               ))}
             </div>
@@ -220,7 +180,7 @@ export default function LessonView({
               {lesson.revisionSheet?.map((note, idx) => (
                 <div key={idx} className="revision-box">
                   <div className="rev-check">✓</div>
-                  <p className="revision-text">{note}</p>
+                  <ContentBlock block={note} />
                 </div>
               ))}
             </div>
