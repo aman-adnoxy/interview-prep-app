@@ -2,6 +2,11 @@
 class SoundEffects {
   constructor() {
     this.ctx = null;
+    this.enabled = true;
+  }
+
+  setEnabled(isEnabled) {
+    this.enabled = Boolean(isEnabled);
   }
 
   init() {
@@ -12,6 +17,7 @@ class SoundEffects {
   }
 
   playTap() {
+    if (!this.enabled) return;
     try {
       this.init();
       if (!this.ctx) return;
@@ -26,12 +32,13 @@ class SoundEffects {
       gain.connect(this.ctx.destination);
       osc.start();
       osc.stop(this.ctx.currentTime + 0.05);
-    } catch (e) {
+    } catch {
       // Audio autoplay restrictions
     }
   }
 
   playCorrect() {
+    if (!this.enabled) return;
     try {
       this.init();
       if (!this.ctx) return;
@@ -50,10 +57,11 @@ class SoundEffects {
         osc.start(now + idx * 0.08);
         osc.stop(now + idx * 0.08 + 0.22);
       });
-    } catch (e) {}
+    } catch {}
   }
 
   playIncorrect() {
+    if (!this.enabled) return;
     try {
       this.init();
       if (!this.ctx) return;
@@ -70,10 +78,11 @@ class SoundEffects {
       gain.connect(this.ctx.destination);
       osc.start(now);
       osc.stop(now + 0.22);
-    } catch (e) {}
+    } catch {}
   }
 
   playComplete() {
+    if (!this.enabled) return;
     try {
       this.init();
       if (!this.ctx) return;
@@ -99,7 +108,7 @@ class SoundEffects {
           osc.stop(now + i * 0.12 + 0.4);
         });
       });
-    } catch (e) {}
+    } catch {}
   }
 }
 

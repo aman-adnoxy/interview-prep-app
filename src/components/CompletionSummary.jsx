@@ -3,7 +3,6 @@ import {
   Trophy, 
   RotateCcw, 
   BookOpen, 
-  CheckCircle, 
   XCircle, 
   ArrowRight,
   Sparkles

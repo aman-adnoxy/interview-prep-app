@@ -2,13 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   History, 
   RotateCcw, 
-  Calendar, 
   CheckCircle2, 
   XCircle, 
   ArrowLeft, 
-  Award, 
   Clock, 
-  Sparkles,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';

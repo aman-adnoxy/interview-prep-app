@@ -139,6 +139,22 @@ export async function getQuizAttempts(sectionId) {
   }
 }
 
+export async function getAllQuizAttempts() {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_ATTEMPTS, 'readonly');
+      const store = tx.objectStore(STORE_ATTEMPTS);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+  } catch (err) {
+    console.error('Failed to get all attempts:', err);
+    return [];
+  }
+}
+
 export async function clearAllProgress() {
   try {
     const db = await openDB();

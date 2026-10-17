@@ -1,0 +1,513 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "database-clustered-vs-nonclustered-indexes",
+  "topicId": "databases",
+  "sectionId": "database-clustered-vs-nonclustered-indexes",
+  "title": "Clustered vs. Non-Clustered Indexes and Heap Tables",
+  "description": "Clustered vs. Non-Clustered Indexes and Heap Tables. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 35,
+  "learningObjectives": [
+    "Explain logical index order versus physical row order.",
+    "Describe PostgreSQL heap tuples and TIDs.",
+    "Compare clustered-index engines with PostgreSQL CLUSTER.",
+    "Predict locality and heap-fetch trade-offs."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "An index's logical order does not automatically determine table-row storage order. PostgreSQL normally stores tuples in a heap and index entries point to tuple locations. CLUSTER rewrites a table in index order once, but later writes can erode that order."
+  },
+  "concepts": [
+    {
+      "id": "heap-tid",
+      "title": "Heap tables and tuple identifiers",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "PostgreSQL stores ordinary rows in heap pages. An index entry normally points to a heap tuple through a TID identifying its page and slot. The heap is not automatically sorted by every index."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "SELECT ctid,id FROM orders LIMIT 5;"
+        },
+        {
+          "type": "table",
+          "title": "Key distinctions",
+          "columns": [
+            "Concept",
+            "Mechanism",
+            "Trade-off"
+          ],
+          "rows": [
+            [
+              "Access path",
+              "Structure used to locate candidate rows",
+              "Does not guarantee planner selection."
+            ],
+            [
+              "Physical work",
+              "Pages, tuple visibility, result rows",
+              "May dominate logical lookup cost."
+            ],
+            [
+              "Workload fit",
+              "Predicates, ordering, distribution",
+              "Requires measurement, not assumptions."
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clustered-model",
+      "title": "Clustered versus non-clustered",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "In a clustered-index engine, table data is organized at the clustered key's leaf level. PostgreSQL normally uses a heap plus indexes pointing to TIDs. Terminology is database-specific."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "SELECT indexrelid::regclass,indisclustered FROM pg_index;"
+        },
+        {
+          "type": "steps",
+          "title": "Reasoning sequence",
+          "steps": [
+            {
+              "id": "identify",
+              "title": "Identify query shape",
+              "description": "Write down predicates, joins, ordering, limit, and selected columns."
+            },
+            {
+              "id": "predict",
+              "title": "Predict the mechanism",
+              "description": "Explain which pages, entries, or operators the database is likely to visit."
+            },
+            {
+              "id": "measure",
+              "title": "Validate the plan",
+              "description": "Use actual rows and buffers to compare prediction with observed work."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "locality",
+      "title": "Locality and range scans",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Nearby index keys stored in nearby heap pages can reduce pages visited. Scattered matching rows can make an index scan trigger many random heap fetches."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "CLUSTER orders USING orders_created_at_idx; ANALYZE orders;"
+        },
+        {
+          "type": "worked_example",
+          "problem": "A query is slower than expected even though an index exists.",
+          "reasoning": [
+            "Check whether index keys and predicates align.",
+            "Compare estimated and actual row counts and inspect buffers.",
+            "Account for result size, heap access, and write/storage trade-offs."
+          ],
+          "outcome": "Make a targeted change only after plan evidence supports the hypothesis."
+        }
+      ]
+    },
+    {
+      "id": "index-only",
+      "title": "Index-only scans and INCLUDE",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "An index-only scan can return stored values from the index, but PostgreSQL must still establish tuple visibility. The visibility map lets it skip heap visits for all-visible pages; otherwise heap fetches can remain."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "CREATE INDEX orders_customer_created_cover_idx ON orders (customer_id,created_at DESC) INCLUDE (total_amount);"
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "Does the existence of an index guarantee PostgreSQL will use it?",
+          "answer": "No.",
+          "explanation": "The planner compares estimated costs, and another access path may be cheaper."
+        }
+      ]
+    },
+    {
+      "id": "when-cluster",
+      "title": "When clustering helps",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Physical clustering can help locality-sensitive range reads, but requires a rewrite and its benefit decays. A covering index can reduce some heap access if output and visibility-map conditions permit."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "EXPLAIN (ANALYZE, BUFFERS) SELECT created_at,total_amount FROM orders WHERE customer_id=42 ORDER BY created_at DESC LIMIT 10;"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Trade-off 1",
+      "content": "Physical order is not logical index order: a PostgreSQL heap is not automatically sorted by each B-tree."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Trade-off 2",
+      "content": "INCLUDE can help index-only retrieval but adds storage and write costs."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "PostgreSQL ordinary indexes reference heap tuple locations."
+    },
+    {
+      "type": "paragraph",
+      "text": "Clustered-index semantics are engine-specific."
+    },
+    {
+      "type": "paragraph",
+      "text": "CLUSTER rewrites a PostgreSQL table once."
+    },
+    {
+      "type": "paragraph",
+      "text": "INCLUDE can help index-only retrieval but adds storage and write costs."
+    },
+    {
+      "type": "paragraph",
+      "text": "Visibility-map state and heap locality affect actual performance."
+    }
+  ],
+  "questions": [
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q1",
+      "type": "single_select",
+      "prompt": "In PostgreSQL, an ordinary B-tree index entry generally points to what?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A heap tuple location (TID)"
+        },
+        {
+          "id": "b",
+          "text": "A permanent row position that never changes"
+        },
+        {
+          "id": "c",
+          "text": "A table page sorted by that index"
+        },
+        {
+          "id": "d",
+          "text": "The entire row stored in every index"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "PostgreSQL heap tuples are addressed by TIDs; locations can change after updates or rewrites."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q2",
+      "type": "single_select",
+      "prompt": "What is a clustered index in a clustered-index engine?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The table data is organized at the leaf level by the clustered key"
+        },
+        {
+          "id": "b",
+          "text": "A separate copy unrelated to row storage"
+        },
+        {
+          "id": "c",
+          "text": "An index that never affects secondary-index size"
+        },
+        {
+          "id": "d",
+          "text": "Identical to PostgreSQL's default heap arrangement"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Clustered-index terminology refers to the data organization in engines such as SQL Server."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q3",
+      "type": "single_select",
+      "prompt": "What does PostgreSQL CLUSTER do?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Rewrites a table in the order of a chosen index at that time"
+        },
+        {
+          "id": "b",
+          "text": "Maintains sorted order after every future insert"
+        },
+        {
+          "id": "c",
+          "text": "Creates an index without touching table rows"
+        },
+        {
+          "id": "d",
+          "text": "Makes the heap immutable"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "CLUSTER is a one-time physical reorganization."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q4",
+      "type": "single_select",
+      "prompt": "Why can locality help a range query?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Nearby keys may require fewer distinct heap pages"
+        },
+        {
+          "id": "b",
+          "text": "It guarantees all results are cached"
+        },
+        {
+          "id": "c",
+          "text": "It removes MVCC checks forever"
+        },
+        {
+          "id": "d",
+          "text": "It removes query planning"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Locality can reduce page reads but does not eliminate other work."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q5",
+      "type": "single_select",
+      "prompt": "What does INCLUDE do in PostgreSQL B-tree?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Stores non-key payload that may cover output columns"
+        },
+        {
+          "id": "b",
+          "text": "Makes payload columns first in search order"
+        },
+        {
+          "id": "c",
+          "text": "Guarantees no heap fetches in every case"
+        },
+        {
+          "id": "d",
+          "text": "Adds uniqueness to included values"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "INCLUDE can support index-only scans but enlarges the index."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q6",
+      "type": "single_select",
+      "prompt": "An index finds 500 rows scattered across 400 heap pages. What is the concern?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Heap I/O may dominate despite efficient index navigation"
+        },
+        {
+          "id": "b",
+          "text": "The B-tree must be rebuilt because 500 is not logarithmic"
+        },
+        {
+          "id": "c",
+          "text": "The query cannot return more than one row"
+        },
+        {
+          "id": "d",
+          "text": "PostgreSQL sorts the heap after every SELECT"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Scattered heap fetches can dominate latency."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q7",
+      "type": "single_select",
+      "prompt": "Why not use a TID as a durable business identifier?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It is a physical tuple location and can change"
+        },
+        {
+          "id": "b",
+          "text": "It is always the primary key"
+        },
+        {
+          "id": "c",
+          "text": "It is globally stable forever"
+        },
+        {
+          "id": "d",
+          "text": "PostgreSQL indexes do not use TIDs"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "TIDs are physical locations, not stable application identity."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q8",
+      "type": "single_select",
+      "prompt": "When might CLUSTER be worth considering?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Measured range-read locality is a bottleneck and rewrite/locking costs are acceptable"
+        },
+        {
+          "id": "b",
+          "text": "For every table because all queries speed up"
+        },
+        {
+          "id": "c",
+          "text": "Only when no indexes exist"
+        },
+        {
+          "id": "d",
+          "text": "To enforce uniqueness"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Clustering can improve locality for some workloads but has operational costs."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q9",
+      "type": "multi_select",
+      "prompt": "Which statements about PostgreSQL heap/index behavior are correct?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Ordinary index entries generally point to heap tuple locations."
+        },
+        {
+          "id": "b",
+          "text": "Heap rows are automatically sorted by every B-tree."
+        },
+        {
+          "id": "c",
+          "text": "Index-only scans may still fetch heap tuples."
+        },
+        {
+          "id": "d",
+          "text": "CLUSTER continuously preserves order after future writes."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "c"
+      ],
+      "explanation": "PostgreSQL uses heap storage; index-only scans depend on visibility, and CLUSTER is not continuous."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q10",
+      "type": "multi_select",
+      "prompt": "Which are costs or limits of INCLUDE columns?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Larger index footprint"
+        },
+        {
+          "id": "b",
+          "text": "More write maintenance"
+        },
+        {
+          "id": "c",
+          "text": "They change key ordering"
+        },
+        {
+          "id": "d",
+          "text": "Visibility-map state may still require heap fetches"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "Included payload increases size and maintenance and may help index-only scans, but is not key ordering."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q11",
+      "type": "true_false",
+      "prompt": "PostgreSQL heap rows are automatically kept in the order of every B-tree index.",
+      "correctAnswer": false,
+      "explanation": "Heap storage is independent of each index's logical order."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-q12",
+      "type": "true_false",
+      "prompt": "PostgreSQL CLUSTER guarantees future inserts stay in the chosen index order.",
+      "correctAnswer": false,
+      "explanation": "It rewrites the table once; future writes can erode order."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-scenario-1",
+      "prompt": "A range report has many heap buffers despite using an index. How reason about clustering or covering?",
+      "skillsTested": [
+        "Heap locality",
+        "Index-only scans",
+        "Operational trade-offs"
+      ],
+      "strongAnswerPoints": [
+        "Inspect actual rows, buffers, correlation, and visibility-map behavior.",
+        "Check whether a covering index can contain required output.",
+        "Explain rewrite locking and that CLUSTER does not preserve order continuously."
+      ],
+      "pitfalls": [
+        "Assuming an index or plan node is automatically good or bad without workload evidence.",
+        "Changing multiple variables before measuring the effect."
+      ],
+      "referenceAnswer": "Verify the plan first. Scattered heap access may dominate. A covering index can help when visibility conditions permit; CLUSTER can improve locality but rewrites and locks the table and its benefit decays as rows change."
+    },
+    {
+      "id": "database-clustered-vs-nonclustered-indexes-scenario-2",
+      "prompt": "Explain clustered versus non-clustered indexes to a team using PostgreSQL and SQL Server.",
+      "skillsTested": [
+        "Database-specific semantics",
+        "Precise terminology"
+      ],
+      "strongAnswerPoints": [
+        "Separate logical index order from physical table storage.",
+        "Describe SQL Server clustered data organization versus PostgreSQL heap plus TID references.",
+        "Mention CLUSTER as a one-time rewrite."
+      ],
+      "pitfalls": [
+        "Assuming an index or plan node is automatically good or bad without workload evidence.",
+        "Changing multiple variables before measuring the effect."
+      ],
+      "referenceAnswer": "In SQL Server a clustered index organizes table data at the clustered key's leaf level; nonclustered indexes use a clustered key or RID as locator. PostgreSQL normally uses a heap and B-tree entries pointing to TIDs. CLUSTER rewrites the heap once, not continuously."
+    }
+  ]
+}

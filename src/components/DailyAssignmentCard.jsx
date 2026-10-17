@@ -10,7 +10,6 @@ import {
   RotateCcw,
   BookOpen
 } from 'lucide-react';
-import { getTodayKolkataString } from '../services/api';
 import { sound } from '../services/sound';
 
 export default function DailyAssignmentCard({
@@ -21,9 +20,7 @@ export default function DailyAssignmentCard({
   onOpenScenario,
   onOpenHistory
 }) {
-  const today = getTodayKolkataString();
   const isCompleted = progress?.completed;
-  const lastScore = progress?.lastScore;
   const questionCount = section?.questionCount || 8;
 
   return (

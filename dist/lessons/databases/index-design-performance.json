@@ -1,0 +1,509 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "database-btree-structure-traversal-splits",
+  "topicId": "databases",
+  "sectionId": "index-design-performance",
+  "title": "B-Trees: Structure, Traversal, Splits, and Balanced Search",
+  "description": "B-Trees: Structure, Traversal, Splits, and Balanced Search. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 35,
+  "learningObjectives": [
+    "Trace a lookup from root to leaf and explain why height matters.",
+    "Explain fan-out and page-oriented storage.",
+    "Describe page splits and their maintenance effects.",
+    "Separate index navigation from end-to-end query latency."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "A B-tree stores ordered key ranges in pages. Internal pages route searches to narrower ranges, leaves hold ordered entries, and high fan-out keeps the tree shallow. Splits preserve ordering and balanced depth as entries are added."
+  },
+  "concepts": [
+    {
+      "id": "btree-invariants",
+      "title": "B-tree invariants",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Keys within a page are ordered; separator keys divide key ranges among children. In a balanced B-tree, leaves remain at the same depth, letting each comparison eliminate unrelated ranges."
+        },
+        {
+          "type": "table",
+          "title": "Key distinctions",
+          "columns": [
+            "Concept",
+            "Mechanism",
+            "Trade-off"
+          ],
+          "rows": [
+            [
+              "Access path",
+              "Structure used to locate candidate rows",
+              "Does not guarantee planner selection."
+            ],
+            [
+              "Physical work",
+              "Pages, tuple visibility, result rows",
+              "May dominate logical lookup cost."
+            ],
+            [
+              "Workload fit",
+              "Predicates, ordering, distribution",
+              "Requires measurement, not assumptions."
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "btree-lookup",
+      "title": "Trace a lookup",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Compare the target with root separators, follow the child range that can contain it, and repeat to the leaf. A missing key still follows the path to the leaf where it would be ordered."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "SELECT id FROM users WHERE user_id = 42;"
+        },
+        {
+          "type": "steps",
+          "title": "Reasoning sequence",
+          "steps": [
+            {
+              "id": "identify",
+              "title": "Identify query shape",
+              "description": "Write down predicates, joins, ordering, limit, and selected columns."
+            },
+            {
+              "id": "predict",
+              "title": "Predict the mechanism",
+              "description": "Explain which pages, entries, or operators the database is likely to visit."
+            },
+            {
+              "id": "measure",
+              "title": "Validate the plan",
+              "description": "Use actual rows and buffers to compare prediction with observed work."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "btree-fanout",
+      "title": "Pages and fan-out",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Database I/O is page-oriented. Many separators fit on an internal page, creating high fan-out. Wide keys reduce entries per page and may increase index footprint or height."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "SELECT indexrelname, pg_size_pretty(pg_relation_size(indexrelid)) AS size FROM pg_stat_user_indexes;"
+        },
+        {
+          "type": "worked_example",
+          "problem": "A query is slower than expected even though an index exists.",
+          "reasoning": [
+            "Check whether index keys and predicates align.",
+            "Compare estimated and actual row counts and inspect buffers.",
+            "Account for result size, heap access, and write/storage trade-offs."
+          ],
+          "outcome": "Make a targeted change only after plan evidence supports the hypothesis."
+        }
+      ]
+    },
+    {
+      "id": "btree-splits",
+      "title": "Page splits",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "When a page cannot fit a new entry, the engine may split it, redistribute entries, and update parent routing. A full parent may split too; a root split can add a level. This is not automatically a full index rebuild."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "INSERT INTO users (user_id,email) VALUES (42,'a@example.com');"
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "Does the existence of an index guarantee PostgreSQL will use it?",
+          "answer": "No.",
+          "explanation": "The planner compares estimated costs, and another access path may be cheaper."
+        }
+      ]
+    },
+    {
+      "id": "btree-cost",
+      "title": "Complexity and latency",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "B-tree navigation is commonly O(log n), but database latency also depends on cache misses, matching entries, heap reads, MVCC visibility, and result size."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM users WHERE user_id = 42;"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Trade-off 1",
+      "content": "Navigation is not the whole query: fetching rows or returning a large result remains expensive."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Trade-off 2",
+      "content": "High fan-out keeps trees shallow; splits preserve order but add maintenance work."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Search follows ordered separator keys to a relevant leaf."
+    },
+    {
+      "type": "paragraph",
+      "text": "High fan-out and page layout keep trees shallow."
+    },
+    {
+      "type": "paragraph",
+      "text": "Splits may propagate upward and a root split can increase height."
+    },
+    {
+      "type": "paragraph",
+      "text": "O(log n) describes navigation, not necessarily SQL latency."
+    },
+    {
+      "type": "paragraph",
+      "text": "Heap fetches, visibility, cache state, and result size matter."
+    }
+  ],
+  "questions": [
+    {
+      "id": "database-btree-structure-traversal-splits-q1",
+      "type": "single_select",
+      "prompt": "A root has separators 20 and 60. Where should key 42 go?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The child range between 20 and 60"
+        },
+        {
+          "id": "b",
+          "text": "The range below 20"
+        },
+        {
+          "id": "c",
+          "text": "The range above 60"
+        },
+        {
+          "id": "d",
+          "text": "Every child must be scanned"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Separators partition the key space; 42 belongs in the middle range."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-q2",
+      "type": "single_select",
+      "prompt": "A B-tree index grows from 3 to 4 levels after many inserts. Which explanation is most consistent with B-tree behavior?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A root split may have added a level after splits propagated upward."
+        },
+        {
+          "id": "b",
+          "text": "Every insert adds one level to the tree."
+        },
+        {
+          "id": "c",
+          "text": "The database has converted the index into a linked list."
+        },
+        {
+          "id": "d",
+          "text": "The index is necessarily corrupt because balanced trees cannot change height."
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Leaf and parent splits can propagate upward. A root split can increase height, but ordinary inserts do not add a level each time."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-q3",
+      "type": "single_select",
+      "prompt": "What is the normal search path for a missing key?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Follow separators to the leaf where the key would be"
+        },
+        {
+          "id": "b",
+          "text": "Scan every leaf"
+        },
+        {
+          "id": "c",
+          "text": "Scan the table because absence cannot be indexed"
+        },
+        {
+          "id": "d",
+          "text": "Rebuild the tree"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The relevant leaf establishes absence."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-q4",
+      "type": "single_select",
+      "prompt": "A leaf page fills during insertion. What may happen?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The page splits and parent routing is updated"
+        },
+        {
+          "id": "b",
+          "text": "The whole index must always be rebuilt"
+        },
+        {
+          "id": "c",
+          "text": "Half the entries are discarded"
+        },
+        {
+          "id": "d",
+          "text": "The index turns into a hash table"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Splits create space and update routing; they may cascade."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-q5",
+      "type": "single_select",
+      "prompt": "What is the strongest complexity explanation?",
+      "options": [
+        {
+          "id": "a",
+          "text": "O(log n) navigation plus matching-entry and possible heap-fetch costs"
+        },
+        {
+          "id": "b",
+          "text": "Always O(1) because root is cached"
+        },
+        {
+          "id": "c",
+          "text": "Always O(n) because every page is read"
+        },
+        {
+          "id": "d",
+          "text": "The whole query is O(log n) regardless of returned rows"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Total cost depends on matches, heap access, visibility, cache, and I/O."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-q6",
+      "type": "single_select",
+      "prompt": "Why store many keys per page?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Page-based storage amortizes reads across many keys"
+        },
+        {
+          "id": "b",
+          "text": "SQL requires one row per page"
+        },
+        {
+          "id": "c",
+          "text": "Pages guarantee no disk I/O"
+        },
+        {
+          "id": "d",
+          "text": "Pages remove the need for ordering"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Page-based storage and fan-out make navigation efficient."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-q7",
+      "type": "single_select",
+      "prompt": "A primary-key lookup returns one row but takes 180 ms in production. EXPLAIN (ANALYZE, BUFFERS) shows one index entry found and several heap blocks read from disk. What is the best next step?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Investigate heap-page I/O, cache state, and production latency before changing the B-tree."
+        },
+        {
+          "id": "b",
+          "text": "Replace the B-tree with a hash index because all equality lookups should use hashes."
+        },
+        {
+          "id": "c",
+          "text": "Add every selected column to the index without checking write or storage cost."
+        },
+        {
+          "id": "d",
+          "text": "Force index scans globally because the current lookup already uses an index."
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The index can locate the key efficiently while heap I/O dominates latency. Confirm representative buffer and I/O behavior before choosing a covering index or other change."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-q8",
+      "type": "single_select",
+      "prompt": "A query returns 45% of a large table using a range predicate. The B-tree can produce rows in order, but the plan's index path performs many scattered heap reads. Why might a sequential scan still win?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Reading a large fraction of the table sequentially may cost less than many scattered heap reads."
+        },
+        {
+          "id": "b",
+          "text": "B-trees cannot support range predicates."
+        },
+        {
+          "id": "c",
+          "text": "An index scan is only valid when the predicate matches one row."
+        },
+        {
+          "id": "d",
+          "text": "A sequential scan always ignores the WHERE clause."
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "An index provides an access path, not a guarantee of lower total cost. Selectivity, heap-page locality, ordering, and cache state affect the choice."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-q9",
+      "type": "multi_select",
+      "prompt": "Which can increase B-tree maintenance or footprint?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Wide keys reduce entries per page."
+        },
+        {
+          "id": "b",
+          "text": "Splits may require page and parent updates."
+        },
+        {
+          "id": "c",
+          "text": "Every lookup scans all keys."
+        },
+        {
+          "id": "d",
+          "text": "Updates to indexed values require maintenance."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "Wide keys, splits, and indexed-column changes add cost; normal lookups do not scan all keys."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-q10",
+      "type": "multi_select",
+      "prompt": "Which can dominate latency after index entries are found?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Random heap page fetches"
+        },
+        {
+          "id": "b",
+          "text": "Visibility checks and filtering"
+        },
+        {
+          "id": "c",
+          "text": "Returning many rows"
+        },
+        {
+          "id": "d",
+          "text": "The logarithmic notation itself"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "Index navigation is only one part of execution."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-q11",
+      "type": "true_false",
+      "prompt": "Balanced B-tree leaves remain at the same depth.",
+      "correctAnswer": true,
+      "explanation": "Balanced depth bounds the search path."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-q12",
+      "type": "true_false",
+      "prompt": "If a B-tree exists, PostgreSQL must use it.",
+      "correctAnswer": false,
+      "explanation": "The planner compares costs and may prefer a sequential scan."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "database-btree-structure-traversal-splits-scenario-1",
+      "prompt": "A unique-key lookup is fast in a microbenchmark but slow under production load. Diagnose causes and evidence.",
+      "skillsTested": [
+        "Index traversal",
+        "I/O/cache",
+        "Plan analysis"
+      ],
+      "strongAnswerPoints": [
+        "Separate navigation from heap access.",
+        "Capture EXPLAIN (ANALYZE, BUFFERS).",
+        "Compare cache behavior, actual rows, concurrency, and storage latency."
+      ],
+      "pitfalls": [
+        "Assuming an index or plan node is automatically good or bad without workload evidence.",
+        "Changing multiple variables before measuring the effect."
+      ],
+      "referenceAnswer": "The tree bounds the search path, but heap reads, visibility checks, cache misses, and contention can dominate. Capture the real plan and buffers, compare estimates to actual rows, and measure representative concurrency before changing the index."
+    },
+    {
+      "id": "database-btree-structure-traversal-splits-scenario-2",
+      "prompt": "A write-heavy table has insert latency spikes. How could B-tree behavior contribute, and what would you measure?",
+      "skillsTested": [
+        "Index maintenance",
+        "Page splits",
+        "Write trade-offs"
+      ],
+      "strongAnswerPoints": [
+        "Every relevant index adds write work.",
+        "Splits may add page writes and routing updates.",
+        "Measure WAL, I/O, index size, and write latency."
+      ],
+      "pitfalls": [
+        "Assuming an index or plan node is automatically good or bad without workload evidence.",
+        "Changing multiple variables before measuring the effect."
+      ],
+      "referenceAnswer": "Inserts maintain relevant indexes and splits may add writes. Validate with workload metrics, inventory redundant indexes, and test any design change against both read and write workloads."
+    }
+  ]
+}

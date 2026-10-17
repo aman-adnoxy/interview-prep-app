@@ -1,0 +1,621 @@
+{
+  "id": "advanced-sql-window-functions-set-operations",
+  "sectionId": "advanced-sql-window-functions-set-operations",
+  "title": "Advanced SQL: Window Functions, Ranking, Set Operations, and Latest-Row-per-Group Queries",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 54,
+  "learningObjectives": [
+    "Distinguish grouped aggregation from window calculations.",
+    "Use ROW_NUMBER, RANK, DENSE_RANK, LAG and running aggregates correctly.",
+    "Choose UNION versus UNION ALL and understand set-operation column compatibility.",
+    "Select the latest row per group deterministically.",
+    "Explain tie-breaking, NULL ordering, and filtering window results with a subquery or CTE."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "GROUP BY collapses rows into groups. Window functions calculate across related rows while preserving each input row. Set operations combine result sets vertically. Latest-row-per-group is not just MAX(timestamp): it usually means selecting an entire row according to a deterministic ordering rule."
+  },
+  "concepts": [
+    {
+      "id": "window-vs-group",
+      "title": "Window functions preserve row identity",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A window function uses an OVER clause to define a partition, ordering, and sometimes a frame. Unlike GROUP BY, it normally returns one result for each input row. PARTITION BY resets the calculation for each group; ORDER BY defines sequence within the partition."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Order amount and customer lifetime total",
+          "source": "SELECT\n  id, customer_id, total_amount,\n  SUM(total_amount) OVER (PARTITION BY customer_id) AS customer_total,\n  ROW_NUMBER() OVER (\n    PARTITION BY customer_id\n    ORDER BY created_at DESC, id DESC\n  ) AS newest_first\nFROM orders;"
+        },
+        {
+          "type": "paragraph",
+          "text": "The final id tie-breaker makes row ordering deterministic when created_at values tie. Without a unique ordering key, row_number assignments among ties may vary."
+        }
+      ]
+    },
+    {
+      "id": "ranking",
+      "title": "ROW_NUMBER, RANK, and DENSE_RANK",
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Score",
+            "ROW_NUMBER",
+            "RANK",
+            "DENSE_RANK"
+          ],
+          "rows": [
+            [
+              "100",
+              "1",
+              "1",
+              "1"
+            ],
+            [
+              "90",
+              "2",
+              "2",
+              "2"
+            ],
+            [
+              "90",
+              "3",
+              "2",
+              "2"
+            ],
+            [
+              "80",
+              "4",
+              "4",
+              "3"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "ROW_NUMBER assigns a unique sequence number to each row. RANK gives tied rows the same rank and leaves gaps after ties. DENSE_RANK gives tied rows the same rank without gaps. Choose based on whether the product asks for exactly N rows, top N rank positions, or top N distinct score levels."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Top three rows is not the same as top three ranks",
+          "content": "ROW_NUMBER() <= 3 returns at most three rows per partition. RANK() <= 3 can return more than three rows when ties occur."
+        },
+        {
+          "type": "table",
+          "title": "RANK versus DENSE_RANK",
+          "columns": [
+            "score",
+            "RANK()",
+            "DENSE_RANK()"
+          ],
+          "rows": [
+            [
+              "100",
+              "1",
+              "1"
+            ],
+            [
+              "90",
+              "2",
+              "2"
+            ],
+            [
+              "90",
+              "2",
+              "2"
+            ],
+            [
+              "80",
+              "4",
+              "3"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "With ORDER BY score DESC, the default frame for an aggregate window includes the current row and its peers. When ordering values tie, a running SUM can advance by peer groups rather than one physical row at a time. For row-by-row accumulation, add a stable tie-breaker and specify ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW."
+        }
+      ]
+    },
+    {
+      "id": "latest-row",
+      "title": "Latest row per group",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Most recent order per customer",
+          "source": "WITH ranked AS (\n  SELECT o.*,\n         ROW_NUMBER() OVER (\n           PARTITION BY customer_id\n           ORDER BY created_at DESC, id DESC\n         ) AS rn\n  FROM orders o\n)\nSELECT *\nFROM ranked\nWHERE rn = 1;"
+        },
+        {
+          "type": "paragraph",
+          "text": "MAX(created_at) returns the latest timestamp, not the complete row. Joining the maximum timestamp back to the source can return multiple rows when timestamps tie. ROW_NUMBER with a stable tie-breaker selects one row deterministically. If the requirement is to return all tied latest rows, use RANK or join on the maximum timestamp with that semantics stated explicitly."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL DISTINCT ON alternative",
+          "source": "SELECT DISTINCT ON (customer_id) *\nFROM orders\nORDER BY customer_id, created_at DESC, id DESC;"
+        },
+        {
+          "type": "paragraph",
+          "text": "DISTINCT ON is PostgreSQL-specific. The leading ORDER BY expressions must match the DISTINCT ON expressions, and subsequent ordering expressions choose which row wins within each group."
+        }
+      ]
+    },
+    {
+      "id": "lag-running",
+      "title": "LAG, LEAD, and running aggregates",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Compare each order to the previous order",
+          "source": "SELECT customer_id, created_at, total_amount,\n       LAG(total_amount) OVER (\n         PARTITION BY customer_id\n         ORDER BY created_at, id\n       ) AS previous_amount\nFROM orders;"
+        },
+        {
+          "type": "paragraph",
+          "text": "LAG and LEAD access values from preceding or following rows in the ordered partition. They are useful for change detection, sequence analysis and period-over-period comparisons. Running aggregates need an explicit frame when default frame behavior around peers could surprise you."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Running total with a row-by-row frame",
+          "source": "SELECT customer_id, created_at, id, total_amount,\n       SUM(total_amount) OVER (\n         PARTITION BY customer_id\n         ORDER BY created_at, id\n         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n       ) AS running_total\nFROM orders;"
+        }
+      ]
+    },
+    {
+      "id": "set-operations",
+      "title": "UNION, UNION ALL, INTERSECT, and EXCEPT",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Set operations combine query results with compatible column counts and compatible types. UNION removes duplicate result rows; UNION ALL retains them and is generally cheaper when deduplication is not required. INTERSECT returns rows present in both results; EXCEPT returns rows from the first result absent from the second. In PostgreSQL, result order is not guaranteed without an outer ORDER BY."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Combine active and invited users",
+          "source": "SELECT email, 'active' AS source\nFROM active_users\nUNION ALL\nSELECT email, 'invited' AS source\nFROM invited_users;"
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "UNION deduplicates entire rows",
+          "content": "UNION does not deduplicate by a chosen business key unless the selected result columns make that the same rule. If source differs, otherwise identical emails remain distinct rows."
+        }
+      ]
+    },
+    {
+      "id": "filtering-window-results",
+      "title": "Filtering and correctness details",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Window functions are evaluated after the WHERE clause at the same query level, so you generally cannot filter on a window alias in that level's WHERE. Wrap the window query in a CTE or derived table, then filter the computed value. Pay attention to NULL ordering and timestamp tie-breakers in latest-row queries."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Top two orders per customer",
+          "source": "WITH ranked AS (\n  SELECT o.*,\n         ROW_NUMBER() OVER (\n           PARTITION BY customer_id\n           ORDER BY total_amount DESC, id\n         ) AS rn\n  FROM orders o\n)\nSELECT * FROM ranked WHERE rn <= 2;"
+        },
+        {
+          "type": "paragraph",
+          "text": "For production queries, define the tie policy, the treatment of NULL timestamps, and whether exactly one row or all ties should be returned. Use an index that matches the filter/order pattern only after checking the actual plan and workload."
+        }
+      ]
+    },
+    {
+      "id": "module-cumulative-challenge",
+      "title": "Cumulative challenge: revenue and latest order",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Challenge: return every customer, total successful payment amount, and latest order timestamp. Some orders have multiple payment attempts; some customers have no orders. Avoid double-counting payment rows and dropping inactive customers."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Combine aggregation, NULL handling, joins, and window functions",
+          "source": "WITH payment_totals AS (\n  SELECT order_id, SUM(amount) AS paid_amount\n  FROM payments WHERE status = 'succeeded'\n  GROUP BY order_id\n),\norder_metrics AS (\n  SELECT o.id, o.customer_id, o.created_at,\n         COALESCE(p.paid_amount, 0) AS paid_amount\n  FROM orders o LEFT JOIN payment_totals p ON p.order_id = o.id\n),\ncustomer_revenue AS (\n  SELECT customer_id, SUM(paid_amount) AS revenue\n  FROM order_metrics GROUP BY customer_id\n),\nranked_orders AS (\n  SELECT o.*, ROW_NUMBER() OVER (\n    PARTITION BY customer_id ORDER BY created_at DESC, id DESC\n  ) AS rn\n  FROM orders o\n)\nSELECT c.id AS customer_id, COALESCE(r.revenue, 0) AS successful_payment_total,\n       latest.created_at AS latest_order_at\nFROM customers c\nLEFT JOIN customer_revenue r ON r.customer_id = c.id\nLEFT JOIN ranked_orders latest ON latest.customer_id = c.id AND latest.rn = 1\nORDER BY c.id;"
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "Why aggregate payments to one row per order before joining orders?",
+          "answer": "It prevents multiple payment attempts from multiplying order rows and makes the join grain explicit.",
+          "explanation": "The payment_totals CTE returns at most one row per order_id. LEFT JOIN preserves orders without successful payments; ROW_NUMBER with a stable id tie-breaker selects one latest order per customer."
+        },
+        {
+          "type": "paragraph",
+          "text": "This query sums successful payment amounts, not order totals. Refunds, partial captures, currency conversion, or reversals require explicit business semantics."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "GROUP BY versus window function",
+      "content": "Trade-off: GROUP BY returns one row per group; windows retain row-level detail while adding group/sequence metrics.\n\nFailure mode: A query loses order-level columns because it aggregates too early, or duplicates a group total because it joins afterward.\n\nDecision rule: Use GROUP BY when the desired output grain is the group; use a window when each original row must remain visible."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "ROW_NUMBER versus RANK",
+      "content": "Trade-off: ROW_NUMBER selects a deterministic number of rows when ordering is unique; RANK preserves ties and can return more rows than the threshold.\n\nFailure mode: A leaderboard excludes tied participants or returns more rows than the API contract allows.\n\nDecision rule: Specify whether the contract is exactly N rows, top N rank positions, or top N distinct values."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "MAX(timestamp) versus selecting a latest row",
+      "content": "Trade-off: MAX is simple when only the timestamp is needed; row selection needs a tie policy and an ordering key.\n\nFailure mode: Joining back on MAX(timestamp) returns multiple records for tied timestamps, or arbitrary selection hides ambiguity.\n\nDecision rule: Use ROW_NUMBER with a deterministic tie-breaker for exactly one row; use RANK or max-join when all tied latest rows are required."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "UNION versus UNION ALL",
+      "content": "Trade-off: UNION removes duplicate complete rows; UNION ALL preserves every row and avoids deduplication work.\n\nFailure mode: UNION accidentally removes legitimate repeated events, or UNION ALL double-counts overlapping sources when deduplication is required.\n\nDecision rule: Define whether duplicates are meaningful in the domain and which columns define identity before choosing."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Window ordering and frames",
+      "content": "Trade-off: Explicit ordering/frames make sequence semantics precise but require more careful SQL.\n\nFailure mode: Tied ordering values produce nondeterministic row numbers or a running aggregate includes peer rows unexpectedly.\n\nDecision rule: Add a stable tie-breaker for row selection and specify ROWS/RANGE frame semantics when correctness depends on them."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "GROUP BY versus window function?\n\nAnswer: GROUP BY collapses rows to groups; a window function normally keeps each input row and adds a calculation over related rows."
+    },
+    {
+      "type": "paragraph",
+      "text": "ROW_NUMBER versus RANK versus DENSE_RANK?\n\nAnswer: ROW_NUMBER is unique per row; RANK ties share rank and create gaps; DENSE_RANK ties share rank without gaps."
+    },
+    {
+      "type": "paragraph",
+      "text": "Why isn't MAX(created_at) enough to get the latest full row?\n\nAnswer: It returns a timestamp, not a row, and joining back may return multiple rows when timestamps tie."
+    },
+    {
+      "type": "paragraph",
+      "text": "How do you select exactly one latest row per customer?\n\nAnswer: Use ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY created_at DESC, unique_tiebreaker DESC), then filter rn = 1."
+    },
+    {
+      "type": "paragraph",
+      "text": "When should you use UNION ALL?\n\nAnswer: When duplicate rows are meaningful or should be retained; it avoids the deduplication required by UNION."
+    },
+    {
+      "type": "paragraph",
+      "text": "Does UNION guarantee result order?\n\nAnswer: No. Use an outer ORDER BY for deterministic output order."
+    },
+    {
+      "type": "paragraph",
+      "text": "Why can't you usually filter a window alias in WHERE at the same query level?\n\nAnswer: WHERE is evaluated before the window calculation; wrap the calculation in a CTE or derived table and filter outside."
+    },
+    {
+      "type": "paragraph",
+      "text": "When can DISTINCT ON be useful?\n\nAnswer: In PostgreSQL, it can select one ordered row per group when paired with a compatible ORDER BY and explicit tie-breaker."
+    }
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single_select",
+      "prompt": "You need exactly one latest order per customer, even when timestamps tie. What is the best general pattern?",
+      "options": [
+        {
+          "id": "a",
+          "text": "MAX(created_at) without any ordering rule"
+        },
+        {
+          "id": "b",
+          "text": "ROW_NUMBER partitioned by customer and ordered by timestamp plus a unique tie-breaker"
+        },
+        {
+          "id": "c",
+          "text": "GROUP BY customer_id and select every other column arbitrarily"
+        },
+        {
+          "id": "d",
+          "text": "UNION"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "ROW_NUMBER selects one row, and a stable tie-breaker makes the choice deterministic."
+    },
+    {
+      "id": "q2",
+      "type": "single_select",
+      "prompt": "Which ranking function assigns ranks 1, 2, 2, 3 to scores 100, 90, 90, 80?",
+      "options": [
+        {
+          "id": "a",
+          "text": "ROW_NUMBER"
+        },
+        {
+          "id": "b",
+          "text": "RANK"
+        },
+        {
+          "id": "c",
+          "text": "DENSE_RANK"
+        },
+        {
+          "id": "d",
+          "text": "NTILE"
+        }
+      ],
+      "correctOptionId": "c",
+      "explanation": "DENSE_RANK assigns equal ranks to ties without leaving gaps after them."
+    },
+    {
+      "id": "q3",
+      "type": "multi_select",
+      "prompt": "Which statements about set operations are correct?",
+      "options": [
+        {
+          "id": "a",
+          "text": "UNION removes duplicate complete rows."
+        },
+        {
+          "id": "b",
+          "text": "UNION ALL preserves duplicate rows."
+        },
+        {
+          "id": "c",
+          "text": "Set-operation output order is guaranteed without ORDER BY."
+        },
+        {
+          "id": "d",
+          "text": "Corresponding inputs need compatible column counts and types."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "Set operations require compatible result shapes. Deterministic order requires ORDER BY."
+    },
+    {
+      "id": "q4",
+      "type": "true_false",
+      "prompt": "A window function normally preserves input row count, unlike GROUP BY aggregation.",
+      "correctAnswer": true,
+      "explanation": "Window functions add calculated values to rows rather than collapsing the result to one row per group."
+    },
+    {
+      "id": "q5",
+      "type": "single_select",
+      "prompt": "A query calculates ROW_NUMBER() AS rn but references rn in WHERE at the same SELECT level. What is the fix?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Move the window function into WHERE."
+        },
+        {
+          "id": "b",
+          "text": "Calculate rn in a CTE or derived table, then filter in the outer query."
+        },
+        {
+          "id": "c",
+          "text": "Replace ROW_NUMBER with COUNT(*)."
+        },
+        {
+          "id": "d",
+          "text": "Remove ORDER BY."
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "WHERE is evaluated before the SELECT-list window result is available. Calculate the window result in a CTE or subquery, then filter outside."
+    },
+    {
+      "id": "q6",
+      "type": "single_select",
+      "prompt": "For scores 100, 90, 90, 80, which ranking function yields ranks 1, 2, 2, 4?",
+      "options": [
+        {
+          "id": "a",
+          "text": "ROW_NUMBER"
+        },
+        {
+          "id": "b",
+          "text": "RANK"
+        },
+        {
+          "id": "c",
+          "text": "DENSE_RANK"
+        },
+        {
+          "id": "d",
+          "text": "NTILE"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "RANK assigns tied rows the same rank and leaves gaps after ties; DENSE_RANK would produce 1, 2, 2, 3."
+    },
+    {
+      "id": "q7",
+      "type": "multi_select",
+      "prompt": "Which statements about deterministic latest-row-per-group queries are correct? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "MAX(timestamp) alone identifies the complete latest row."
+        },
+        {
+          "id": "b",
+          "text": "ROW_NUMBER with a unique tie-breaker can select exactly one row per group."
+        },
+        {
+          "id": "c",
+          "text": "Tied timestamps need an explicit tie policy if output must be deterministic."
+        },
+        {
+          "id": "d",
+          "text": "Filtering a window result often requires an outer query or CTE."
+        }
+      ],
+      "correctOptionIds": [
+        "b",
+        "c",
+        "d"
+      ],
+      "explanation": "MAX(timestamp) gives a value, not a unique row. A stable tie-breaker and an outer filtering layer make the result deterministic."
+    },
+    {
+      "id": "q8",
+      "type": "true_false",
+      "prompt": "UNION ALL preserves duplicate result rows, whereas UNION removes duplicate complete rows.",
+      "correctAnswer": true,
+      "explanation": "UNION performs duplicate elimination across the entire selected row; UNION ALL retains duplicates."
+    },
+    {
+      "id": "q9",
+      "type": "single_select",
+      "prompt": "You need every event for each account plus the previous event's status in time order. Which window function is designed for the prior row's value?",
+      "options": [
+        {
+          "id": "a",
+          "text": "LAG(status) OVER (PARTITION BY account_id ORDER BY occurred_at, event_id)"
+        },
+        {
+          "id": "b",
+          "text": "COUNT(status) without OVER"
+        },
+        {
+          "id": "c",
+          "text": "UNION(status)"
+        },
+        {
+          "id": "d",
+          "text": "MAX(status) grouped by account_id"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "LAG accesses a value from a preceding row within the ordered partition. Include a tie-breaker when timestamps can collide."
+    },
+    {
+      "id": "q10",
+      "type": "multi_select",
+      "prompt": "Which choices help avoid nondeterministic or misleading window results? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "Add a unique tie-breaker to the window ORDER BY when one row must win."
+        },
+        {
+          "id": "b",
+          "text": "Define NULL timestamp ordering explicitly when it matters."
+        },
+        {
+          "id": "c",
+          "text": "Assume the physical storage order is stable and use it as the tie-breaker."
+        },
+        {
+          "id": "d",
+          "text": "Specify a ROWS frame when row-by-row running totals are required."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "Deterministic order needs explicit keys, NULL handling may need specification, and a ROWS frame prevents peer-group frame behavior from surprising a row-by-row running total."
+    },
+    {
+      "id": "q11",
+      "type": "single_select",
+      "prompt": "A query calculates ROW_NUMBER() AS rn and tries to use rn in WHERE in the same SELECT. What is the usual fix?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Move the filter into the same-level WHERE clause"
+        },
+        {
+          "id": "b",
+          "text": "Wrap the window calculation in a CTE or derived table and filter in the outer query"
+        },
+        {
+          "id": "c",
+          "text": "Replace the window function with DISTINCT"
+        },
+        {
+          "id": "d",
+          "text": "Add GROUP BY to the same SELECT"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Window results are not available to the same-level WHERE. Compute them in a CTE or subquery, then filter in the outer query."
+    },
+    {
+      "id": "q12",
+      "type": "true_false",
+      "prompt": "A window function with PARTITION BY normally collapses each partition to one output row.",
+      "correctAnswer": false,
+      "explanation": "Window functions normally preserve each input row and add a value computed across the partition. GROUP BY is the common row-collapsing operation."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "s1",
+      "prompt": "An API needs the latest status event for every job. Events can share timestamps, and the API must return exactly one event per job. Write and explain a robust query.",
+      "skillsTested": [
+        "window functions",
+        "deterministic ordering",
+        "latest-row-per-group",
+        "API contract"
+      ],
+      "strongAnswerPoints": [
+        "Use ROW_NUMBER partitioned by job_id.",
+        "Order by event timestamp descending and a unique deterministic tie-breaker.",
+        "Filter rn = 1 in an outer query.",
+        "Define how NULL timestamps should be treated.",
+        "Explain that MAX(timestamp) alone does not choose a complete row and can tie."
+      ],
+      "pitfalls": [
+        "Ordering only by a non-unique timestamp.",
+        "Selecting non-grouped columns alongside MAX(timestamp).",
+        "Ignoring NULL timestamp behavior."
+      ],
+      "referenceAnswer": "I would rank events with ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY occurred_at DESC NULLS LAST, event_id DESC), then select rn = 1 from a CTE. The unique event_id makes the selection deterministic when timestamps tie. I would confirm whether NULL timestamps should be excluded or treated as oldest, and I would index based on the actual workload after checking the plan."
+    },
+    {
+      "id": "s2",
+      "prompt": "Build a query that returns each customer's latest order, total successful payment amount across all orders, and a deterministic top-three ranking of customers by paid amount. Explain how you avoid duplicate totals and handle ties.",
+      "skillsTested": [
+        "window functions",
+        "aggregation",
+        "latest-row-per-group",
+        "tie handling",
+        "set/query composition"
+      ],
+      "strongAnswerPoints": [
+        "Aggregate successful payment amounts at the order or customer grain before joining unrelated row sets.",
+        "Use ROW_NUMBER with a stable tie-breaker to select one latest order per customer.",
+        "Rank customer totals using RANK or DENSE_RANK if ties should share rank, or ROW_NUMBER if exactly three customers are required.",
+        "Use a CTE or derived table to filter window results.",
+        "Define NULL timestamp behavior and whether refunds/partial captures count.",
+        "Validate with duplicate timestamps, multiple payment attempts, and equal customer totals."
+      ],
+      "pitfalls": [
+        "Joining raw payment attempts to raw order lines before aggregation.",
+        "Using MAX(timestamp) as if it identifies a unique full row.",
+        "Confusing top three rows with top three rank values."
+      ],
+      "referenceAnswer": "I would first aggregate successful payments to one row per order, then roll them up to one row per customer. Separately, I would rank orders per customer with ROW_NUMBER ordered by created_at DESC NULLS LAST and a unique order ID DESC, then keep rn = 1. I would join the one-row-per-customer totals to the latest-order result and apply a customer ranking function to the totals. If the requirement is exactly three customers, ROW_NUMBER with a deterministic tie-breaker is appropriate; if ties should share a rank, use RANK or DENSE_RANK and accept that more than three rows may be returned. I would state currency and refund semantics and test tie cases."
+    }
+  ],
+  "schemaVersion": "2.0.0",
+  "topicId": "databases",
+  "description": "Advanced SQL: Window Functions, Ranking, Set Operations, and Latest-Row-per-Group Queries. Interview-focused explanations, worked examples, trade-offs, and practice."
+}

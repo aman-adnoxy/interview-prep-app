@@ -72,7 +72,6 @@ export default function TopicLearningPath({
 
   const totalSections = sections.length;
   const completedSections = sections.filter((s) => progressMap[s.id]?.completed).length;
-  const progressPercent = totalSections > 0 ? Math.round((completedSections / totalSections) * 100) : 0;
 
   // Zig-zag offsets for Duolingo winding path
   const offsets = [0, 42, -36, 48, -42, 24, -24];
@@ -116,7 +115,7 @@ export default function TopicLearningPath({
             const isCompleted = Boolean(prog?.completed);
             const isPublished = section.status === 'published';
             const isCurrent = isPublished && !isCompleted && (idx === 0 || progressMap[sections[idx - 1]?.id]?.completed);
-            const isLocked = !isPublished || (!isCompleted && !isCurrent);
+            const isLocked = !isPublished;
             const scoreTotal = section.questionCount ?? prog?.totalQuestions;
             const xOffset = offsets[idx % offsets.length];
 
@@ -143,8 +142,6 @@ export default function TopicLearningPath({
                     title={
                       !isPublished 
                         ? `${section.title} (Upcoming)` 
-                        : isLocked 
-                        ? 'Complete earlier sections to unlock' 
                         : section.title
                     }
                   >

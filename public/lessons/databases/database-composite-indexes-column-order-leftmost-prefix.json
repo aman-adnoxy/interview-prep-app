@@ -1,0 +1,508 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "database-composite-indexes-column-order-leftmost-prefix",
+  "topicId": "databases",
+  "sectionId": "database-composite-indexes-column-order-leftmost-prefix",
+  "title": "Composite Indexes: Column Order, Leftmost Prefix, and Covering Indexes",
+  "description": "Composite Indexes: Column Order, Leftmost Prefix, and Covering Indexes. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 38,
+  "learningObjectives": [
+    "Choose composite index order from predicates and ordering.",
+    "Explain leading-column behavior without overstating it.",
+    "Distinguish key columns from INCLUDE payload.",
+    "Diagnose why an index does not fit a query."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "A composite B-tree sorts by the first key, then the second within ties, and so on. Leading columns define the most direct search ranges. Design should match real filters, joins, ordering, and projection rather than blindly indexing every column."
+  },
+  "concepts": [
+    {
+      "id": "lexicographic",
+      "title": "Lexicographic ordering",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "An index on (tenant_id,status,created_at DESC) is ordered by tenant first, status within tenant, and time within equal tenant/status values. Column order is part of the data structure."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "CREATE INDEX events_tenant_status_created_idx ON events (tenant_id,status,created_at DESC);"
+        },
+        {
+          "type": "table",
+          "title": "Key distinctions",
+          "columns": [
+            "Concept",
+            "Mechanism",
+            "Trade-off"
+          ],
+          "rows": [
+            [
+              "Access path",
+              "Structure used to locate candidate rows",
+              "Does not guarantee planner selection."
+            ],
+            [
+              "Physical work",
+              "Pages, tuple visibility, result rows",
+              "May dominate logical lookup cost."
+            ],
+            [
+              "Workload fit",
+              "Predicates, ordering, distribution",
+              "Requires measurement, not assumptions."
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "column-order",
+      "title": "Choosing order",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Equality predicates on leading columns often provide a narrow starting range. A range predicate can limit how much later keys narrow the scan. ORDER BY and LIMIT can be as important as selectivity."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "SELECT id,created_at FROM events WHERE tenant_id=7 AND status='open' ORDER BY created_at DESC LIMIT 20;"
+        },
+        {
+          "type": "steps",
+          "title": "Reasoning sequence",
+          "steps": [
+            {
+              "id": "identify",
+              "title": "Identify query shape",
+              "description": "Write down predicates, joins, ordering, limit, and selected columns."
+            },
+            {
+              "id": "predict",
+              "title": "Predict the mechanism",
+              "description": "Explain which pages, entries, or operators the database is likely to visit."
+            },
+            {
+              "id": "measure",
+              "title": "Validate the plan",
+              "description": "Use actual rows and buffers to compare prediction with observed work."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "covering",
+      "title": "Covering and INCLUDE",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A covering index stores needed values as keys or included payload. PostgreSQL INCLUDE columns do not affect search ordering. They may reduce heap visits but enlarge the index and increase write work."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "CREATE INDEX events_tenant_created_cover_idx ON events (tenant_id,created_at DESC) INCLUDE (event_type,actor_id);"
+        },
+        {
+          "type": "worked_example",
+          "problem": "A query is slower than expected even though an index exists.",
+          "reasoning": [
+            "Check whether index keys and predicates align.",
+            "Compare estimated and actual row counts and inspect buffers.",
+            "Account for result size, heap access, and write/storage trade-offs."
+          ],
+          "outcome": "Make a targeted change only after plan evidence supports the hypothesis."
+        }
+      ]
+    },
+    {
+      "id": "ordering-limit",
+      "title": "Ordering, joins, and LIMIT",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A composite index can avoid a Sort when its key order matches ORDER BY and preceding keys are constrained compatibly. LIMIT may make an ordered path attractive because execution can stop after enough rows."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "CREATE INDEX orders_customer_created_idx ON orders (customer_id,created_at DESC,id DESC);"
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "Does the existence of an index guarantee PostgreSQL will use it?",
+          "answer": "No.",
+          "explanation": "The planner compares estimated costs, and another access path may be cheaper."
+        }
+      ]
+    },
+    {
+      "id": "diagnose-index",
+      "title": "Diagnose a mismatched index",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Write down WHERE, JOIN, ORDER BY, LIMIT, and selected columns. Compare leading keys and expressions, then inspect actual rows, loops, sorts, heap fetches, and estimates."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "EXPLAIN (ANALYZE, BUFFERS) SELECT id,created_at FROM orders WHERE customer_id=42 ORDER BY created_at DESC LIMIT 10;"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Trade-off 1",
+      "content": "Column order is a workload decision: consider equality/range predicates, ordering, joins, LIMIT, overlapping indexes, and write cost."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Composite keys use lexicographic ordering."
+    },
+    {
+      "type": "paragraph",
+      "text": "Leading equality keys often define the narrowest range."
+    },
+    {
+      "type": "paragraph",
+      "text": "Compatible key order can satisfy ORDER BY and allow early stop for LIMIT."
+    },
+    {
+      "type": "paragraph",
+      "text": "INCLUDE payload can cover output but does not affect key order."
+    },
+    {
+      "type": "paragraph",
+      "text": "Validate with actual plans and workload measurements."
+    }
+  ],
+  "questions": [
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q1",
+      "type": "single_select",
+      "prompt": "An index exists on (tenant_id, created_at DESC). A tenant feed runs `WHERE tenant_id = 7 AND created_at >= DATE '2026-10-01' ORDER BY created_at DESC LIMIT 20`. Why is this index a strong candidate?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The equality on the leading key narrows the tenant, and the next key can support the time range and order."
+        },
+        {
+          "id": "b",
+          "text": "The index is useful only if tenant_id is the most selective column in every tenant's data."
+        },
+        {
+          "id": "c",
+          "text": "The index guarantees an index-only scan even when the query selects columns not stored in it."
+        },
+        {
+          "id": "d",
+          "text": "The index makes created_at globally ordered across all tenants, so tenant_id is irrelevant."
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The key order matches the equality filter followed by the range/order requirement. Whether the final plan uses it still depends on costs, statistics, and selected columns."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q2",
+      "type": "single_select",
+      "prompt": "What is the key-order principle for (a,b,c)?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Sort by a, then b within a, then c within a and b"
+        },
+        {
+          "id": "b",
+          "text": "All columns are independently sorted"
+        },
+        {
+          "id": "c",
+          "text": "The most selective column is automatically first"
+        },
+        {
+          "id": "d",
+          "text": "Order never affects access"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Composite indexes use lexicographic order."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q3",
+      "type": "single_select",
+      "prompt": "Why can a range predicate on a leading key limit later-key narrowing?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It scans a range of leading values, so later keys may not form one narrow contiguous global range"
+        },
+        {
+          "id": "b",
+          "text": "PostgreSQL always ignores keys after the first"
+        },
+        {
+          "id": "c",
+          "text": "Range predicates disable B-trees"
+        },
+        {
+          "id": "d",
+          "text": "Later columns are deleted"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Later keys may still help filter or order, but may not narrow the initial range as well."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q4",
+      "type": "single_select",
+      "prompt": "Why put tenant_id first for a tenant feed?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The query fixes tenant_id and needs that tenant's rows in time order"
+        },
+        {
+          "id": "b",
+          "text": "It is always most selective in every dataset"
+        },
+        {
+          "id": "c",
+          "text": "It removes every other index"
+        },
+        {
+          "id": "d",
+          "text": "It prevents writes"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Design for actual query patterns, not a universal selectivity rule."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q5",
+      "type": "single_select",
+      "prompt": "What does INCLUDE do?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Adds non-key payload that may cover output without changing key order"
+        },
+        {
+          "id": "b",
+          "text": "Makes included columns first keys"
+        },
+        {
+          "id": "c",
+          "text": "Guarantees no heap fetches"
+        },
+        {
+          "id": "d",
+          "text": "Adds uniqueness to included values"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "INCLUDE stores payload, not search-order keys."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q6",
+      "type": "single_select",
+      "prompt": "What is the concern with (created_at, tenant_id) for one tenant's feed?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It may scan many timestamps across tenants before filtering the target tenant"
+        },
+        {
+          "id": "b",
+          "text": "It cannot store timestamps"
+        },
+        {
+          "id": "c",
+          "text": "It clusters the table"
+        },
+        {
+          "id": "d",
+          "text": "It invalidates ORDER BY"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Tenant-first indexing usually narrows this query more directly."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q7",
+      "type": "single_select",
+      "prompt": "Why can a matching index help ORDER BY ... LIMIT 10?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It may produce rows in the needed order and stop early"
+        },
+        {
+          "id": "b",
+          "text": "LIMIT forces sequential scan"
+        },
+        {
+          "id": "c",
+          "text": "Index removes all visibility checks"
+        },
+        {
+          "id": "d",
+          "text": "ORDER BY is ignored"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "A compatible ordered path can avoid a separate sort and stop after enough rows."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q8",
+      "type": "single_select",
+      "prompt": "A query filters by `created_at >= now() - interval '1 day'` and sorts by `created_at DESC`. An existing index is `(tenant_id, created_at DESC)`, and EXPLAIN shows a sequential scan. What is the most defensible diagnosis?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The query lacks a constraint on the leading tenant_id key, so the index may not provide a narrow global range; compare a created_at-leading index against the workload."
+        },
+        {
+          "id": "b",
+          "text": "PostgreSQL never uses composite indexes when a query has ORDER BY."
+        },
+        {
+          "id": "c",
+          "text": "The index is corrupt because all indexes must be used whenever a column appears in the predicate."
+        },
+        {
+          "id": "d",
+          "text": "Add created_at as an INCLUDE column to make it the first ordering key."
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The existing key order is tenant-first. A created_at-leading index may fit this query better, but validate selectivity, plans, and write/storage costs before adding it."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q9",
+      "type": "multi_select",
+      "prompt": "Which factors should inform composite index design?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Equality and range predicates"
+        },
+        {
+          "id": "b",
+          "text": "ORDER BY and LIMIT"
+        },
+        {
+          "id": "c",
+          "text": "Join keys and selected columns"
+        },
+        {
+          "id": "d",
+          "text": "Only highest-cardinality column regardless of workload"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "Design balances filtering, ordering, joins, coverage, and costs."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q10",
+      "type": "multi_select",
+      "prompt": "Which are limits/costs of covering indexes?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Larger index size"
+        },
+        {
+          "id": "b",
+          "text": "More write maintenance"
+        },
+        {
+          "id": "c",
+          "text": "They guarantee no heap reads"
+        },
+        {
+          "id": "d",
+          "text": "Visibility map can still require heap fetches"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "Coverage is conditional and costs storage/write work."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q11",
+      "type": "true_false",
+      "prompt": "An index on (a,b) is always as effective for WHERE b = ? as an index on (b).",
+      "correctAnswer": false,
+      "explanation": "Leading-key order matters; skip scan is conditional."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-q12",
+      "type": "true_false",
+      "prompt": "INCLUDE columns participate in B-tree search ordering just like key columns.",
+      "correctAnswer": false,
+      "explanation": "INCLUDE columns are payload, not ordering keys."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-scenario-1",
+      "prompt": "A multi-tenant API runs WHERE tenant_id=? AND status=? ORDER BY created_at DESC LIMIT 20. Propose an index and validation plan.",
+      "skillsTested": [
+        "Composite design",
+        "Predicate analysis",
+        "Plan validation"
+      ],
+      "strongAnswerPoints": [
+        "Consider (tenant_id,status,created_at DESC) if predicates are common.",
+        "Compare with tenant/time feed queries and existing prefixes.",
+        "Validate plans and write/storage costs."
+      ],
+      "pitfalls": [
+        "Assuming an index or plan node is automatically good or bad without workload evidence.",
+        "Changing multiple variables before measuring the effect."
+      ],
+      "referenceAnswer": "A candidate is (tenant_id,status,created_at DESC) if both equality predicates are common. If tenant-only recent-feed queries dominate, (tenant_id,created_at DESC) may be more reusable. Compare representative plans and write costs."
+    },
+    {
+      "id": "database-composite-indexes-column-order-leftmost-prefix-scenario-2",
+      "prompt": "An index on (account_id,created_at) exists, but a query filters only by created_at. Explain.",
+      "skillsTested": [
+        "Leftmost-prefix",
+        "Plan diagnosis"
+      ],
+      "strongAnswerPoints": [
+        "The leading account_id means created_at-only filtering may not be one narrow contiguous range.",
+        "Skip scan can apply in some cases, not all.",
+        "Check EXPLAIN and compare a created_at-leading index against workload cost."
+      ],
+      "pitfalls": [
+        "Assuming an index or plan node is automatically good or bad without workload evidence.",
+        "Changing multiple variables before measuring the effect."
+      ],
+      "referenceAnswer": "The index is ordered by account first. A created_at-only predicate normally cannot seek directly to one contiguous range across all accounts. Skip scan is conditional; validate the plan and workload before adding another index."
+    }
+  ]
+}

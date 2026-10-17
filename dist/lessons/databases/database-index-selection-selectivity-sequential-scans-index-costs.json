@@ -1,0 +1,510 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "database-index-selection-selectivity-sequential-scans-index-costs",
+  "topicId": "databases",
+  "sectionId": "database-index-selection-selectivity-sequential-scans-index-costs",
+  "title": "Index Selection, Selectivity, Sequential Scans, and When Indexes Hurt",
+  "description": "Index Selection, Selectivity, Sequential Scans, and When Indexes Hurt. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 38,
+  "learningObjectives": [
+    "Explain selectivity and its effect on access-path cost.",
+    "Explain why PostgreSQL may choose sequential scan despite an index.",
+    "Compare index, bitmap heap, and sequential scans.",
+    "Identify index write, storage, cache, vacuum, and operational costs.",
+    "Use workload evidence to justify adding or removing indexes."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "An index is a candidate access path, not a command. PostgreSQL estimates how many rows match and the cost of reaching them. Few matches can favor an index; many matches can make index traversal plus scattered heap fetches cost more than a sequential scan. Every index also taxes writes and storage."
+  },
+  "concepts": [
+    {
+      "id": "selectivity",
+      "title": "Selectivity and cardinality",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Selectivity describes how narrowly a predicate filters; cardinality is the number of matching rows. A selective predicate matches a small fraction. An unselective predicate matches many rows."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM orders WHERE status='shipped';"
+        },
+        {
+          "type": "table",
+          "title": "Key distinctions",
+          "columns": [
+            "Concept",
+            "Mechanism",
+            "Trade-off"
+          ],
+          "rows": [
+            [
+              "Access path",
+              "Structure used to locate candidate rows",
+              "Does not guarantee planner selection."
+            ],
+            [
+              "Physical work",
+              "Pages, tuple visibility, result rows",
+              "May dominate logical lookup cost."
+            ],
+            [
+              "Workload fit",
+              "Predicates, ordering, distribution",
+              "Requires measurement, not assumptions."
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paths",
+      "title": "Sequential, index, and bitmap paths",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Sequential scan is efficient for broad reads or small tables. Index scan navigates to keys but may cause random heap fetches. Bitmap heap scan groups tuple locations by page, often reducing random visits but generally losing index ordering."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "EXPLAIN (ANALYZE, BUFFERS) SELECT id,total_amount FROM orders WHERE status='shipped';"
+        },
+        {
+          "type": "steps",
+          "title": "Reasoning sequence",
+          "steps": [
+            {
+              "id": "identify",
+              "title": "Identify query shape",
+              "description": "Write down predicates, joins, ordering, limit, and selected columns."
+            },
+            {
+              "id": "predict",
+              "title": "Predict the mechanism",
+              "description": "Explain which pages, entries, or operators the database is likely to visit."
+            },
+            {
+              "id": "measure",
+              "title": "Validate the plan",
+              "description": "Use actual rows and buffers to compare prediction with observed work."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "seq-scan",
+      "title": "Why sequential scan can win",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "The planner compares estimated costs. Sequential scan can win for small tables, broad predicates, cached pages, or index paths requiring many scattered heap fetches. That may be correct rather than a planner bug."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM orders WHERE status <> 'cancelled';"
+        },
+        {
+          "type": "worked_example",
+          "problem": "A query is slower than expected even though an index exists.",
+          "reasoning": [
+            "Check whether index keys and predicates align.",
+            "Compare estimated and actual row counts and inspect buffers.",
+            "Account for result size, heap access, and write/storage trade-offs."
+          ],
+          "outcome": "Make a targeted change only after plan evidence supports the hypothesis."
+        }
+      ]
+    },
+    {
+      "id": "index-costs",
+      "title": "Indexes cost more than disk",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Every relevant insert adds index maintenance; deletes and updates can leave dead entries for vacuum to manage. Extra indexes consume disk/cache, add WAL and replication traffic, and affect backup, restore, and DDL operations."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "SELECT relname,indexrelname,idx_scan,pg_size_pretty(pg_relation_size(indexrelid)) FROM pg_stat_user_indexes;"
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "Does the existence of an index guarantee PostgreSQL will use it?",
+          "answer": "No.",
+          "explanation": "The planner compares estimated costs, and another access path may be cheaper."
+        }
+      ]
+    },
+    {
+      "id": "measure",
+      "title": "Evidence-driven decisions",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Pair index counters with query logs, frequency, latency/SLO impact, write rate, index size, plans, and a representative observation window. Change one index at a time and watch reads and writes."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "SELECT relname,indexrelname,idx_scan,idx_tup_read,idx_tup_fetch FROM pg_stat_user_indexes;"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Trade-off 1",
+      "content": "More indexes is not automatically better: an index may speed one query while slowing writes and consuming cache."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Selectivity and estimated row count influence path costs."
+    },
+    {
+      "type": "paragraph",
+      "text": "Sequential scans can be best for small tables or broad predicates."
+    },
+    {
+      "type": "paragraph",
+      "text": "Bitmap heap scans group heap access but generally do not preserve index order."
+    },
+    {
+      "type": "paragraph",
+      "text": "Every index adds storage, write, WAL, cache, and maintenance cost."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use representative plans and workload evidence before adding or dropping an index."
+    }
+  ],
+  "questions": [
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q1",
+      "type": "single_select",
+      "prompt": "What does high selectivity mean?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A predicate matches a small fraction of rows"
+        },
+        {
+          "id": "b",
+          "text": "A predicate matches almost every row"
+        },
+        {
+          "id": "c",
+          "text": "The table has many columns"
+        },
+        {
+          "id": "d",
+          "text": "The index is physically large"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "A selective predicate narrows results substantially."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q2",
+      "type": "single_select",
+      "prompt": "Why can sequential scan beat index scan when most rows match?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Sequential page reads can beat many scattered heap fetches"
+        },
+        {
+          "id": "b",
+          "text": "Indexes cannot return many rows"
+        },
+        {
+          "id": "c",
+          "text": "PostgreSQL never uses indexes on large tables"
+        },
+        {
+          "id": "d",
+          "text": "Sequential scans bypass MVCC"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Broad results can make index navigation plus heap access more costly."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q3",
+      "type": "single_select",
+      "prompt": "What does a bitmap heap scan do?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Collects tuple locations and groups heap visits by page"
+        },
+        {
+          "id": "b",
+          "text": "Sorts the table permanently"
+        },
+        {
+          "id": "c",
+          "text": "Stores results in a B-tree"
+        },
+        {
+          "id": "d",
+          "text": "Guarantees index order"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Bitmap scans can reduce random visits but generally do not preserve order."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q4",
+      "type": "single_select",
+      "prompt": "Why is there no universal selectivity threshold for index use?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Cost depends on size, row width, cache, correlation, estimates, and query shape"
+        },
+        {
+          "id": "b",
+          "text": "PostgreSQL ignores statistics"
+        },
+        {
+          "id": "c",
+          "text": "All indexes have equal cost"
+        },
+        {
+          "id": "d",
+          "text": "Sequential scans are prohibited"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The crossover depends on workload and physical costs."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q5",
+      "type": "single_select",
+      "prompt": "What is a common cost of another index on a write-heavy table?",
+      "options": [
+        {
+          "id": "a",
+          "text": "More index maintenance, storage, and cache use"
+        },
+        {
+          "id": "b",
+          "text": "All reads become slower by definition"
+        },
+        {
+          "id": "c",
+          "text": "The table loses its primary key"
+        },
+        {
+          "id": "d",
+          "text": "The index prevents vacuum"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Indexes trade read benefit for write, storage, and maintenance cost."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q6",
+      "type": "single_select",
+      "prompt": "Safest way to investigate an unused index?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Read actual plan and buffers, compare estimates, verify query shape"
+        },
+        {
+          "id": "b",
+          "text": "Disable sequential scans globally"
+        },
+        {
+          "id": "c",
+          "text": "Create duplicate indexes"
+        },
+        {
+          "id": "d",
+          "text": "Drop table statistics"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Plan evidence distinguishes rational sequential scans from design/estimate issues."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q7",
+      "type": "single_select",
+      "prompt": "Why can a low-cardinality status index be unhelpful for a broad predicate?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Many rows may match and require many heap visits"
+        },
+        {
+          "id": "b",
+          "text": "Low cardinality means no index entries"
+        },
+        {
+          "id": "c",
+          "text": "B-tree cannot store repeated values"
+        },
+        {
+          "id": "d",
+          "text": "PostgreSQL refuses text indexes"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Broad results may make a table scan cheaper."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q8",
+      "type": "single_select",
+      "prompt": "Why not drop an index based only on idx_scan?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Stats may reset and rare critical queries or constraints may rely on it"
+        },
+        {
+          "id": "b",
+          "text": "idx_scan measures latency exactly"
+        },
+        {
+          "id": "c",
+          "text": "Unused indexes use no storage"
+        },
+        {
+          "id": "d",
+          "text": "PostgreSQL has no index stats"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Use a representative observation window and account for constraints and rare paths."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q9",
+      "type": "multi_select",
+      "prompt": "Which can make sequential scan rational?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Small table"
+        },
+        {
+          "id": "b",
+          "text": "Predicate matches a large fraction"
+        },
+        {
+          "id": "c",
+          "text": "Index path requires scattered heap fetches"
+        },
+        {
+          "id": "d",
+          "text": "An index exists, therefore it must be used"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "The planner chooses by cost; index existence alone is not decisive."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q10",
+      "type": "multi_select",
+      "prompt": "What to consider before dropping a low-usage index?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Stats reset window and workload seasonality"
+        },
+        {
+          "id": "b",
+          "text": "Constraints and rare critical queries"
+        },
+        {
+          "id": "c",
+          "text": "Storage and write cost"
+        },
+        {
+          "id": "d",
+          "text": "Only idx_scan from the last minute"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "Usage counters need context and must be balanced against cost and importance."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q11",
+      "type": "true_false",
+      "prompt": "PostgreSQL is always wrong when it chooses a sequential scan while an index exists.",
+      "correctAnswer": false,
+      "explanation": "Sequential scans can be cheaper for small tables or broad predicates."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-q12",
+      "type": "true_false",
+      "prompt": "Every additional index has zero write cost if it speeds reads.",
+      "correctAnswer": false,
+      "explanation": "Indexes add write maintenance, storage, cache, WAL, and operational cost."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-scenario-1",
+      "prompt": "An interviewer says: “The table has an index, but PostgreSQL uses a sequential scan. The planner is broken.” Respond.",
+      "skillsTested": [
+        "Selectivity",
+        "Cost-based planning",
+        "Diagnosis"
+      ],
+      "strongAnswerPoints": [
+        "Explain broad-result and random heap-fetch trade-offs.",
+        "Compare estimates to actual rows and inspect buffers.",
+        "Check size, row width, correlation, cache, and query shape."
+      ],
+      "pitfalls": [
+        "Assuming an index or plan node is automatically good or bad without workload evidence.",
+        "Changing multiple variables before measuring the effect."
+      ],
+      "referenceAnswer": "Index presence does not make an index path cheapest. For broad predicates, sequential reads can beat scattered heap visits. Capture EXPLAIN ANALYZE with buffers, compare estimates with actuals, and inspect distribution and query shape before concluding the planner is wrong."
+    },
+    {
+      "id": "database-index-selection-selectivity-sequential-scans-index-costs-scenario-2",
+      "prompt": "A write-heavy table has 40 indexes and disk usage is high. How rationalize the set?",
+      "skillsTested": [
+        "Workload analysis",
+        "Write amplification",
+        "Safe changes"
+      ],
+      "strongAnswerPoints": [
+        "Map indexes to queries and constraints.",
+        "Review sizes, usage over a representative window, plans, and overlapping prefixes.",
+        "Test reversible changes and monitor reads, writes, WAL, vacuum, and latency."
+      ],
+      "pitfalls": [
+        "Assuming an index or plan node is automatically good or bad without workload evidence.",
+        "Changing multiple variables before measuring the effect."
+      ],
+      "referenceAnswer": "Map each index to queries and constraints, then balance read benefit against storage, cache, write amplification, WAL, and maintenance. Counters alone are insufficient. Test changes in stages and monitor read SLOs and write behavior."
+    }
+  ]
+}

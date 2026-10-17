@@ -35,7 +35,20 @@ export function resolveActiveAssignment(manifest, progressMap) {
   }
   return allSections.find(section => !progressMap[section.id]?.completed) || null;
 }
-export function getTodayKolkataString() {
-  try { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); }
-  catch { return new Date().toISOString().split('T')[0]; }
+export function getTodayKolkataString(date = new Date()) {
+  try { return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); }
+  catch { return date.toISOString().split('T')[0]; }
+}
+
+export function computeStreak(attempts) {
+  const activeDays = new Set((attempts || []).map((attempt) => getTodayKolkataString(new Date(attempt.timestamp))));
+  if (activeDays.size === 0) return 0;
+  const cursor = new Date();
+  if (!activeDays.has(getTodayKolkataString(cursor))) cursor.setDate(cursor.getDate() - 1);
+  let streak = 0;
+  while (activeDays.has(getTodayKolkataString(cursor))) {
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
 }

@@ -1,0 +1,518 @@
+{
+  "id": "sql-aggregation-group-by-having-ctes",
+  "sectionId": "sql-aggregation-group-by-having-ctes",
+  "title": "Aggregations, GROUP BY, HAVING, Subqueries, and CTEs",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 47,
+  "learningObjectives": [
+    "Explain how GROUP BY changes output grain.",
+    "Use COUNT, SUM, AVG, MIN, MAX and understand NULL behavior.",
+    "Distinguish WHERE from HAVING.",
+    "Choose between a subquery, CTE, and join based on clarity and semantics.",
+    "Avoid common aggregate errors caused by joins and ambiguous grouping."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Aggregation compresses many input rows into a smaller set of groups. Before writing GROUP BY, state what one output row represents. WHERE decides which input rows enter the groups; HAVING decides which completed groups survive."
+  },
+  "concepts": [
+    {
+      "id": "aggregate-grain",
+      "title": "GROUP BY defines the result grain",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "GROUP BY partitions the filtered input rows into groups sharing the grouping values. Each output row represents one group, not one source row. Every selected expression must be grouped, aggregated, or otherwise valid under the database's grouping rules."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Revenue per customer",
+          "source": "SELECT customer_id, SUM(total_amount) AS revenue\nFROM orders\nWHERE status = 'paid'\nGROUP BY customer_id;"
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Do not select arbitrary columns",
+          "content": "A customer_id group can contain many orders. Selecting an order's created_at without defining which timestamp you mean is ambiguous. Aggregate it, group by it (which changes the grain), or use a window/latest-row pattern."
+        }
+      ]
+    },
+    {
+      "id": "aggregate-null",
+      "title": "Aggregate functions and NULL",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "COUNT(*) counts input rows. COUNT(column) counts rows where that expression is not NULL. Most standard aggregates such as SUM, AVG, MIN and MAX ignore NULL inputs; except for COUNT, aggregates generally return NULL when there are no non-NULL inputs. A grouped query with no input rows produces no groups at all."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Count all rows versus known values",
+          "source": "SELECT\n  COUNT(*) AS order_rows,\n  COUNT(discount_amount) AS rows_with_discount_value,\n  SUM(discount_amount) AS total_known_discount\nFROM order_lines;"
+        },
+        {
+          "type": "paragraph",
+          "text": "Use COALESCE only when replacing NULL with a specific value matches the business meaning. COALESCE(SUM(x), 0) may be appropriate for a report, but it collapses 'no known value' and zero into the same displayed result."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Empty input: SUM is NULL, not zero",
+          "source": "SELECT SUM(amount) AS total, COALESCE(SUM(amount), 0) AS total_or_zero\nFROM payments\nWHERE false;"
+        },
+        {
+          "type": "paragraph",
+          "text": "An aggregate query without GROUP BY returns one row for empty input: COUNT(*) is 0, while SUM and AVG are NULL because there were no non-NULL inputs. A grouped query with no input rows produces no groups and therefore no rows. Use COALESCE only if zero is the correct business meaning."
+        },
+        {
+          "type": "callout",
+          "kind": "info",
+          "title": "PostgreSQL CTE behavior",
+          "content": "PostgreSQL 12 and later can inline many eligible non-recursive CTEs. CTEs are not universally materialized; query shape and MATERIALIZED / NOT MATERIALIZED directives affect planning."
+        }
+      ]
+    },
+    {
+      "id": "where-having",
+      "title": "WHERE filters rows; HAVING filters groups",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Customers with more than five paid orders",
+          "source": "SELECT customer_id, COUNT(*) AS paid_order_count\nFROM orders\nWHERE status = 'paid'\nGROUP BY customer_id\nHAVING COUNT(*) > 5;"
+        },
+        {
+          "type": "paragraph",
+          "text": "WHERE runs logically before grouping, so it cannot normally filter on an aggregate calculated for that group. HAVING applies after grouping. A predicate that can be applied before aggregation should usually be in WHERE, reducing the rows to aggregate and clarifying intent."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "HAVING is not a universal filter",
+          "content": "Putting every filter in HAVING can force unnecessary grouping and make intent less clear. Use WHERE for row predicates and HAVING for group-level predicates."
+        }
+      ]
+    },
+    {
+      "id": "subqueries-and-exists",
+      "title": "Subqueries: scalar, derived-table, and correlated",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A scalar subquery returns one value; a derived table is a subquery in FROM; a correlated subquery refers to values from the outer query. EXISTS tests whether a subquery returns at least one row. The optimizer may transform equivalent formulations, so do not assume every subquery is inherently slow or every JOIN inherently fast."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Compare each order to its customer's average",
+          "source": "SELECT o.id, o.customer_id, o.total_amount\nFROM orders o\nWHERE o.total_amount > (\n  SELECT AVG(o2.total_amount)\n  FROM orders o2\n  WHERE o2.customer_id = o.customer_id\n);"
+        },
+        {
+          "type": "paragraph",
+          "text": "A correlated expression is logically evaluated with outer-row values, but PostgreSQL can choose an efficient plan. Check semantics first, then inspect EXPLAIN ANALYZE if performance is in question."
+        }
+      ]
+    },
+    {
+      "id": "ctes",
+      "title": "CTEs as named query stages",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A common table expression (WITH ... AS ...) gives a subquery a name and lets a complex query be expressed as stages. This can improve readability and reuse. In PostgreSQL, a side-effect-free CTE referenced once can often be folded into the parent query; a multiply referenced CTE may be materialized depending on planner choices and directives. Do not repeat the outdated blanket claim that every CTE is an optimization fence."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Aggregate, then filter",
+          "source": "WITH customer_revenue AS (\n  SELECT customer_id, SUM(total_amount) AS revenue\n  FROM orders\n  WHERE status = 'paid'\n  GROUP BY customer_id\n)\nSELECT customer_id, revenue\nFROM customer_revenue\nWHERE revenue >= 10000\nORDER BY revenue DESC;"
+        },
+        {
+          "type": "paragraph",
+          "text": "Use a CTE when naming a meaningful intermediate relation improves comprehension. Use a subquery when the expression is small. Use a join when combining related row sets is the clearest model. Validate performance from the actual plan rather than choosing syntax based on folklore."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "WHERE versus HAVING",
+      "content": "Trade-off: WHERE reduces input rows; HAVING filters aggregated groups.\n\nFailure mode: Row predicates are placed in HAVING, obscuring intent and potentially aggregating unnecessary data.\n\nDecision rule: Filter individual records in WHERE; filter group metrics in HAVING."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "COUNT(*) versus COUNT(column)",
+      "content": "Trade-off: COUNT(*) counts rows; COUNT(column) counts non-NULL values of that expression.\n\nFailure mode: A nullable column is counted as if every row had a value, or a LEFT JOIN count includes the NULL-extended placeholder unexpectedly.\n\nDecision rule: Choose the unit being counted explicitly. After an outer join, COUNT(child.primary_key) often counts real children while COUNT(*) counts result rows."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "COALESCE aggregate result to zero",
+      "content": "Trade-off: Zero can simplify reports; NULL may correctly mean no known value or no contributing rows.\n\nFailure mode: A report hides the distinction between no data and a true zero.\n\nDecision rule: Apply COALESCE at the boundary where the business contract defines how missing aggregates should be presented."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "CTE versus subquery",
+      "content": "Trade-off: CTEs name logical stages; subqueries can keep small expressions local. PostgreSQL's planner may inline or materialize CTEs depending on query shape and directives.\n\nFailure mode: A developer assumes WITH is always faster or always slower.\n\nDecision rule: Prefer clarity, then inspect plans for materialization and performance effects on the actual PostgreSQL version."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Aggregation after one-to-many joins",
+      "content": "Trade-off: Joining before aggregation can provide needed dimensions but may multiply measures.\n\nFailure mode: Revenue or counts are overstated by matching multiple child rows.\n\nDecision rule: Define measure grain, inspect join cardinality, and aggregate independent relations before joining where appropriate."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "What does GROUP BY define?\n\nAnswer: The grain of the result: one output row per distinct grouping-key combination after filtering."
+    },
+    {
+      "type": "paragraph",
+      "text": "WHERE versus HAVING?\n\nAnswer: WHERE filters input rows before grouping; HAVING filters groups after aggregation."
+    },
+    {
+      "type": "paragraph",
+      "text": "COUNT(*) versus COUNT(x)?\n\nAnswer: COUNT(*) counts rows; COUNT(x) counts rows where x is not NULL."
+    },
+    {
+      "type": "paragraph",
+      "text": "Do SUM and AVG count NULL as zero?\n\nAnswer: No. They ignore NULL inputs. Use COALESCE only when zero is the correct business meaning."
+    },
+    {
+      "type": "paragraph",
+      "text": "Does a grouped query return one row with zero when no rows match?\n\nAnswer: No. With GROUP BY, no input rows means no groups and therefore no output rows. An aggregate query without GROUP BY generally returns one row, with COUNT 0 and other aggregates often NULL."
+    },
+    {
+      "type": "paragraph",
+      "text": "Are CTEs always materialized in PostgreSQL?\n\nAnswer: No. PostgreSQL can fold eligible CTEs into the parent query; materialization depends on query shape, references and directives."
+    },
+    {
+      "type": "paragraph",
+      "text": "When should EXISTS be considered?\n\nAnswer: When the question is whether at least one related row exists and child values are not needed in the output."
+    },
+    {
+      "type": "paragraph",
+      "text": "What should you establish before aggregating?\n\nAnswer: The intended output grain and the unit represented by each measure."
+    }
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single_select",
+      "prompt": "Which clause filters customers after their paid-order counts have been computed?",
+      "options": [
+        {
+          "id": "a",
+          "text": "WHERE COUNT(*) > 5"
+        },
+        {
+          "id": "b",
+          "text": "HAVING COUNT(*) > 5"
+        },
+        {
+          "id": "c",
+          "text": "ON COUNT(*) > 5"
+        },
+        {
+          "id": "d",
+          "text": "ORDER BY COUNT(*) > 5"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "HAVING filters groups using aggregate results. WHERE filters rows before grouping."
+    },
+    {
+      "id": "q2",
+      "type": "single_select",
+      "prompt": "A table has 10 rows, and a nullable column x is NULL in 4 of them. What are COUNT(*) and COUNT(x)?",
+      "options": [
+        {
+          "id": "a",
+          "text": "10 and 6"
+        },
+        {
+          "id": "b",
+          "text": "6 and 10"
+        },
+        {
+          "id": "c",
+          "text": "10 and 10"
+        },
+        {
+          "id": "d",
+          "text": "6 and 6"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "COUNT(*) counts all ten rows; COUNT(x) counts the six non-NULL values."
+    },
+    {
+      "id": "q3",
+      "type": "true_false",
+      "prompt": "In modern PostgreSQL, every CTE is always materialized and prevents predicate pushdown.",
+      "correctAnswer": false,
+      "explanation": "Eligible CTEs may be folded into the parent query. Actual behavior depends on query shape, references and materialization directives."
+    },
+    {
+      "id": "q4",
+      "type": "multi_select",
+      "prompt": "Which statements are correct?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A GROUP BY query's output grain is determined by its grouping expressions."
+        },
+        {
+          "id": "b",
+          "text": "COUNT(column) counts NULL values."
+        },
+        {
+          "id": "c",
+          "text": "An outer join can make COUNT(*) differ from COUNT(child.id)."
+        },
+        {
+          "id": "d",
+          "text": "A subquery is always slower than a JOIN."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "c"
+      ],
+      "explanation": "Grouping expressions define output grain. NULL-extended rows can be counted by COUNT(*) but not by COUNT(child.id); optimizer transformations mean subqueries are not inherently slower."
+    },
+    {
+      "id": "q5",
+      "type": "single_select",
+      "prompt": "What does `SELECT SUM(amount) FROM payments WHERE false;` return, and how can it return zero instead?",
+      "options": [
+        {
+          "id": "a",
+          "text": "No rows; use GROUP BY to force a zero row."
+        },
+        {
+          "id": "b",
+          "text": "NULL; use COALESCE(SUM(amount), 0) if zero is intended."
+        },
+        {
+          "id": "c",
+          "text": "0 because SUM treats empty input as zero."
+        },
+        {
+          "id": "d",
+          "text": "An error because aggregates require a row."
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "An aggregate query without GROUP BY returns one row for empty input, but SUM returns NULL. COALESCE can map it to zero when that is the intended business meaning."
+    },
+    {
+      "id": "q6",
+      "type": "single_select",
+      "prompt": "A report should return departments whose average salary exceeds 100000. Where should that aggregate condition go?",
+      "options": [
+        {
+          "id": "a",
+          "text": "WHERE AVG(salary) > 100000"
+        },
+        {
+          "id": "b",
+          "text": "HAVING AVG(salary) > 100000 after GROUP BY department_id"
+        },
+        {
+          "id": "c",
+          "text": "ON AVG(salary) > 100000 without a join"
+        },
+        {
+          "id": "d",
+          "text": "ORDER BY AVG(salary) > 100000"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "WHERE filters input rows before grouping. HAVING filters groups after aggregate values are calculated."
+    },
+    {
+      "id": "q7",
+      "type": "multi_select",
+      "prompt": "Which statements about COUNT are correct? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "COUNT(*) counts rows."
+        },
+        {
+          "id": "b",
+          "text": "COUNT(column_name) excludes rows where that expression is NULL."
+        },
+        {
+          "id": "c",
+          "text": "COUNT(DISTINCT column_name) counts distinct non-NULL values."
+        },
+        {
+          "id": "d",
+          "text": "COUNT(column_name) always equals COUNT(*)."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "COUNT(*) counts rows; COUNT(expression) counts non-NULL expression values; DISTINCT removes duplicate non-NULL values for the count."
+    },
+    {
+      "id": "q8",
+      "type": "true_false",
+      "prompt": "A CTE is always materialized and therefore always makes a query slower than an equivalent subquery.",
+      "correctAnswer": false,
+      "explanation": "CTE optimization and materialization behavior depends on the database and query shape. In modern PostgreSQL, many non-recursive CTEs can be inlined; use EXPLAIN rather than assuming."
+    },
+    {
+      "id": "q9",
+      "type": "single_select",
+      "prompt": "You need customers whose total paid amount exceeds 5000, but only successful payments count. Which order of operations is most appropriate?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Group every payment, then filter individual rows with WHERE status = 'success' outside the aggregate"
+        },
+        {
+          "id": "b",
+          "text": "Filter successful payment rows, GROUP BY customer, then HAVING SUM(amount) > 5000"
+        },
+        {
+          "id": "c",
+          "text": "Use ORDER BY SUM(amount) before GROUP BY"
+        },
+        {
+          "id": "d",
+          "text": "Use DISTINCT amount to avoid aggregation"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Filter the input set to successful payments, aggregate by customer, then use HAVING to keep groups over the threshold."
+    },
+    {
+      "id": "q10",
+      "type": "multi_select",
+      "prompt": "A query joins orders to items and payment attempts before summing order totals. Which changes can prevent inflated totals? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "Aggregate payment attempts to one row per order before joining."
+        },
+        {
+          "id": "b",
+          "text": "Aggregate items to one row per order before joining if item-level columns are not needed."
+        },
+        {
+          "id": "c",
+          "text": "Add DISTINCT to every selected column without analyzing the grain."
+        },
+        {
+          "id": "d",
+          "text": "Document the intended row grain at each CTE boundary."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "Independent one-to-many relations can multiply each order. Pre-aggregation and explicit grain protect totals; arbitrary DISTINCT can hide rather than fix the bug."
+    },
+    {
+      "id": "q11",
+      "type": "single_select",
+      "prompt": "Which is a valid reason to use a CTE in a complex analytical query?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It guarantees a faster execution plan."
+        },
+        {
+          "id": "b",
+          "text": "It makes logical stages explicit and can improve readability and reviewability."
+        },
+        {
+          "id": "c",
+          "text": "It automatically adds indexes to intermediate results."
+        },
+        {
+          "id": "d",
+          "text": "It makes NULL values behave like zero."
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "CTEs can name and separate logical stages. They do not automatically guarantee speed, indexing, or different NULL semantics."
+    },
+    {
+      "id": "q12",
+      "type": "true_false",
+      "prompt": "WHERE is evaluated after HAVING, so WHERE can filter using aggregate results such as SUM(amount).",
+      "correctAnswer": false,
+      "explanation": "WHERE filters input rows before grouping. HAVING filters groups after aggregate calculations."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "s1",
+      "prompt": "Write a query to find customers whose total captured payments exceed ₹50,000, and explain how you avoid counting failed or duplicated payment rows.",
+      "skillsTested": [
+        "aggregation",
+        "filter placement",
+        "grain reasoning",
+        "data correctness"
+      ],
+      "strongAnswerPoints": [
+        "State whether the measure is payment-level or order-level.",
+        "Filter captured payments before grouping.",
+        "Group by customer identity and use HAVING for the aggregate threshold.",
+        "Check whether joins to line items or refunds could multiply payment rows.",
+        "Clarify currency, refund and reversal semantics."
+      ],
+      "pitfalls": [
+        "Filtering aggregate totals in WHERE.",
+        "Joining payment rows to multiple order lines before summing.",
+        "Ignoring refund or currency semantics."
+      ],
+      "referenceAnswer": "I would first define the metric: captured payment amounts net of refunds, if that is what the business asks. I would filter to the qualifying payment states in WHERE, group by customer_id, sum at payment grain, and use HAVING SUM(...) > 50000. If other one-to-many tables are needed, I would aggregate them separately or use EXISTS to avoid multiplying payments. I would confirm currency and refund rules before presenting the result as revenue."
+    },
+    {
+      "id": "s2",
+      "prompt": "A monthly revenue report returns inflated totals after a developer joins orders, order_items, and payment_attempts. Refactor the query conceptually and explain how you would validate the result.",
+      "skillsTested": [
+        "aggregate semantics",
+        "CTE design",
+        "grain analysis",
+        "fan-out debugging",
+        "test design"
+      ],
+      "strongAnswerPoints": [
+        "State the required output grain, such as one row per month and currency.",
+        "Decide whether revenue means order value, captured payment value, or net revenue after refunds.",
+        "Aggregate items and payment attempts separately to the needed grain before joining.",
+        "Filter qualifying rows before aggregation and use HAVING for aggregate thresholds.",
+        "Handle NULL/no-row aggregates deliberately rather than assuming zero.",
+        "Validate against hand-calculated fixtures with multiple items and multiple payment attempts per order."
+      ],
+      "pitfalls": [
+        "Assuming a CTE automatically improves performance.",
+        "Using SUM(DISTINCT amount) as a universal de-duplication strategy.",
+        "Combining currencies or refunds without defining the metric."
+      ],
+      "referenceAnswer": "First I would define revenue precisely and state the report grain, including month and currency. The raw joins multiply rows because one order can have multiple items and payment attempts. I would aggregate each source independently, for example payment attempts to one row per order and items to one row per order, then join those aggregates and group to month. Filters on raw rows belong before aggregation; thresholds on aggregate results belong in HAVING. I would test orders with multiple items, retries, partial captures, refunds, and no qualifying payments against hand-calculated expected totals. Finally I would inspect EXPLAIN ANALYZE for performance rather than assuming the CTE shape is faster."
+    }
+  ],
+  "schemaVersion": "2.0.0",
+  "topicId": "databases",
+  "description": "Aggregations, GROUP BY, HAVING, Subqueries, and CTEs. Interview-focused explanations, worked examples, trade-offs, and practice."
+}

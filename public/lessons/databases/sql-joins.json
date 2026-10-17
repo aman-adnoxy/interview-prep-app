@@ -1,0 +1,769 @@
+{
+  "id": "sql-joins-inner-left-right-full",
+  "sectionId": "sql-joins",
+  "title": "SQL Joins: INNER, LEFT, RIGHT, and FULL OUTER JOIN",
+  "difficulty": "beginner",
+  "estimatedMinutes": 44,
+  "learningObjectives": [
+    "Predict which rows survive each common join type.",
+    "Explain how join predicates and NULL extension affect results.",
+    "Distinguish filtering rows in ON from filtering rows in WHERE.",
+    "Recognize one-to-many row multiplication and accidental duplicates.",
+    "Choose a join shape that answers a concrete business question."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "A join combines row pairs that satisfy a matching condition. Think in terms of candidate pairs, the ON predicate, and then whether unmatched rows are preserved. Most join mistakes come from forgetting one of those stages or assuming a join returns one output row per entity."
+  },
+  "concepts": [
+    {
+      "id": "join-pairs",
+      "title": "A join is a relationship between row sets",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "For each row on the left, SQL considers rows on the right that satisfy the join condition. INNER JOIN returns matching pairs. LEFT JOIN additionally returns each unmatched left row once, filling right-side columns with NULL. RIGHT JOIN is the mirror image. FULL OUTER JOIN preserves unmatched rows from both sides."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Join type",
+            "Matching pairs",
+            "Unmatched left",
+            "Unmatched right"
+          ],
+          "rows": [
+            [
+              "INNER",
+              "Yes",
+              "Discarded",
+              "Discarded"
+            ],
+            [
+              "LEFT",
+              "Yes",
+              "Kept; right columns NULL",
+              "Discarded"
+            ],
+            [
+              "RIGHT",
+              "Yes",
+              "Discarded",
+              "Kept; left columns NULL"
+            ],
+            [
+              "FULL OUTER",
+              "Yes",
+              "Kept",
+              "Kept"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "worked-join",
+      "title": "Predict output before running SQL",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Sample data",
+          "source": "-- customers\nid | name\n1  | Asha\n2  | Ben\n3  | Chen\n\n-- orders\nid | customer_id\n10 | 1\n11 | 1\n12 | 4"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Keep every customer, with any matching orders",
+          "source": "SELECT c.id AS customer_id, c.name, o.id AS order_id\nFROM customers AS c\nLEFT JOIN orders AS o\n  ON o.customer_id = c.id\nORDER BY c.id, o.id;"
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Customer",
+            "Name",
+            "Order"
+          ],
+          "rows": [
+            [
+              "1",
+              "Asha",
+              "10"
+            ],
+            [
+              "1",
+              "Asha",
+              "11"
+            ],
+            [
+              "2",
+              "Ben",
+              "NULL"
+            ],
+            [
+              "3",
+              "Chen",
+              "NULL"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Asha appears twice because she has two matching orders. The unmatched order with customer_id = 4 does not appear in this LEFT JOIN because the left side is customers. This is expected, not duplicate corruption."
+        },
+        {
+          "type": "paragraph",
+          "text": "Worked join matrix: these are raw staging tables without an enforced foreign key, so the order with customer_id = 4 is an intentional orphan representing an import-quality exception. A production schema with an enforced valid foreign key would reject it."
+        },
+        {
+          "type": "table",
+          "title": "Input customers",
+          "columns": [
+            "id",
+            "name"
+          ],
+          "rows": [
+            [
+              "1",
+              "Asha"
+            ],
+            [
+              "2",
+              "Ben"
+            ],
+            [
+              "3",
+              "Chen"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "title": "Input staging_orders",
+          "columns": [
+            "id",
+            "customer_id",
+            "amount"
+          ],
+          "rows": [
+            [
+              "101",
+              "1",
+              "50"
+            ],
+            [
+              "102",
+              "1",
+              "20"
+            ],
+            [
+              "103",
+              "4",
+              "90"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "title": "INNER JOIN output",
+          "columns": [
+            "customer_id",
+            "name",
+            "order_id",
+            "amount"
+          ],
+          "rows": [
+            [
+              "1",
+              "Asha",
+              "101",
+              "50"
+            ],
+            [
+              "1",
+              "Asha",
+              "102",
+              "20"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "title": "LEFT JOIN output",
+          "columns": [
+            "customer_id",
+            "name",
+            "order_id",
+            "amount"
+          ],
+          "rows": [
+            [
+              "1",
+              "Asha",
+              "101",
+              "50"
+            ],
+            [
+              "1",
+              "Asha",
+              "102",
+              "20"
+            ],
+            [
+              "2",
+              "Ben",
+              "NULL",
+              "NULL"
+            ],
+            [
+              "3",
+              "Chen",
+              "NULL",
+              "NULL"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "title": "RIGHT JOIN output",
+          "columns": [
+            "customer_id",
+            "name",
+            "order_id",
+            "amount"
+          ],
+          "rows": [
+            [
+              "1",
+              "Asha",
+              "101",
+              "50"
+            ],
+            [
+              "1",
+              "Asha",
+              "102",
+              "20"
+            ],
+            [
+              "NULL",
+              "NULL",
+              "103",
+              "90"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "title": "FULL OUTER JOIN output",
+          "columns": [
+            "customer_id",
+            "name",
+            "order_id",
+            "amount"
+          ],
+          "rows": [
+            [
+              "1",
+              "Asha",
+              "101",
+              "50"
+            ],
+            [
+              "1",
+              "Asha",
+              "102",
+              "20"
+            ],
+            [
+              "2",
+              "Ben",
+              "NULL",
+              "NULL"
+            ],
+            [
+              "3",
+              "Chen",
+              "NULL",
+              "NULL"
+            ],
+            [
+              "NULL",
+              "NULL",
+              "103",
+              "90"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "on-vs-where",
+      "title": "The ON versus WHERE trap",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "ON defines which row pairs count as matches. WHERE filters the joined result. With an outer join, moving a predicate from ON to WHERE can remove NULL-extended rows and change the query's meaning."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Preserve all customers; attach only paid orders",
+          "source": "SELECT c.id, o.id\nFROM customers c\nLEFT JOIN orders o\n  ON o.customer_id = c.id\n AND o.status = 'paid';"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "This excludes customers with no paid order",
+          "source": "SELECT c.id, o.id\nFROM customers c\nLEFT JOIN orders o\n  ON o.customer_id = c.id\nWHERE o.status = 'paid';"
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Why the second query changes behavior",
+          "content": "For customers without a paid order, o.status is NULL after the outer join. The WHERE predicate is not TRUE, so those rows are removed. The query behaves like an inner filter for this condition."
+        }
+      ]
+    },
+    {
+      "id": "cardinality-and-duplicates",
+      "title": "Cardinality, many-to-many joins, and accidental multiplication",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "If a customer has three orders and two addresses, joining both one-to-many relations can yield six rows for that customer. This is the product of matching child counts, not necessarily a database bug. Aggregating after such a join can inflate totals."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Avoid summing an order total after joining multiple child collections",
+          "source": "-- Safer pattern: aggregate each independent child relation first.\nWITH order_totals AS (\n  SELECT customer_id, SUM(total_amount) AS amount\n  FROM orders\n  GROUP BY customer_id\n), address_counts AS (\n  SELECT customer_id, COUNT(*) AS address_count\n  FROM addresses\n  GROUP BY customer_id\n)\nSELECT c.id, ot.amount, ac.address_count\nFROM customers c\nLEFT JOIN order_totals ot ON ot.customer_id = c.id\nLEFT JOIN address_counts ac ON ac.customer_id = c.id;"
+        },
+        {
+          "type": "paragraph",
+          "text": "Use EXISTS when the question is whether a related row exists and you do not need the child columns. It avoids returning one parent row per matching child."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Customers who have at least one paid order",
+          "source": "SELECT c.id, c.name\nFROM customers c\nWHERE EXISTS (\n  SELECT 1 FROM orders o\n  WHERE o.customer_id = c.id\n    AND o.status = 'paid'\n);"
+        }
+      ]
+    },
+    {
+      "id": "join-design",
+      "title": "Choosing a join that matches the question",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Start by stating the required output grain: one row per customer, per order, or per customer-order pair? Then identify which side must be preserved and whether you need child columns or only existence. This is often more important than memorizing join syntax."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Business question",
+            "Useful pattern",
+            "Caution"
+          ],
+          "rows": [
+            [
+              "Only orders with a valid customer",
+              "INNER JOIN",
+              "Orphaned order rows are excluded; integrity should usually be enforced separately."
+            ],
+            [
+              "Every customer, even with no orders",
+              "LEFT JOIN",
+              "Child filters in WHERE may remove unmatched customers."
+            ],
+            [
+              "Every row from either source, including unmatched",
+              "FULL OUTER JOIN",
+              "Useful for reconciliation; output may contain NULLs from either side."
+            ],
+            [
+              "Customers with at least one matching order",
+              "EXISTS",
+              "A regular join can duplicate customers when multiple orders match."
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "INNER versus LEFT JOIN",
+      "content": "Trade-off: INNER expresses matched entities only; LEFT preserves the left population for completeness and reporting.\n\nFailure mode: A report intended to include zero-activity customers silently omits them.\n\nDecision rule: Identify which population must be complete. Preserve that side with an outer join and test a row with no match."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Predicate in ON versus WHERE",
+      "content": "Trade-off: ON controls match eligibility; WHERE filters the final joined rows.\n\nFailure mode: Moving a right-side filter to WHERE turns a LEFT JOIN into an effective inner filter.\n\nDecision rule: If you need all left rows but only qualifying right-side matches, put the right-side qualification in ON."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "JOIN versus EXISTS",
+      "content": "Trade-off: JOIN exposes related columns and pairs; EXISTS tests presence without multiplying the outer row set.\n\nFailure mode: A parent appears multiple times because several child rows match, breaking counts or pagination.\n\nDecision rule: Use EXISTS for existence questions; use JOIN when pair-level output is intended. Aggregate or deduplicate only when that matches the required grain."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Join then aggregate versus aggregate first",
+      "content": "Trade-off: Joining raw one-to-many relations is flexible but can multiply rows; pre-aggregation reduces cardinality and clarifies the measure's grain.\n\nFailure mode: Revenue is overstated after joining orders to multiple addresses or line-item dimensions.\n\nDecision rule: Write down the grain of each metric and aggregate independent child relations before joining them when necessary."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "RIGHT JOIN versus reversing table order",
+      "content": "Trade-off: RIGHT JOIN is valid, but LEFT JOIN is often easier to read because the preserved side stays visually leftmost.\n\nFailure mode: Readers misunderstand which population is preserved in a complex query.\n\nDecision rule: Prefer the form that makes preservation obvious; consistency and correctness matter more than stylistic dogma."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "What does INNER JOIN return?\n\nAnswer: Only row pairs whose ON condition is TRUE."
+    },
+    {
+      "type": "paragraph",
+      "text": "What does LEFT JOIN preserve?\n\nAnswer: Every left-side row. Rows without a match get NULL for right-side columns."
+    },
+    {
+      "type": "paragraph",
+      "text": "Why can a customer appear multiple times after joining orders?\n\nAnswer: Each matching order creates a customer-order pair; a one-to-many relationship naturally produces multiple output rows."
+    },
+    {
+      "type": "paragraph",
+      "text": "What is the ON-versus-WHERE rule for outer joins?\n\nAnswer: ON decides which right-side rows match; WHERE filters the result after unmatched rows have been NULL-extended."
+    },
+    {
+      "type": "paragraph",
+      "text": "When is EXISTS better than JOIN?\n\nAnswer: When you only need to know whether a matching row exists and do not need the child row in the output."
+    },
+    {
+      "type": "paragraph",
+      "text": "Why can SUM be inflated after joining two one-to-many relations?\n\nAnswer: Each child relation can multiply rows from the other, causing the same measure to be repeated."
+    },
+    {
+      "type": "paragraph",
+      "text": "What is the first question to ask when debugging a join?\n\nAnswer: What should one output row represent—the result grain?"
+    }
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single_select",
+      "prompt": "You need every customer, including customers with no orders. Which join best expresses this?",
+      "options": [
+        {
+          "id": "a",
+          "text": "INNER JOIN"
+        },
+        {
+          "id": "b",
+          "text": "LEFT JOIN with customers on the left"
+        },
+        {
+          "id": "c",
+          "text": "CROSS JOIN"
+        },
+        {
+          "id": "d",
+          "text": "FULL JOIN is always required"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "LEFT JOIN preserves all rows from its left input and NULL-extends missing order columns."
+    },
+    {
+      "id": "q2",
+      "type": "single_select",
+      "prompt": "A LEFT JOIN is followed by WHERE orders.status = 'paid'. What is the likely effect on customers with no orders?",
+      "options": [
+        {
+          "id": "a",
+          "text": "They remain with NULL order values."
+        },
+        {
+          "id": "b",
+          "text": "They are filtered out because the predicate is not TRUE."
+        },
+        {
+          "id": "c",
+          "text": "They are converted into a synthetic paid order."
+        },
+        {
+          "id": "d",
+          "text": "PostgreSQL moves the predicate into ON without changing semantics."
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The WHERE condition filters the NULL-extended rows. Put the qualification in ON if every customer must remain."
+    },
+    {
+      "id": "q3",
+      "type": "multi_select",
+      "prompt": "Which practices can help prevent incorrect counts or totals in joins?",
+      "options": [
+        {
+          "id": "a",
+          "text": "State the intended output grain."
+        },
+        {
+          "id": "b",
+          "text": "Use EXISTS when only existence matters."
+        },
+        {
+          "id": "c",
+          "text": "Assume a JOIN returns one row per left-side entity."
+        },
+        {
+          "id": "d",
+          "text": "Aggregate independent one-to-many relations before combining them when appropriate."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "The output grain determines whether row multiplication is expected or a bug. EXISTS and pre-aggregation can preserve the intended grain."
+    },
+    {
+      "id": "q4",
+      "type": "true_false",
+      "prompt": "A LEFT JOIN always returns exactly one row for every left-side row.",
+      "correctAnswer": false,
+      "explanation": "It preserves every left-side row at least once, but multiple matching right-side rows produce multiple result rows."
+    },
+    {
+      "id": "q5",
+      "type": "single_select",
+      "prompt": "Given `customers(id) = {1, 2}` and `orders(customer_id) = {1, 1, 3}`, what does this query return?\n\n```sql\nSELECT c.id, o.customer_id\nFROM customers c LEFT JOIN orders o ON o.customer_id = c.id;\n```",
+      "options": [
+        {
+          "id": "a",
+          "text": "Two rows: (1,1) and (2,NULL)."
+        },
+        {
+          "id": "b",
+          "text": "Three rows: (1,1), (1,1), and (2,NULL)."
+        },
+        {
+          "id": "c",
+          "text": "Two rows: (1,1) and (1,1)."
+        },
+        {
+          "id": "d",
+          "text": "Four rows because FULL OUTER JOIN behavior is implied."
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Two orders for customer 1 create two pairs. LEFT JOIN preserves customer 2 with NULL order columns; the order for customer 3 is not returned."
+    },
+    {
+      "id": "q6",
+      "type": "single_select",
+      "prompt": "A report must list every product and its number of paid orders, including products with zero paid orders. Which query shape best preserves the required grain?",
+      "options": [
+        {
+          "id": "a",
+          "text": "INNER JOIN paid_orders, then COUNT(*)"
+        },
+        {
+          "id": "b",
+          "text": "LEFT JOIN paid orders with the paid predicate in ON, then aggregate per product"
+        },
+        {
+          "id": "c",
+          "text": "LEFT JOIN all orders and put orders.status = 'paid' in WHERE"
+        },
+        {
+          "id": "d",
+          "text": "CROSS JOIN products and orders"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The LEFT JOIN preserves products with no paid orders, and placing the paid condition in ON limits matches without filtering away unmatched products."
+    },
+    {
+      "id": "q7",
+      "type": "multi_select",
+      "prompt": "Which situations can create more output rows than the number of parent rows? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "A parent has multiple matching child rows."
+        },
+        {
+          "id": "b",
+          "text": "Two independent one-to-many child relations are joined before aggregation."
+        },
+        {
+          "id": "c",
+          "text": "An INNER JOIN always deduplicates the left side."
+        },
+        {
+          "id": "d",
+          "text": "A many-to-many relationship has multiple matches on both sides."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "Joins return matching row pairs. Multiple matches and independent one-to-many relationships multiply rows; joins do not automatically deduplicate."
+    },
+    {
+      "id": "q8",
+      "type": "true_false",
+      "prompt": "For a LEFT JOIN, moving a right-table filter from ON to WHERE can remove left rows that have no qualifying match.",
+      "correctAnswer": true,
+      "explanation": "The outer join creates NULL-extended rows first; a WHERE predicate on the right side may evaluate to UNKNOWN and remove those rows."
+    },
+    {
+      "id": "q9",
+      "type": "single_select",
+      "prompt": "You only need customers for whom at least one successful payment exists, and you do not need payment columns. Which approach often expresses this most directly?",
+      "options": [
+        {
+          "id": "a",
+          "text": "CROSS JOIN payments"
+        },
+        {
+          "id": "b",
+          "text": "LEFT JOIN payments and SELECT DISTINCT every column"
+        },
+        {
+          "id": "c",
+          "text": "WHERE EXISTS (SELECT 1 FROM payments ... WHERE payment.customer_id = customer.id AND status = 'success')"
+        },
+        {
+          "id": "d",
+          "text": "FULL OUTER JOIN payments"
+        }
+      ],
+      "correctOptionId": "c",
+      "explanation": "EXISTS expresses a boolean existence test without producing one parent row per matching payment."
+    },
+    {
+      "id": "q10",
+      "type": "multi_select",
+      "prompt": "A query sums order totals after joining orders to order_items and payment_attempts. Which fixes are appropriate? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "Aggregate items and attempts independently to the needed grain before joining."
+        },
+        {
+          "id": "b",
+          "text": "Define the output grain before writing the joins."
+        },
+        {
+          "id": "c",
+          "text": "Use SUM(DISTINCT order_total) as a universal fix."
+        },
+        {
+          "id": "d",
+          "text": "Use EXISTS when a relation is only needed for an existence test."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "Pre-aggregate independent child collections and preserve the intended grain. SUM(DISTINCT value) can incorrectly collapse two different orders with equal totals."
+    },
+    {
+      "id": "q11",
+      "type": "single_select",
+      "prompt": "You need a reconciliation report containing every row from both imported customer data and CRM data, including unmatched rows from either source. Which join fits?",
+      "options": [
+        {
+          "id": "a",
+          "text": "INNER JOIN"
+        },
+        {
+          "id": "b",
+          "text": "LEFT JOIN only"
+        },
+        {
+          "id": "c",
+          "text": "RIGHT JOIN only"
+        },
+        {
+          "id": "d",
+          "text": "FULL OUTER JOIN"
+        }
+      ],
+      "correctOptionId": "d",
+      "explanation": "FULL OUTER JOIN preserves matches and unmatched rows from both inputs, making it useful for reconciliation."
+    },
+    {
+      "id": "q12",
+      "type": "true_false",
+      "prompt": "If child.parent_id is a nullable, enforced foreign key to parent.id, an INNER JOIN from child to parent returns one row for every child row.",
+      "correctAnswer": false,
+      "explanation": "A foreign key permits NULL unless the column is also NOT NULL. A child row with parent_id = NULL has no matching parent row and is excluded by the INNER JOIN. The foreign key also does not prevent multiple child rows from referencing the same parent."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "s1",
+      "prompt": "A dashboard's revenue doubled after a developer added a JOIN to customer addresses. Explain the likely cause and how you would debug and fix it.",
+      "skillsTested": [
+        "join cardinality",
+        "aggregation correctness",
+        "SQL debugging"
+      ],
+      "strongAnswerPoints": [
+        "Inspect the row grain before and after the join.",
+        "Check whether customers can have multiple addresses and orders.",
+        "Compare order counts and revenue before and after the added join.",
+        "Aggregate the revenue at order/customer grain before joining independent child collections, or use a query structure that preserves grain.",
+        "Do not use SUM(DISTINCT amount) as a generic repair; two legitimate orders can have the same amount."
+      ],
+      "pitfalls": [
+        "Assuming duplicate-looking output means duplicate stored data.",
+        "Adding DISTINCT without understanding the multiplication.",
+        "Using SUM(DISTINCT amount) and accidentally removing legitimate equal-valued orders."
+      ],
+      "referenceAnswer": "I would compare the query's grain before and after the address join. If each order matches multiple addresses, the order's amount is repeated once per matching address and SUM is inflated. I would inspect cardinalities and validate the metric at its intended grain, then aggregate orders before joining address counts or use EXISTS if address data is only a filter. DISTINCT is not a general fix because distinct orders can have equal amounts."
+    },
+    {
+      "id": "s2",
+      "prompt": "A customer dashboard must show each customer, paid revenue, unpaid order count, and latest successful payment. Customers may have no orders, orders may have multiple payment attempts, and totals must not be inflated. Describe a query plan and explain the row grain at each stage.",
+      "skillsTested": [
+        "join semantics",
+        "outer joins",
+        "aggregation grain",
+        "fan-out diagnosis",
+        "query decomposition"
+      ],
+      "strongAnswerPoints": [
+        "Start from customers so inactive customers are preserved.",
+        "Aggregate paid revenue or successful payments to one row per customer/order before joining unrelated one-to-many relations.",
+        "Calculate unpaid order counts at the intended customer/order grain.",
+        "Select the latest successful payment deterministically with ROW_NUMBER or a suitable equivalent.",
+        "Use LEFT JOIN for optional metrics and COALESCE only where zero is the intended meaning.",
+        "Validate results with small fixtures including no-order customers and multiple payment attempts."
+      ],
+      "pitfalls": [
+        "Joining raw orders and raw payment attempts before summing order totals.",
+        "Moving optional-side predicates into WHERE and dropping customers.",
+        "Using DISTINCT as a blanket fix for fan-out."
+      ],
+      "referenceAnswer": "I would keep customers as the driving relation and compute each metric at its natural grain in separate CTEs. Paid revenue should be aggregated from successful payment rows to one row per customer or order as the business definition requires; unpaid orders should be counted once per order; latest successful payment should use ROW_NUMBER ordered by timestamp plus a unique payment ID. Then LEFT JOIN these one-row-per-customer result sets to customers. I would test customers with no orders, multiple payment attempts, ties in timestamps, and refunded or partially captured payments, and only use COALESCE where the product semantics define absence as zero."
+    }
+  ],
+  "schemaVersion": "2.0.0",
+  "topicId": "databases",
+  "description": "SQL Joins: INNER, LEFT, RIGHT, and FULL OUTER JOIN. Interview-focused explanations, worked examples, trade-offs, and practice."
+}

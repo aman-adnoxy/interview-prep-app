@@ -10,11 +10,13 @@ import InterviewScenarioView from './components/InterviewScenarioView';
 import HistoryModal from './components/HistoryModal';
 import SettingsModal from './components/SettingsModal';
 
-import { fetchManifest, fetchLesson, resolveActiveAssignment, getTodayKolkataString } from './services/api';
+import { fetchManifest, fetchLesson, resolveActiveAssignment, getTodayKolkataString, computeStreak } from './services/api';
 import { 
   getAllProgress, 
   saveSectionProgress, 
   recordQuizAttempt,
+  getAllQuizAttempts,
+  getPreferences,
   clearAllProgress 
 } from './services/storage';
 import { sound } from './services/sound';
@@ -36,6 +38,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastQuizResult, setLastQuizResult] = useState(null);
+  const [quizAttempts, setQuizAttempts] = useState([]);
+  const [streak, setStreak] = useState(0);
 
   // Modals state (declared at top before any conditional return)
   const [showHistory, setShowHistory] = useState(false);
@@ -46,13 +50,19 @@ export default function App() {
     async function initApp() {
       try {
         setLoading(true);
-        const [manifestData, storedProgress] = await Promise.all([
+        const [manifestData, storedProgress, storedAttempts] = await Promise.all([
           fetchManifest(),
           getAllProgress(),
+          getAllQuizAttempts(),
         ]);
+
+        // Honor persisted sound preference before any interaction needs audio
+        sound.setEnabled(getPreferences().sound !== false);
 
         setManifest(manifestData);
         setProgressMap(storedProgress || {});
+        setQuizAttempts(storedAttempts || []);
+        setStreak(computeStreak(storedAttempts));
 
         const initialActive = resolveActiveAssignment(manifestData, storedProgress || {});
         setActiveSection(initialActive);
@@ -171,6 +181,14 @@ export default function App() {
         records
       });
 
+      // Include the just-recorded attempt so the streak reflects today's activity
+      const updatedAttempts = [
+        ...quizAttempts,
+        { sectionId, timestamp: new Date().toISOString() }
+      ];
+      setQuizAttempts(updatedAttempts);
+      setStreak(computeStreak(updatedAttempts));
+
       const newMap = { ...progressMap, [sectionId]: updatedProg };
       setProgressMap(newMap);
 
@@ -180,6 +198,20 @@ export default function App() {
     }
 
     setViewState('summary');
+  };
+
+  const handleResetProgress = async () => {
+    await clearAllProgress();
+    const emptied = {};
+    setProgressMap(emptied);
+    setActiveSection(resolveActiveAssignment(manifest, emptied));
+    setSelectedTopic(null);
+    setViewState('home');
+    setActiveTab('assignment');
+    setLastQuizResult(null);
+    // History is stored alongside progress attempts
+    setQuizAttempts([]);
+    setStreak(0);
   };
 
   const handleDoneSummary = async () => {
@@ -257,6 +289,7 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={(tab) => { sound.playTap(); setActiveTab(tab); }}
           completedCount={completedCount}
+          streak={streak}
           onOpenSettings={() => setShowSettings(true)}
         />
       )}
@@ -312,13 +345,11 @@ export default function App() {
             lesson={currentLesson}
             onBack={() => { sound.playTap(); setViewState(selectedTopic ? 'topic-path' : 'home'); }}
             onStartQuiz={() => { sound.playTap(); setViewState('quiz'); }}
-            onOpenScenario={() => { sound.playTap(); setViewState('scenario'); }}
           />
         )}
 
         {viewState === 'quiz' && (
           <QuizExperience
-            sectionId={activeSection?.id || currentLesson?.sectionId}
             questions={currentLesson?.questions || []}
             onFinishQuiz={handleFinishQuiz}
             onExit={() => { sound.playTap(); setViewState(selectedTopic ? 'topic-path' : 'home'); }}

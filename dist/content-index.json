@@ -1,0 +1,71 @@
+{
+  "indexVersion": "1.0.0",
+  "schemaVersion": "2.0.0",
+  "lessons": {
+    "advanced-sql-window-functions-set-operations": {
+      "path": "/lessons/databases/advanced-sql-window-functions-set-operations.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "database-btree-structure-traversal-splits": {
+      "path": "/lessons/databases/index-design-performance.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "database-clustered-vs-nonclustered-indexes": {
+      "path": "/lessons/databases/database-clustered-vs-nonclustered-indexes.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "database-composite-indexes-column-order-leftmost-prefix": {
+      "path": "/lessons/databases/database-composite-indexes-column-order-leftmost-prefix.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "database-index-selection-selectivity-sequential-scans-index-costs": {
+      "path": "/lessons/databases/database-index-selection-selectivity-sequential-scans-index-costs.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "database-postgresql-index-types": {
+      "path": "/lessons/databases/database-postgresql-index-types.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "database-query-plan-analysis-explain-analyze-joins-sorts-spills": {
+      "path": "/lessons/databases/database-query-plan-analysis-explain-analyze-joins-sorts-spills.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "database-index-fundamentals": {
+      "path": "/lessons/databases/index-fundamentals.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 8
+    },
+    "relational-databases-keys-constraints": {
+      "path": "/lessons/databases/relational-databases-keys-constraints.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "database-schema-design-normalization": {
+      "path": "/lessons/databases/schema-design-normalization.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "sql-aggregation-group-by-having-ctes": {
+      "path": "/lessons/databases/sql-aggregation-group-by-having-ctes.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "sql-joins-inner-left-right-full": {
+      "path": "/lessons/databases/sql-joins.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "sql-null-three-valued-logic": {
+      "path": "/lessons/databases/sql-null-semantics.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    }
+  }
+}

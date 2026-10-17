@@ -1,0 +1,515 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "database-postgresql-index-types",
+  "topicId": "databases",
+  "sectionId": "database-postgresql-index-types",
+  "title": "PostgreSQL Index Types: B-tree, GIN, GiST, BRIN, Partial, and Expression Indexes",
+  "description": "PostgreSQL Index Types: B-tree, GIN, GiST, BRIN, Partial, and Expression Indexes. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 40,
+  "learningObjectives": [
+    "Match PostgreSQL index families to operators and data shape.",
+    "Explain GIN, GiST, and BRIN trade-offs.",
+    "Use partial and expression indexes when predicates match.",
+    "Recognize operator-class requirements."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "An index is useful only when its operator class supports query operators. B-tree is the general default for equality, ranges, and ordering; GIN indexes component values; GiST provides generalized search structures; BRIN summarizes physical block ranges. Partial and expression indexes specialize which rows or expressions are indexed."
+  },
+  "concepts": [
+    {
+      "id": "btree-hash",
+      "title": "B-tree and hash",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "B-tree is the general-purpose PostgreSQL index for equality, inequalities, ranges, and compatible ordering. Hash supports equality but not ordered range traversal."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "CREATE INDEX events_created_idx ON events (created_at);"
+        },
+        {
+          "type": "table",
+          "title": "Key distinctions",
+          "columns": [
+            "Concept",
+            "Mechanism",
+            "Trade-off"
+          ],
+          "rows": [
+            [
+              "Access path",
+              "Structure used to locate candidate rows",
+              "Does not guarantee planner selection."
+            ],
+            [
+              "Physical work",
+              "Pages, tuple visibility, result rows",
+              "May dominate logical lookup cost."
+            ],
+            [
+              "Workload fit",
+              "Predicates, ordering, distribution",
+              "Requires measurement, not assumptions."
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gin",
+      "title": "GIN inverted indexes",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "GIN maps component keys to rows containing those keys. It can support array membership, JSONB containment, and text-search patterns when the operator class supports the operator."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "CREATE INDEX products_attrs_gin ON products USING GIN (attributes jsonb_path_ops);"
+        },
+        {
+          "type": "steps",
+          "title": "Reasoning sequence",
+          "steps": [
+            {
+              "id": "identify",
+              "title": "Identify query shape",
+              "description": "Write down predicates, joins, ordering, limit, and selected columns."
+            },
+            {
+              "id": "predict",
+              "title": "Predict the mechanism",
+              "description": "Explain which pages, entries, or operators the database is likely to visit."
+            },
+            {
+              "id": "measure",
+              "title": "Validate the plan",
+              "description": "Use actual rows and buffers to compare prediction with observed work."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gist-brin",
+      "title": "GiST and BRIN",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "GiST is a generalized search-tree framework with operator-class-specific behavior. BRIN stores summaries for heap block ranges and is compact when values correlate with physical row order, but summaries are lossy and require rechecks."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "CREATE INDEX events_created_brin ON events USING BRIN (created_at);"
+        },
+        {
+          "type": "worked_example",
+          "problem": "A query is slower than expected even though an index exists.",
+          "reasoning": [
+            "Check whether index keys and predicates align.",
+            "Compare estimated and actual row counts and inspect buffers.",
+            "Account for result size, heap access, and write/storage trade-offs."
+          ],
+          "outcome": "Make a targeted change only after plan evidence supports the hypothesis."
+        }
+      ]
+    },
+    {
+      "id": "partial",
+      "title": "Partial indexes",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A partial index contains only rows satisfying its predicate, useful for stable subsets such as pending jobs. PostgreSQL can use it only when it can prove the query predicate implies the index predicate."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "CREATE INDEX jobs_pending_created_idx ON jobs (created_at) WHERE status = 'pending';"
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "Does the existence of an index guarantee PostgreSQL will use it?",
+          "answer": "No.",
+          "explanation": "The planner compares estimated costs, and another access path may be cheaper."
+        }
+      ]
+    },
+    {
+      "id": "expression",
+      "title": "Expression indexes",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "An expression index stores a computed value such as lower(email). The query expression must be compatible, and functions used in PostgreSQL index expressions must be immutable."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL example",
+          "source": "CREATE UNIQUE INDEX users_lower_email_uq ON users (lower(email));"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Trade-off 1",
+      "content": "Index type follows operators and data shape, not column labels."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Trade-off 2",
+      "content": "GIN can be costly to update; BRIN depends on physical correlation; partial/expression indexes require predicate/expression matching."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "B-tree supports common equality, range, and ordering patterns."
+    },
+    {
+      "type": "paragraph",
+      "text": "GIN is an inverted index for supported component-search operators."
+    },
+    {
+      "type": "paragraph",
+      "text": "GiST is operator-class-specific; BRIN summarizes physical block ranges."
+    },
+    {
+      "type": "paragraph",
+      "text": "Partial indexes contain only rows matching their predicate."
+    },
+    {
+      "type": "paragraph",
+      "text": "Expression indexes need compatible expressions and immutable functions."
+    }
+  ],
+  "questions": [
+    {
+      "id": "database-postgresql-index-types-q1",
+      "type": "single_select",
+      "prompt": "Which is the default starting point for scalar equality, range, and ordered scans?",
+      "options": [
+        {
+          "id": "a",
+          "text": "B-tree"
+        },
+        {
+          "id": "b",
+          "text": "GIN"
+        },
+        {
+          "id": "c",
+          "text": "BRIN"
+        },
+        {
+          "id": "d",
+          "text": "GiST in every case"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "B-tree supports equality, range, and compatible ordering."
+    },
+    {
+      "id": "database-postgresql-index-types-q2",
+      "type": "single_select",
+      "prompt": "A query uses JSONB containment with @>. Which is a common candidate?",
+      "options": [
+        {
+          "id": "a",
+          "text": "GIN with compatible JSONB operator class"
+        },
+        {
+          "id": "b",
+          "text": "BRIN on any column"
+        },
+        {
+          "id": "c",
+          "text": "Hash on the document"
+        },
+        {
+          "id": "d",
+          "text": "B-tree regardless of operator"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "GIN often supports JSONB containment, but operator class matters."
+    },
+    {
+      "id": "database-postgresql-index-types-q3",
+      "type": "single_select",
+      "prompt": "When is BRIN especially attractive?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Huge table where values correlate with physical block order"
+        },
+        {
+          "id": "b",
+          "text": "Tiny table with random point lookups"
+        },
+        {
+          "id": "c",
+          "text": "Every ordered result without sorting"
+        },
+        {
+          "id": "d",
+          "text": "Every JSONB containment query"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "BRIN summarizes block ranges and can be tiny when physical correlation is strong."
+    },
+    {
+      "id": "database-postgresql-index-types-q4",
+      "type": "single_select",
+      "prompt": "What defines a partial index?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It stores only rows satisfying its predicate"
+        },
+        {
+          "id": "b",
+          "text": "It stores all rows but compresses them"
+        },
+        {
+          "id": "c",
+          "text": "It always indexes the first column"
+        },
+        {
+          "id": "d",
+          "text": "It ignores WHERE clauses"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "It is usable when the planner can prove the query predicate implies the index predicate."
+    },
+    {
+      "id": "database-postgresql-index-types-q5",
+      "type": "single_select",
+      "prompt": "What does an index on lower(email) directly support?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Compatible predicates using lower(email)"
+        },
+        {
+          "id": "b",
+          "text": "Every query on every text column"
+        },
+        {
+          "id": "c",
+          "text": "Ordering by unrelated created_at"
+        },
+        {
+          "id": "d",
+          "text": "A foreign key constraint"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The query expression must align with the index expression."
+    },
+    {
+      "id": "database-postgresql-index-types-q6",
+      "type": "single_select",
+      "prompt": "What is an important limitation of hash indexes?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Equality only; no ordered range traversal"
+        },
+        {
+          "id": "b",
+          "text": "They store every table column"
+        },
+        {
+          "id": "c",
+          "text": "They are the only index supporting equality"
+        },
+        {
+          "id": "d",
+          "text": "They cannot be updated"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Hash does not provide B-tree ordering/range behavior."
+    },
+    {
+      "id": "database-postgresql-index-types-q7",
+      "type": "single_select",
+      "prompt": "What is GiST best understood as?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Generalized search-tree framework whose behavior depends on operator class"
+        },
+        {
+          "id": "b",
+          "text": "An inverted index only for JSONB"
+        },
+        {
+          "id": "c",
+          "text": "Block-range summaries"
+        },
+        {
+          "id": "d",
+          "text": "A synonym for clustered table"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "GiST supports different searches through operator classes."
+    },
+    {
+      "id": "database-postgresql-index-types-q8",
+      "type": "single_select",
+      "prompt": "A partial index has WHERE status='pending'. Which query is the direct fit?",
+      "options": [
+        {
+          "id": "a",
+          "text": "WHERE status='pending' AND created_at < now()"
+        },
+        {
+          "id": "b",
+          "text": "WHERE status='done'"
+        },
+        {
+          "id": "c",
+          "text": "WHERE status <> 'pending'"
+        },
+        {
+          "id": "d",
+          "text": "A query needing all statuses"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The query predicate implies the partial-index predicate."
+    },
+    {
+      "id": "database-postgresql-index-types-q9",
+      "type": "multi_select",
+      "prompt": "Which pairings are reasonable?",
+      "options": [
+        {
+          "id": "a",
+          "text": "B-tree for ordered timestamp ranges"
+        },
+        {
+          "id": "b",
+          "text": "GIN for supported JSONB containment"
+        },
+        {
+          "id": "c",
+          "text": "BRIN for huge physically correlated data"
+        },
+        {
+          "id": "d",
+          "text": "Hash for ORDER BY timestamp and ranges"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "B-tree, GIN, and BRIN serve different workloads; hash does not provide ordering."
+    },
+    {
+      "id": "database-postgresql-index-types-q10",
+      "type": "multi_select",
+      "prompt": "What should you check before adding a specialized index?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Exact operators and opclass support"
+        },
+        {
+          "id": "b",
+          "text": "Data distribution and correlation"
+        },
+        {
+          "id": "c",
+          "text": "Index size and write cost"
+        },
+        {
+          "id": "d",
+          "text": "Only declared column type"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "Index selection depends on operators, data shape, and workload cost."
+    },
+    {
+      "id": "database-postgresql-index-types-q11",
+      "type": "true_false",
+      "prompt": "BRIN stores a full ordered copy of every indexed value like a B-tree.",
+      "correctAnswer": false,
+      "explanation": "BRIN stores block-range summaries and can require rechecks."
+    },
+    {
+      "id": "database-postgresql-index-types-q12",
+      "type": "true_false",
+      "prompt": "An expression index on lower(email) automatically serves every predicate on email without lower().",
+      "correctAnswer": false,
+      "explanation": "The query expression must be compatible with the index expression."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "database-postgresql-index-types-scenario-1",
+      "prompt": "A PostgreSQL table has JSONB attributes and timestamps. Product needs JSONB containment and time-range reports. Recommend indexes.",
+      "skillsTested": [
+        "Index-family choice",
+        "Operator classes",
+        "Workload trade-offs"
+      ],
+      "strongAnswerPoints": [
+        "Evaluate GIN for JSONB containment with a suitable opclass.",
+        "Evaluate B-tree for ordered time ranges; BRIN if huge and physically correlated.",
+        "Measure index size, write rate, rechecks, and plans."
+      ],
+      "pitfalls": [
+        "Assuming an index or plan node is automatically good or bad without workload evidence.",
+        "Changing multiple variables before measuring the effect."
+      ],
+      "referenceAnswer": "I would evaluate GIN for JSONB containment and B-tree for time-range/order queries. For a huge append-oriented table with strong time-to-heap-order correlation, BRIN may be smaller but lossy. Confirm operators/opclasses and benchmark using EXPLAIN ANALYZE and buffers."
+    },
+    {
+      "id": "database-postgresql-index-types-scenario-2",
+      "prompt": "A partial index on status='pending' is not used by a prepared query with a status parameter. What do you check?",
+      "skillsTested": [
+        "Predicate implication",
+        "Prepared plans",
+        "Plan analysis"
+      ],
+      "strongAnswerPoints": [
+        "Check if the planner can prove the query implies the index predicate.",
+        "Inspect generic/custom plan behavior where relevant.",
+        "Use EXPLAIN before changing query/index."
+      ],
+      "pitfalls": [
+        "Assuming an index or plan node is automatically good or bad without workload evidence.",
+        "Changing multiple variables before measuring the effect."
+      ],
+      "referenceAnswer": "The planner must prove the query predicate implies the partial-index predicate. A generic parameterized plan may not know the value is always pending. Inspect the actual plan and prepared-plan behavior before changing the design."
+    }
+  ]
+}

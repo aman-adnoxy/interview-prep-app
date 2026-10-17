@@ -12,8 +12,7 @@ import ContentBlock from './ContentBlock';
 export default function LessonView({
   lesson,
   onBack,
-  onStartQuiz,
-  onOpenScenario
+  onStartQuiz
 }) {
   const [conceptIndex, setConceptIndex] = useState(0);
   const [viewMode, setViewMode] = useState('concept'); // 'concept' | 'tradeoffs' | 'revision'

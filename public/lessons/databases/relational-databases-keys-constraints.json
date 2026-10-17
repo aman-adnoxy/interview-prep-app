@@ -1,0 +1,596 @@
+{
+  "id": "relational-databases-keys-constraints",
+  "sectionId": "relational-databases-keys-constraints",
+  "title": "Relational Databases, Primary Keys, Foreign Keys, and Constraints",
+  "difficulty": "beginner",
+  "estimatedMinutes": 42,
+  "learningObjectives": [
+    "Explain relations, rows, columns, and the role of a relational schema.",
+    "Choose primary and candidate keys based on identity and business rules.",
+    "Distinguish primary, foreign, unique, check, and not-null constraints.",
+    "Explain how constraints protect invariants under concurrent writes.",
+    "Diagnose when a constraint should be immediate, deferred, or represented differently."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "A relational database is not merely a collection of tables. It is a system for storing facts under explicit rules. A row represents a fact about an entity or relationship; keys identify which fact it is; constraints define which states are allowed. Application validation improves user experience, but database constraints are the final shared guardrail for every writer."
+  },
+  "concepts": [
+    {
+      "id": "relations-and-schema",
+      "title": "Tables model facts, not screens",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A relation has a defined set of attributes (columns), and each row is a tuple containing values for those attributes. A table should model a stable entity or relationship—such as a customer, order, or order line—not mirror a UI page. One customer may have many orders, so customer and order facts normally belong in separate relations."
+        },
+        {
+          "type": "paragraph",
+          "text": "From a screen to a model"
+        },
+        {
+          "type": "worked_example",
+          "problem": "An order screen displays customer name, customer email, order number, order date, and total.",
+          "reasoning": [
+            "The screen combines facts about a customer and an order.",
+            "Store customer identity and contact details in customers; store order identity, customer reference, and date in orders.",
+            "Calculate the total from order lines when that is the authoritative definition, or persist a carefully maintained snapshot if business requirements demand it."
+          ],
+          "outcome": "The model avoids duplicating mutable customer facts on every order while preserving the ability to query the screen with a JOIN."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "A table is not automatically normalized",
+          "content": "Putting every field visible on one screen into one table may duplicate facts and create update anomalies. Start from entities, relationships, and invariants—not from page layout."
+        }
+      ]
+    },
+    {
+      "id": "keys-and-identity",
+      "title": "Primary keys, candidate keys, and business identity",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A candidate key is a minimal set of attributes that uniquely identifies a row. One candidate key is selected as the primary key; other candidate keys can be enforced with UNIQUE constraints. A primary key is unique and NOT NULL. A foreign key is not an identity for the child row: it identifies the referenced parent row."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Key choice",
+            "Advantages",
+            "Risks"
+          ],
+          "rows": [
+            [
+              "Surrogate key (e.g. BIGINT or UUID)",
+              "Stable identity; decouples references from business meaning; convenient for relationships.",
+              "Does not enforce business uniqueness by itself; still add UNIQUE constraints for natural business keys."
+            ],
+            [
+              "Natural key (e.g. ISO country code)",
+              "Meaningful and may already be unique by domain rules.",
+              "Can change, be wide, be inconsistently formatted, or encode assumptions that later prove false."
+            ],
+            [
+              "Composite key (e.g. order_id + line_number)",
+              "Can express identity that exists only within a parent or scope.",
+              "Every referencing relation may need multiple columns; key changes can be expensive."
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Email is not always a safe primary key"
+        },
+        {
+          "type": "worked_example",
+          "problem": "A users table uses email as its primary key.",
+          "reasoning": [
+            "Email can change when a person changes address.",
+            "Case normalization and provider-specific semantics can be subtle.",
+            "Other tables now couple their references to a mutable contact attribute."
+          ],
+          "outcome": "Use a stable user_id as primary key and, if required, enforce the product's email uniqueness policy separately with a UNIQUE constraint and a clearly defined normalization rule."
+        }
+      ]
+    },
+    {
+      "id": "foreign-keys",
+      "title": "Foreign keys and relationship integrity",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A foreign key ensures that a referencing value matches an eligible key in the referenced table, subject to NULL rules. It prevents orphaned references when all writes obey the database constraint. A foreign key does not automatically create an index on the referencing columns in PostgreSQL; consider one when parent deletes/updates or child lookups need it."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "A parent-child relationship",
+          "source": "CREATE TABLE customers (\n  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  email TEXT NOT NULL UNIQUE\n);\n\nCREATE TABLE orders (\n  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  customer_id BIGINT NOT NULL\n    REFERENCES customers(id) ON DELETE RESTRICT,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE INDEX idx_orders_customer_id ON orders(customer_id);"
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Referential action",
+            "Use carefully when"
+          ],
+          "rows": [
+            [
+              "RESTRICT / NO ACTION",
+              "Prevent parent deletion while dependent rows exist; NO ACTION can be deferred if the constraint is deferrable."
+            ],
+            [
+              "CASCADE",
+              "Delete or update dependent rows automatically when that is genuinely the lifecycle rule."
+            ],
+            [
+              "SET NULL",
+              "Keep the child but remove the relationship; the foreign-key column must permit NULL."
+            ],
+            [
+              "SET DEFAULT",
+              "Replace the reference with its default, which must still satisfy the constraint."
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "warning",
+          "title": "CASCADE is a business decision",
+          "content": "It is not merely a convenience. A cascade can remove a large graph of data. Use it when the child has no independent lifecycle and deletion is intended to propagate."
+        }
+      ]
+    },
+    {
+      "id": "constraints-as-invariants",
+      "title": "Constraints encode invariants",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Constraints describe states the database must reject: NOT NULL for required values, UNIQUE for uniqueness, CHECK for row-level predicates, PRIMARY KEY for row identity, and FOREIGN KEY for referential integrity. Defaults provide values when a column is omitted; they do not replace constraints."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Encode rules close to the data",
+          "source": "CREATE TABLE payments (\n  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  order_id BIGINT NOT NULL REFERENCES orders(id),\n  amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),\n  currency CHAR(3) NOT NULL,\n  status TEXT NOT NULL CHECK (status IN ('pending', 'captured', 'failed'))\n);"
+        },
+        {
+          "type": "paragraph",
+          "text": "A CHECK constraint passes when its expression is TRUE or UNKNOWN; it rejects FALSE. Because comparisons with NULL commonly yield UNKNOWN, CHECK (amount > 0) does not itself prohibit NULL—use NOT NULL as well. A CHECK constraint is not a general cross-row or cross-table invariant. Use UNIQUE, FOREIGN KEY, exclusion constraints, or carefully designed transactional logic where appropriate."
+        },
+        {
+          "type": "paragraph",
+          "text": "Why application validation alone races"
+        },
+        {
+          "type": "worked_example",
+          "problem": "Two requests check whether a username exists; both see no row and both attempt to insert it.",
+          "reasoning": [
+            "The reads can both be correct at the time they execute.",
+            "Without a database uniqueness rule, both inserts may succeed.",
+            "A transaction around each request does not necessarily serialize the competing requests."
+          ],
+          "outcome": "Add UNIQUE(username), attempt the insert, and handle the unique-violation result as a normal conflict. The database constraint is the concurrency-safe invariant."
+        }
+      ]
+    },
+    {
+      "id": "transactions-and-constraint-timing",
+      "title": "Constraints under concurrent writes and deferred checks",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A constraint is valuable because it is enforced at the database boundary, not because it runs in a particular application layer. Most PostgreSQL constraints are checked immediately. Some UNIQUE, PRIMARY KEY, FOREIGN KEY, and EXCLUDE constraints can be declared DEFERRABLE and checked at transaction end or when explicitly requested. CHECK and NOT NULL constraints are not deferrable."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Deferring a constraint when order of updates matters",
+          "source": "BEGIN;\nSET CONSTRAINTS ALL DEFERRED;\n-- Perform a sequence of changes that temporarily violates\n-- a DEFERRABLE constraint but restores validity before COMMIT.\nCOMMIT;"
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "A transaction is not a substitute for a constraint",
+          "content": "A transaction groups work atomically, but it does not automatically prevent every competing transaction from creating a duplicate or violating a business invariant. Choose constraints and concurrency control together."
+        },
+        {
+          "type": "paragraph",
+          "text": "When a write fails due to a constraint, PostgreSQL rejects the statement; in an explicit transaction, the transaction is then in an error state until rolled back or recovered with a savepoint. Application code should map known constraint failures to meaningful outcomes without exposing raw database details."
+        },
+        {
+          "type": "paragraph",
+          "text": "RESTRICT prevents a referenced row from being deleted while dependent rows exist. NO ACTION checks the constraint at its normal check time; if the constraint is DEFERRABLE, that check can be postponed until transaction end."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Enforce uniqueness under concurrency",
+          "source": "CREATE UNIQUE INDEX users_username_uq ON users (username);\n\nINSERT INTO users (username) VALUES ('aman') ON CONFLICT (username) DO NOTHING;"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Surrogate key versus natural key",
+      "content": "Trade-off: Surrogate keys provide stable, compact references; natural keys can express real business uniqueness directly.\n\nFailure mode: A surrogate ID is mistaken for sufficient integrity, allowing duplicate business entities.\n\nDecision rule: Use a stable primary key for row identity and separately constrain genuine business keys. Prefer natural keys as primary keys only when their uniqueness, stability, and scope are well understood."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Foreign keys versus application-managed references",
+      "content": "Trade-off: Foreign keys provide strong integrity but can constrain deletion order, migrations, and cross-database boundaries.\n\nFailure mode: Application-only checks permit orphaned rows during concurrent writes or from a background job.\n\nDecision rule: Use database foreign keys for relationships within the same database unless a deliberate architectural constraint justifies otherwise; then document and monitor the compensating integrity mechanism."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "CASCADE versus RESTRICT",
+      "content": "Trade-off: CASCADE simplifies dependent cleanup; RESTRICT makes destructive consequences explicit.\n\nFailure mode: A cascade deletes historical or independently meaningful data.\n\nDecision rule: Choose based on lifecycle and retention rules, not convenience. Test deletion behavior on representative relationship graphs."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Validation in application versus database",
+      "content": "Trade-off: Application validation yields friendly errors; database constraints protect all writers and close race conditions.\n\nFailure mode: A check-then-insert flow creates duplicates because two requests pass validation simultaneously.\n\nDecision rule: Use both: validate early for UX, enforce durable invariants in the database, and handle constraint violations as expected outcomes."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "CHECK versus cross-row logic",
+      "content": "Trade-off: CHECK is simple and efficient for row-local predicates but cannot safely enforce arbitrary aggregates across rows.\n\nFailure mode: A CHECK function or application query attempts to enforce a total limit across concurrent rows without concurrency control.\n\nDecision rule: Use UNIQUE/FK/exclusion constraints where possible; for aggregate invariants, design explicit locking, serializable transactions, or a normalized representation that makes the invariant enforceable."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "What does a primary key guarantee?\n\nAnswer: Uniqueness and non-NULL identity for each row. It does not automatically enforce every business uniqueness rule."
+    },
+    {
+      "type": "paragraph",
+      "text": "What is a candidate key?\n\nAnswer: A minimal attribute set that uniquely identifies a row. The chosen candidate key is the primary key; other candidate keys can be UNIQUE constraints."
+    },
+    {
+      "type": "paragraph",
+      "text": "Does PostgreSQL automatically index a foreign-key column?\n\nAnswer: No. The referenced key is indexed through its PRIMARY KEY or UNIQUE constraint, but the referencing columns are not automatically indexed."
+    },
+    {
+      "type": "paragraph",
+      "text": "CHECK (amount > 0) rejects NULL—is that true?\n\nAnswer: No. A CHECK passes for TRUE or UNKNOWN. Pair it with NOT NULL when NULL is invalid."
+    },
+    {
+      "type": "paragraph",
+      "text": "When should ON DELETE CASCADE be used?\n\nAnswer: When child rows have no independent lifecycle and parent deletion should intentionally delete them too."
+    },
+    {
+      "type": "paragraph",
+      "text": "Why isn't checking uniqueness in application code enough?\n\nAnswer: Concurrent requests can both observe that a value is absent. A database UNIQUE constraint serializes the invariant at the write boundary."
+    },
+    {
+      "type": "paragraph",
+      "text": "Can every constraint be deferred?\n\nAnswer: No. In PostgreSQL, CHECK and NOT NULL are not deferrable; selected key, foreign-key, and exclusion constraints can be."
+    },
+    {
+      "type": "paragraph",
+      "text": "What should application code do after a constraint violation inside a transaction?\n\nAnswer: Treat the transaction as failed, roll it back or recover to a savepoint, and translate known violations into a safe domain-level response."
+    }
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single_select",
+      "prompt": "Which design best prevents duplicate accounts when two requests register the same email concurrently?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Check for the email in the API before inserting."
+        },
+        {
+          "id": "b",
+          "text": "Use a UNIQUE constraint for the product's email identity rule and handle conflicts."
+        },
+        {
+          "id": "c",
+          "text": "Wrap each API request in a transaction without any constraint."
+        },
+        {
+          "id": "d",
+          "text": "Use a UUID primary key and no email constraint."
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "A database uniqueness constraint enforces the invariant across concurrent writers. An application pre-check can improve the message but cannot close the race by itself."
+    },
+    {
+      "id": "q2",
+      "type": "single_select",
+      "prompt": "In PostgreSQL, what happens when a CHECK expression evaluates to UNKNOWN because a referenced value is NULL?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The row is rejected."
+        },
+        {
+          "id": "b",
+          "text": "The row passes that CHECK constraint."
+        },
+        {
+          "id": "c",
+          "text": "PostgreSQL silently converts NULL to zero."
+        },
+        {
+          "id": "d",
+          "text": "The constraint is ignored for every future update."
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "CHECK rejects FALSE; TRUE and UNKNOWN satisfy it. Add NOT NULL when nullability is forbidden."
+    },
+    {
+      "id": "q3",
+      "type": "multi_select",
+      "prompt": "Which statements about PostgreSQL foreign keys are correct? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "They can prevent orphaned references."
+        },
+        {
+          "id": "b",
+          "text": "The referenced key must be backed by a suitable unique key."
+        },
+        {
+          "id": "c",
+          "text": "PostgreSQL automatically indexes every referencing column."
+        },
+        {
+          "id": "d",
+          "text": "ON DELETE CASCADE should reflect an intentional lifecycle rule."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "Foreign keys protect referential integrity; the referenced columns need an eligible unique key. PostgreSQL does not automatically index the referencing columns."
+    },
+    {
+      "id": "q4",
+      "type": "true_false",
+      "prompt": "A transaction around a check-then-insert sequence guarantees that two concurrent requests cannot create the same business key.",
+      "correctAnswer": false,
+      "explanation": "A transaction alone does not necessarily serialize that invariant. Enforce uniqueness in the database and handle a conflict."
+    },
+    {
+      "id": "q5",
+      "type": "single_select",
+      "prompt": "A service checks whether username 'aman' exists, then inserts it if absent. Two requests can run concurrently. What is the correct diagnosis?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The existence check makes the operation atomic."
+        },
+        {
+          "id": "b",
+          "text": "Both requests can observe no row; enforce uniqueness with a UNIQUE constraint/index and handle conflicts."
+        },
+        {
+          "id": "c",
+          "text": "A foreign key on username prevents duplicates."
+        },
+        {
+          "id": "d",
+          "text": "A sleep between SELECT and INSERT guarantees correctness."
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The check and insert are separate operations. A database-enforced unique constraint/index is authoritative; handle conflicts or use an atomic upsert."
+    },
+    {
+      "id": "q6",
+      "type": "single_select",
+      "prompt": "A table must enforce that each active subscription has at most one row per (account_id, plan_id). Which constraint best expresses this invariant?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A CHECK constraint that compares account_id and plan_id"
+        },
+        {
+          "id": "b",
+          "text": "A UNIQUE constraint on (account_id, plan_id)"
+        },
+        {
+          "id": "c",
+          "text": "A foreign key from account_id to plan_id"
+        },
+        {
+          "id": "d",
+          "text": "A default value for subscription_id"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Uniqueness across a combination of columns is the job of a composite UNIQUE constraint. A CHECK constraint is row-local and does not safely compare other rows.",
+      "hint": "Ask whether the rule concerns one row or a set of rows."
+    },
+    {
+      "id": "q7",
+      "type": "multi_select",
+      "prompt": "Which statements about keys and constraints are correct? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "A candidate key is a minimal set of attributes that uniquely identifies a row."
+        },
+        {
+          "id": "b",
+          "text": "A surrogate primary key removes the need to enforce business-key uniqueness."
+        },
+        {
+          "id": "c",
+          "text": "A foreign key can enforce that a child references an eligible parent key."
+        },
+        {
+          "id": "d",
+          "text": "A primary key permits multiple NULL values if the database supports NULLs."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "c"
+      ],
+      "explanation": "Candidate keys are minimal unique identifiers, and foreign keys protect references. A primary key is unique and NOT NULL; surrogate identity does not replace business uniqueness."
+    },
+    {
+      "id": "q8",
+      "type": "true_false",
+      "prompt": "A PostgreSQL CHECK (quantity > 0) constraint alone guarantees that quantity cannot be NULL.",
+      "correctAnswer": false,
+      "explanation": "A CHECK passes when its expression is TRUE or UNKNOWN. Pair CHECK with NOT NULL when NULL is forbidden."
+    },
+    {
+      "id": "q9",
+      "type": "single_select",
+      "prompt": "You need to delete a customer only if no orders reference them. Which referential action best matches that rule?",
+      "options": [
+        {
+          "id": "a",
+          "text": "ON DELETE CASCADE"
+        },
+        {
+          "id": "b",
+          "text": "ON DELETE SET NULL"
+        },
+        {
+          "id": "c",
+          "text": "ON DELETE RESTRICT or an equivalent NO ACTION rule"
+        },
+        {
+          "id": "d",
+          "text": "ON UPDATE CASCADE"
+        }
+      ],
+      "correctOptionId": "c",
+      "explanation": "RESTRICT/NO ACTION prevents deleting a referenced parent while dependent rows remain. CASCADE would delete the orders, which is a different lifecycle decision."
+    },
+    {
+      "id": "q10",
+      "type": "multi_select",
+      "prompt": "A migration adds a UNIQUE constraint to a large production table. Which steps are sensible? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "Find and resolve existing duplicate values before enforcement."
+        },
+        {
+          "id": "b",
+          "text": "Check database-specific locking and index-build behavior."
+        },
+        {
+          "id": "c",
+          "text": "Assume the application pre-check guarantees no duplicates during rollout."
+        },
+        {
+          "id": "d",
+          "text": "Plan how concurrent writes and constraint failures will be handled."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "Existing duplicates can prevent the constraint from being created. Production rollout also needs an operational plan for locks, concurrent writes, and conflict handling."
+    },
+    {
+      "id": "q11",
+      "type": "single_select",
+      "prompt": "Two concurrent transactions reserve the same seat. Each checks availability before inserting a reservation. What is the strongest general protection against duplicate active reservations?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A longer transaction timeout"
+        },
+        {
+          "id": "b",
+          "text": "A database uniqueness rule that encodes the seat's reservation scope, with conflict handling"
+        },
+        {
+          "id": "c",
+          "text": "A second availability SELECT after the first SELECT"
+        },
+        {
+          "id": "d",
+          "text": "A random delay before insert"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "A database constraint is the authoritative concurrency boundary. The exact key may include event_id, seat_id, and reservation state depending on the lifecycle model."
+    },
+    {
+      "id": "q12",
+      "type": "true_false",
+      "prompt": "Wrapping a read-check-write sequence in a transaction automatically prevents every race between concurrent transactions.",
+      "correctAnswer": false,
+      "explanation": "Transactions provide atomicity for each transaction, but they do not automatically enforce all cross-transaction invariants. Constraints, locking, or suitable isolation may still be required."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "s1",
+      "prompt": "Two API instances can create users concurrently. The product requires each normalized email to identify at most one account. Design the schema and describe the write path.",
+      "skillsTested": [
+        "relational modeling",
+        "constraints",
+        "concurrency reasoning",
+        "error handling"
+      ],
+      "strongAnswerPoints": [
+        "Choose a stable user primary key separate from the mutable email value.",
+        "Define the product's email normalization and case-sensitivity policy explicitly.",
+        "Enforce the resulting uniqueness rule with an appropriate database constraint or unique index.",
+        "Do not rely on a pre-insert SELECT as the correctness mechanism.",
+        "Handle uniqueness violations as a domain conflict and avoid exposing raw SQL errors.",
+        "Consider how existing duplicates are detected and resolved before adding the constraint."
+      ],
+      "pitfalls": [
+        "Claiming a transaction automatically prevents duplicates.",
+        "Ignoring case normalization and existing data cleanup.",
+        "Treating every database exception as the same error."
+      ],
+      "referenceAnswer": "I would use a stable user ID as the primary key and enforce the email identity rule in the database. First I would define normalization and case-sensitivity semantics, then clean existing conflicting data and add the corresponding uniqueness constraint or unique index. The API may pre-check to give a friendly message, but the insert is authoritative: concurrent requests can race. I would catch the specific uniqueness conflict and return a safe domain-level response. I would also plan deployment carefully if the table is large, because building the constraint/index and resolving legacy duplicates need an operational migration plan."
+    },
+    {
+      "id": "s2",
+      "prompt": "Model a ticket-booking system where one seat can be reserved once per show, users can cancel reservations, and reservation attempts may arrive concurrently. Explain the schema invariants and write-path behavior.",
+      "skillsTested": [
+        "relational modeling",
+        "composite uniqueness",
+        "referential integrity",
+        "concurrency control",
+        "lifecycle trade-offs"
+      ],
+      "strongAnswerPoints": [
+        "Define the reservation row grain and stable primary key.",
+        "Use foreign keys to reference a show, seat, and user where those entities live in the same database.",
+        "Enforce one active reservation per show and seat using a suitable database uniqueness strategy, accounting for cancelled rows if needed.",
+        "Treat availability checks as user experience, not the concurrency guarantee.",
+        "Handle unique conflicts or serialization failures as expected domain outcomes.",
+        "Explain how cancellation and re-reservation affect the invariant and any partial unique index."
+      ],
+      "pitfalls": [
+        "Relying only on a SELECT availability check.",
+        "Using a global UNIQUE(seat_id) when seats can be booked for different shows.",
+        "Ignoring cancellation semantics or retry behavior."
+      ],
+      "referenceAnswer": "I would define one reservation row per booking attempt or current reservation, then enforce the business rule at the database boundary. If cancelled reservations remain for history, a partial unique index on (show_id, seat_id) for active reservations may express the invariant in PostgreSQL; alternatively, model current occupancy separately. The API can check availability for a friendly response, but concurrent requests still race, so the insert/update must handle a uniqueness conflict. Foreign keys protect references, and cancellation must release the active uniqueness slot without erasing audit history."
+    }
+  ],
+  "schemaVersion": "2.0.0",
+  "topicId": "databases",
+  "description": "Relational Databases, Primary Keys, Foreign Keys, and Constraints. Interview-focused explanations, worked examples, trade-offs, and practice."
+}

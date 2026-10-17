@@ -3,10 +3,7 @@ import {
   ChevronRight, 
   ChevronLeft, 
   Layers, 
-  Search, 
-  Sparkles, 
-  Info,
-  Maximize2
+  Sparkles
 } from 'lucide-react';
 import { sound } from '../services/sound';
 
@@ -16,67 +13,6 @@ import { sound } from '../services/sound';
  * 2. High-precision vector SVG diagrams
  * 3. Execution plan and node split flows
  */
-/**
- * Clean and sanitize SVG markup to prevent script execution / attribute injection,
- * and scope IDs (e.g. markers, gradients, filters) to avoid collisions across multiple diagrams.
- */
-function sanitizeAndScopeSvg(rawSvg, prefixId = 'diag') {
-  if (!rawSvg || typeof rawSvg !== 'string') return '';
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(rawSvg, 'image/svg+xml');
-    
-    // Check for parse error
-    const parserError = doc.querySelector('parsererror');
-    if (parserError) {
-      console.warn('SVG parse error, fallback to text');
-      return '';
-    }
-
-    // Strip unsafe elements: script, iframe, object, embed, foreignObject with html
-    const forbiddenTags = ['script', 'iframe', 'object', 'embed'];
-    forbiddenTags.forEach((tag) => {
-      doc.querySelectorAll(tag).forEach((el) => el.remove());
-    });
-
-    // Strip all inline event handlers (onload, onclick, onerror, etc.)
-    const allElements = doc.querySelectorAll('*');
-    allElements.forEach((el) => {
-      const attrs = Array.from(el.attributes);
-      attrs.forEach((attr) => {
-        if (attr.name.toLowerCase().startsWith('on') || attr.value.toLowerCase().includes('javascript:')) {
-          el.removeAttribute(attr.name);
-        }
-      });
-    });
-
-    const svgEl = doc.querySelector('svg');
-    if (!svgEl) return '';
-
-    // Scope unique IDs in defs/markers/filters to prevent collision
-    const idMap = new Map();
-    const elementsWithId = svgEl.querySelectorAll('[id]');
-    elementsWithId.forEach((el) => {
-      const oldId = el.getAttribute('id');
-      const newId = `${prefixId}_${oldId}`;
-      idMap.set(oldId, newId);
-      el.setAttribute('id', newId);
-    });
-
-    let serialized = new XMLSerializer().serializeToString(svgEl);
-    idMap.forEach((newId, oldId) => {
-      serialized = serialized.replaceAll(`url(#${oldId})`, `url(#${newId})`);
-      serialized = serialized.replaceAll(`href="#${oldId}"`, `href="#${newId}"`);
-      serialized = serialized.replaceAll(`xlink:href="#${oldId}"`, `xlink:href="#${newId}"`);
-    });
-
-    return serialized;
-  } catch (e) {
-    console.error('Failed to sanitize SVG:', e);
-    return '';
-  }
-}
-
 export default function DiagramBlock({ example }) {
   const [currentStep, setCurrentStep] = useState(0);
   const steps = example.steps || [];
@@ -98,9 +34,6 @@ export default function DiagramBlock({ example }) {
   };
 
   const isBTree = example.format === 'interactive' && example.interactiveType === 'btree-search';
-  const isSvg = example.format === 'svg';
-  const isAscii = example.format === 'ascii';
-  const isMermaid = example.format === 'mermaid';
 
   return (
     <div className="diagram-container-card">

@@ -2,14 +2,11 @@ import React, { useState } from 'react';
 import { 
   Volume2, 
   VolumeX, 
-  RotateCcw, 
   ShieldCheck, 
-  Info, 
   X, 
   Smartphone, 
   Trash2,
-  Sparkles,
-  ExternalLink
+  Sparkles
 } from 'lucide-react';
 import { getPreferences, savePreferences } from '../services/storage';
 import { sound } from '../services/sound';
@@ -22,6 +19,7 @@ export default function SettingsModal({ onClose, onResetProgress }) {
     const updated = { ...prefs, sound: !prefs.sound };
     setPrefs(updated);
     savePreferences(updated);
+    sound.setEnabled(updated.sound);
     if (updated.sound) sound.playTap();
   };
 

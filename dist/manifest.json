@@ -12,62 +12,174 @@
     {
       "id": "databases",
       "title": "Databases",
-      "description": "Indexes, query performance, caching, database trade-offs and scale.",
+      "description": "SQL fundamentals, schema design, indexes, query performance, caching, database trade-offs and scale.",
       "order": 1,
       "sections": [
+        {
+          "id": "relational-databases-keys-constraints",
+          "title": "Relational Databases, Primary Keys, Foreign Keys, and Constraints",
+          "difficulty": "beginner",
+          "order": 1,
+          "status": "published",
+          "lessonPath": "/lessons/databases/relational-databases-keys-constraints.json",
+          "questionCount": 12,
+          "lessonId": "relational-databases-keys-constraints"
+        },
+        {
+          "id": "sql-joins",
+          "title": "SQL Joins: INNER, LEFT, RIGHT, and FULL OUTER JOIN",
+          "difficulty": "beginner",
+          "order": 2,
+          "status": "published",
+          "lessonPath": "/lessons/databases/sql-joins.json",
+          "questionCount": 12,
+          "lessonId": "sql-joins-inner-left-right-full"
+        },
+        {
+          "id": "sql-aggregation-group-by-having-ctes",
+          "title": "Aggregations, GROUP BY, HAVING, Subqueries, and CTEs",
+          "difficulty": "intermediate",
+          "order": 3,
+          "status": "published",
+          "lessonPath": "/lessons/databases/sql-aggregation-group-by-having-ctes.json",
+          "questionCount": 12,
+          "lessonId": "sql-aggregation-group-by-having-ctes"
+        },
+        {
+          "id": "sql-null-semantics",
+          "title": "NULL Semantics, Three-Valued Logic, and Common SQL Pitfalls",
+          "difficulty": "intermediate",
+          "order": 4,
+          "status": "published",
+          "lessonPath": "/lessons/databases/sql-null-semantics.json",
+          "questionCount": 12,
+          "lessonId": "sql-null-three-valued-logic"
+        },
+        {
+          "id": "schema-design-normalization",
+          "title": "Database Schema Design, Normalization (1NF–3NF), and Denormalization",
+          "difficulty": "intermediate",
+          "order": 5,
+          "status": "published",
+          "lessonPath": "/lessons/databases/schema-design-normalization.json",
+          "questionCount": 12,
+          "lessonId": "database-schema-design-normalization"
+        },
+        {
+          "id": "advanced-sql-window-functions-set-operations",
+          "title": "Advanced SQL: Window Functions, Ranking, Set Operations, and Latest-Row-per-Group Queries",
+          "difficulty": "intermediate",
+          "order": 6,
+          "status": "published",
+          "lessonPath": "/lessons/databases/advanced-sql-window-functions-set-operations.json",
+          "questionCount": 12,
+          "lessonId": "advanced-sql-window-functions-set-operations"
+        },
         {
           "id": "index-fundamentals",
           "title": "Database Index Fundamentals",
           "difficulty": "beginner",
+          "order": 7,
+          "status": "published",
+          "lessonPath": "/lessons/databases/index-fundamentals.json",
           "questionCount": 8,
-          "lessonPath": "lessons/databases/index-fundamentals.json",
-          "order": 1,
-          "status": "published"
+          "lessonId": "database-index-fundamentals"
         },
         {
           "id": "index-design-performance",
-          "title": "Index Design and Performance",
+          "title": "B-Trees: Structure, Traversal, Splits, and Balanced Search",
           "difficulty": "intermediate",
-          "questionCount": 9,
-          "lessonPath": "lessons/databases/index-design-performance.json",
-          "order": 2,
-          "status": "upcoming"
+          "order": 8,
+          "status": "published",
+          "lessonPath": "/lessons/databases/index-design-performance.json",
+          "questionCount": 12,
+          "lessonId": "database-btree-structure-traversal-splits"
+        },
+        {
+          "id": "database-clustered-vs-nonclustered-indexes",
+          "title": "Clustered vs. Non-Clustered Indexes and Heap Tables",
+          "difficulty": "intermediate",
+          "order": 9,
+          "status": "published",
+          "lessonPath": "/lessons/databases/database-clustered-vs-nonclustered-indexes.json",
+          "questionCount": 12,
+          "lessonId": "database-clustered-vs-nonclustered-indexes"
+        },
+        {
+          "id": "database-composite-indexes-column-order-leftmost-prefix",
+          "title": "Composite Indexes: Column Order, Leftmost Prefix, and Covering Indexes",
+          "difficulty": "intermediate",
+          "order": 10,
+          "status": "published",
+          "lessonPath": "/lessons/databases/database-composite-indexes-column-order-leftmost-prefix.json",
+          "questionCount": 12,
+          "lessonId": "database-composite-indexes-column-order-leftmost-prefix"
+        },
+        {
+          "id": "database-postgresql-index-types",
+          "title": "PostgreSQL Index Types: B-tree, GIN, GiST, BRIN, Partial, and Expression Indexes",
+          "difficulty": "intermediate",
+          "order": 11,
+          "status": "published",
+          "lessonPath": "/lessons/databases/database-postgresql-index-types.json",
+          "questionCount": 12,
+          "lessonId": "database-postgresql-index-types"
+        },
+        {
+          "id": "database-query-plan-analysis-explain-analyze-joins-sorts-spills",
+          "title": "Query Plan Analysis: EXPLAIN ANALYZE, Join Algorithms, Sorts, and Memory Spills",
+          "difficulty": "advanced",
+          "order": 12,
+          "status": "published",
+          "lessonPath": "/lessons/databases/database-query-plan-analysis-explain-analyze-joins-sorts-spills.json",
+          "questionCount": 12,
+          "lessonId": "database-query-plan-analysis-explain-analyze-joins-sorts-spills"
+        },
+        {
+          "id": "database-index-selection-selectivity-sequential-scans-index-costs",
+          "title": "Index Selection, Selectivity, Sequential Scans, and When Indexes Hurt",
+          "difficulty": "intermediate",
+          "order": 13,
+          "status": "published",
+          "lessonPath": "/lessons/databases/database-index-selection-selectivity-sequential-scans-index-costs.json",
+          "questionCount": 12,
+          "lessonId": "database-index-selection-selectivity-sequential-scans-index-costs"
         },
         {
           "id": "advanced-database-internals",
           "title": "Advanced Database Internals",
           "difficulty": "advanced",
-          "questionCount": 8,
-          "lessonPath": "lessons/databases/advanced-database-internals.json",
-          "order": 3,
-          "status": "upcoming"
+          "order": 14,
+          "status": "upcoming",
+          "lessonPath": "/lessons/databases/advanced-database-internals.json",
+          "lessonId": "advanced-database-internals"
         },
         {
           "id": "redis-and-caching",
           "title": "Redis and Caching Architecture",
           "difficulty": "intermediate",
-          "questionCount": 10,
-          "lessonPath": "lessons/databases/redis-and-caching.json",
-          "order": 4,
-          "status": "upcoming"
+          "order": 15,
+          "status": "upcoming",
+          "lessonPath": "/lessons/databases/redis-and-caching.json",
+          "lessonId": "redis-and-caching"
         },
         {
           "id": "postgresql-vs-mongodb",
           "title": "PostgreSQL vs. MongoDB Trade-offs",
           "difficulty": "intermediate",
-          "questionCount": 10,
-          "lessonPath": "lessons/databases/postgresql-vs-mongodb.json",
-          "order": 5,
-          "status": "upcoming"
+          "order": 16,
+          "status": "upcoming",
+          "lessonPath": "/lessons/databases/postgresql-vs-mongodb.json",
+          "lessonId": "postgresql-vs-mongodb"
         },
         {
           "id": "scaling-and-reliability",
           "title": "Scaling and Reliability",
           "difficulty": "advanced",
-          "questionCount": 10,
-          "lessonPath": "lessons/databases/scaling-and-reliability.json",
-          "order": 6,
-          "status": "upcoming"
+          "order": 17,
+          "status": "upcoming",
+          "lessonPath": "/lessons/databases/scaling-and-reliability.json",
+          "lessonId": "scaling-and-reliability"
         }
       ]
     },

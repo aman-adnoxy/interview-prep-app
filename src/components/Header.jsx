@@ -1,17 +1,14 @@
 import React from 'react';
 import { 
   Flame, 
-  Sparkles, 
   Trophy, 
   BookOpen, 
   CheckCircle, 
-  Zap, 
-  Heart,
   Settings
 } from 'lucide-react';
 import { sound } from '../services/sound';
 
-export default function Header({ activeTab, onTabChange, completedCount = 0, onOpenSettings }) {
+export default function Header({ activeTab, onTabChange, completedCount = 0, streak = 0, onOpenSettings }) {
   return (
     <header className="app-header">
       <div className="header-top">
@@ -26,11 +23,13 @@ export default function Header({ activeTab, onTabChange, completedCount = 0, onO
         </div>
 
         <div className="header-stats">
-          {/* Flame streak */}
-          <div className="stat-pill flame" title="3 Day Streak">
-            <Flame size={17} fill="#f59e0b" className="stat-icon flame" />
-            <span className="stat-val">3</span>
-          </div>
+          {/* Flame streak — shown once the learner has an active streak */}
+          {streak > 0 && (
+            <div className="stat-pill flame" title={`${streak} Day Streak`}>
+              <Flame size={17} fill="#f59e0b" className="stat-icon flame" />
+              <span className="stat-val">{streak}</span>
+            </div>
+          )}
 
           {/* Mastery points */}
           <div className="stat-pill gem" title="Mastered Sections">

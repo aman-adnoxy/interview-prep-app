@@ -1,0 +1,579 @@
+{
+  "id": "sql-null-three-valued-logic",
+  "sectionId": "sql-null-semantics",
+  "title": "NULL Semantics, Three-Valued Logic, and Common SQL Pitfalls",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 44,
+  "learningObjectives": [
+    "Explain why NULL is not equal to zero, an empty string, or another NULL.",
+    "Predict TRUE, FALSE, and UNKNOWN for common SQL predicates.",
+    "Use IS NULL, IS DISTINCT FROM, and NULL-safe join logic appropriately.",
+    "Recognize NOT IN and outer-join filtering pitfalls.",
+    "Reason about nullable columns in constraints, aggregates, uniqueness and application code."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "NULL means the value is missing, unknown, or inapplicable under the data model; it is not an ordinary value. SQL predicates can therefore evaluate to UNKNOWN as well as TRUE or FALSE. WHERE keeps only rows for which the predicate is TRUE."
+  },
+  "concepts": [
+    {
+      "id": "three-valued-logic",
+      "title": "TRUE, FALSE, and UNKNOWN",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "For an ordinary comparison, if either operand is NULL, the result is generally UNKNOWN. NULL = NULL is not TRUE; it is UNKNOWN. SQL uses three-valued logic for predicates, and WHERE filters out both FALSE and UNKNOWN. This is why `column = NULL` does not find missing values."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Predicate",
+            "Result",
+            "Reason"
+          ],
+          "rows": [
+            [
+              "NULL = NULL",
+              "UNKNOWN",
+              "Equality is not defined for an unknown value."
+            ],
+            [
+              "5 = NULL",
+              "UNKNOWN",
+              "One operand is unknown."
+            ],
+            [
+              "NULL IS NULL",
+              "TRUE",
+              "IS NULL tests nullness."
+            ],
+            [
+              "TRUE AND UNKNOWN",
+              "UNKNOWN",
+              "One required term is unknown."
+            ],
+            [
+              "FALSE AND UNKNOWN",
+              "FALSE",
+              "FALSE determines the conjunction."
+            ],
+            [
+              "TRUE OR UNKNOWN",
+              "TRUE",
+              "TRUE determines the disjunction."
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "title": "Comparisons involving NULL",
+          "columns": [
+            "Expression",
+            "Result",
+            "Reason"
+          ],
+          "rows": [
+            [
+              "NULL = NULL",
+              "UNKNOWN",
+              "Ordinary equality does not treat NULL as a value"
+            ],
+            [
+              "5 = NULL",
+              "UNKNOWN",
+              "One operand is NULL"
+            ],
+            [
+              "NULL IS NULL",
+              "TRUE",
+              "IS NULL tests for absence"
+            ],
+            [
+              "NULL IS NOT DISTINCT FROM NULL",
+              "TRUE",
+              "Null-safe equality treats two NULLs as not distinct"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "IS NOT DISTINCT FROM is null-safe equality: two NULLs compare as not distinct. Joining nullable keys with it can create multiple matches among rows whose keys are NULL. NOT EXISTS avoids the subquery-NULL trap of NOT IN, but nullable outer keys still need a deliberate policy: a NULL outer key normally has no equal match and can therefore satisfy NOT EXISTS."
+        }
+      ]
+    },
+    {
+      "id": "null-safe-operations",
+      "title": "IS NULL and NULL-safe comparison",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Find missing values",
+          "source": "SELECT id FROM customers WHERE phone_number IS NULL;\n\nSELECT id FROM customers WHERE phone_number IS NOT NULL;"
+        },
+        {
+          "type": "paragraph",
+          "text": "PostgreSQL's IS DISTINCT FROM and IS NOT DISTINCT FROM provide NULL-safe comparison semantics. `a IS NOT DISTINCT FROM b` treats two NULLs as not distinct and a NULL/non-NULL pair as distinct. These operators are useful when NULL should participate in a comparison without producing UNKNOWN."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "NULL-safe equality",
+          "source": "SELECT *\nFROM incoming_records i\nJOIN existing_records e\n  ON i.external_code IS NOT DISTINCT FROM e.external_code;"
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "NULL-safe equality can create many matches",
+          "content": "If both sides contain multiple NULLs, NULL-safe equality can match every NULL on one side with every NULL on the other. Use it only when that multiplicity matches the domain semantics."
+        }
+      ]
+    },
+    {
+      "id": "not-in",
+      "title": "The NOT IN trap",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "If the right-hand side of NOT IN contains NULL and no equal value is found, the result can be UNKNOWN rather than TRUE. Because WHERE discards UNKNOWN, rows you expect to keep may disappear. This is especially common when a subquery selects a nullable column."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Potentially surprising",
+          "source": "SELECT c.id\nFROM customers c\nWHERE c.id NOT IN (\n  SELECT b.customer_id FROM blocked_customers b\n);"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Often safer: NOT EXISTS",
+          "source": "SELECT c.id\nFROM customers c\nWHERE NOT EXISTS (\n  SELECT 1 FROM blocked_customers b\n  WHERE b.customer_id = c.id\n);"
+        },
+        {
+          "type": "paragraph",
+          "text": "NOT EXISTS is usually robust to NULLs in unrelated rows of the subquery. Still inspect the actual matching predicate and the intended semantics, especially if the outer key itself can be NULL."
+        }
+      ]
+    },
+    {
+      "id": "null-constraints-and-aggregates",
+      "title": "NULL affects constraints, uniqueness and aggregates",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "NOT NULL is the explicit rule that a column must contain a value. A CHECK predicate that evaluates to UNKNOWN passes, so CHECK (quantity > 0) must be paired with NOT NULL if missing quantity is invalid. PostgreSQL UNIQUE constraints normally allow multiple NULLs by default; PostgreSQL also supports `NULLS NOT DISTINCT` for a unique constraint when NULLs should compare as equal for uniqueness."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Make the invariant explicit",
+          "source": "CREATE TABLE inventory (\n  sku TEXT PRIMARY KEY,\n  quantity INTEGER NOT NULL CHECK (quantity >= 0)\n);\n\n-- PostgreSQL 15+ supports this form:\nCREATE TABLE external_ids (\n  source TEXT NOT NULL,\n  external_id TEXT,\n  UNIQUE NULLS NOT DISTINCT (source, external_id)\n);"
+        },
+        {
+          "type": "paragraph",
+          "text": "COUNT(column) skips NULL; COUNT(*) counts rows. SUM and AVG ignore NULL inputs. These are separate rules: constraints govern valid stored states, while aggregate behavior governs how query results are computed."
+        }
+      ]
+    },
+    {
+      "id": "data-modeling-null",
+      "title": "Modeling absence without ambiguity",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Before allowing NULL, decide what it means: unknown, not yet collected, not applicable, or intentionally absent. If those meanings lead to different business behavior, one NULL may be insufficient. A status column, separate relation, or explicit lifecycle state may model the distinction more clearly."
+        },
+        {
+          "type": "paragraph",
+          "text": "Unknown delivery date versus no delivery required"
+        },
+        {
+          "type": "worked_example",
+          "problem": "An orders table has nullable delivered_at.",
+          "reasoning": [
+            "NULL could mean not delivered yet, date unknown, or delivery not required.",
+            "Those states imply different operational actions and metrics.",
+            "Use an explicit fulfillment state, and make delivered_at nullable only where the lifecycle allows it."
+          ],
+          "outcome": "Queries become clearer because state is represented intentionally rather than inferred from a missing timestamp."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "NULL versus sentinel values",
+      "content": "Trade-off: NULL preserves missingness; sentinels such as 0, empty string, or 1970-01-01 simplify some operations but conflate real values with absence.\n\nFailure mode: A report counts unknown amounts as zero or treats an actual empty string as missing.\n\nDecision rule: Use NULL when absence/unknown is meaningful. Use a sentinel only if the domain explicitly reserves it and every consumer follows the contract."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "NOT IN versus NOT EXISTS",
+      "content": "Trade-off: NOT IN is concise for non-null sets; NOT EXISTS directly expresses the absence of a matching row and avoids the common subquery-NULL trap.\n\nFailure mode: A nullable subquery result causes NOT IN to return UNKNOWN for otherwise eligible rows.\n\nDecision rule: Prefer NOT EXISTS for anti-joins when nullability is possible, and reason explicitly about nullable outer keys."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "UNIQUE and NULL semantics",
+      "content": "Trade-off: Allowing multiple NULLs treats missing values as distinct/unknown; NULLS NOT DISTINCT enforces at most one NULL combination in PostgreSQL 15+.\n\nFailure mode: The team assumes UNIQUE means only one row can have NULL in a column.\n\nDecision rule: Choose the intended semantics explicitly, and verify the PostgreSQL version and constraint definition."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Making every column nullable",
+      "content": "Trade-off: Nullable columns accommodate incomplete data but multiply the states every query and application must handle.\n\nFailure mode: Unexpected UNKNOWN results and missing data propagate into authorization, reporting or business logic.\n\nDecision rule: Use NOT NULL whenever the domain has a required value; model lifecycle states separately when different kinds of absence matter."
+    },
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "NULL-safe equality",
+      "content": "Trade-off: IS NOT DISTINCT FROM gives predictable null-safe comparison; it can also match NULLs that ordinary equality would not match.\n\nFailure mode: Many-to-many NULL matches inflate results or associate unrelated records with missing keys.\n\nDecision rule: Use it only when two missing values should genuinely be treated as equivalent and the cardinality is safe."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Why does `column = NULL` not find NULL values?\n\nAnswer: The comparison evaluates to UNKNOWN. Use IS NULL or IS NOT NULL."
+    },
+    {
+      "type": "paragraph",
+      "text": "What rows survive WHERE?\n\nAnswer: Only rows whose predicate evaluates to TRUE; FALSE and UNKNOWN are filtered out."
+    },
+    {
+      "type": "paragraph",
+      "text": "Why can NOT IN return no rows unexpectedly?\n\nAnswer: If the set contains NULL, a non-match may evaluate to UNKNOWN rather than TRUE. NOT EXISTS is often safer."
+    },
+    {
+      "type": "paragraph",
+      "text": "Does CHECK (x > 0) prohibit NULL?\n\nAnswer: No. UNKNOWN satisfies CHECK. Pair it with NOT NULL if NULL is invalid."
+    },
+    {
+      "type": "paragraph",
+      "text": "Does PostgreSQL UNIQUE allow multiple NULLs?\n\nAnswer: By default, yes. PostgreSQL 15+ supports UNIQUE NULLS NOT DISTINCT when NULL combinations should count as equal for uniqueness."
+    },
+    {
+      "type": "paragraph",
+      "text": "COUNT(*) versus COUNT(x)?\n\nAnswer: COUNT(*) counts rows; COUNT(x) counts only non-NULL x values."
+    },
+    {
+      "type": "paragraph",
+      "text": "What does IS NOT DISTINCT FROM do?\n\nAnswer: It compares values with NULL-safe semantics: two NULLs are not distinct; NULL and a non-NULL value are distinct."
+    },
+    {
+      "type": "paragraph",
+      "text": "What should NULL mean in a data model?\n\nAnswer: A deliberate state such as unknown or not applicable—not an accidental substitute for zero, empty string, or an unmodeled lifecycle state."
+    }
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single_select",
+      "prompt": "Which predicate correctly selects rows where phone is missing?",
+      "options": [
+        {
+          "id": "a",
+          "text": "phone = NULL"
+        },
+        {
+          "id": "b",
+          "text": "phone == NULL"
+        },
+        {
+          "id": "c",
+          "text": "phone IS NULL"
+        },
+        {
+          "id": "d",
+          "text": "phone EQUALS NULL"
+        }
+      ],
+      "correctOptionId": "c",
+      "explanation": "IS NULL tests nullness; ordinary equality with NULL evaluates to UNKNOWN."
+    },
+    {
+      "id": "q2",
+      "type": "single_select",
+      "prompt": "A NOT IN subquery returns at least one NULL. What is the main risk?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Every row is automatically duplicated."
+        },
+        {
+          "id": "b",
+          "text": "Non-matching comparisons can become UNKNOWN and be filtered out."
+        },
+        {
+          "id": "c",
+          "text": "The database converts NULL to zero."
+        },
+        {
+          "id": "d",
+          "text": "The query becomes a CROSS JOIN."
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Three-valued logic means a non-match against a set containing NULL may not evaluate to TRUE."
+    },
+    {
+      "id": "q3",
+      "type": "true_false",
+      "prompt": "In PostgreSQL, a CHECK constraint rejects a row whenever its expression is not TRUE, including when it is UNKNOWN.",
+      "correctAnswer": false,
+      "explanation": "CHECK rejects FALSE; TRUE and UNKNOWN pass. Use NOT NULL separately where required."
+    },
+    {
+      "id": "q4",
+      "type": "multi_select",
+      "prompt": "Which statements are correct?",
+      "options": [
+        {
+          "id": "a",
+          "text": "COUNT(*) counts rows even when some columns are NULL."
+        },
+        {
+          "id": "b",
+          "text": "COUNT(nullable_column) counts its NULL values."
+        },
+        {
+          "id": "c",
+          "text": "IS NOT DISTINCT FROM provides NULL-safe comparison semantics in PostgreSQL."
+        },
+        {
+          "id": "d",
+          "text": "PostgreSQL UNIQUE constraints allow multiple NULLs by default."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "c",
+        "d"
+      ],
+      "explanation": "COUNT(column) ignores NULL. The other three statements describe PostgreSQL behavior."
+    },
+    {
+      "id": "q5",
+      "type": "single_select",
+      "prompt": "A query uses `WHERE deleted_at = NULL` to find active rows. What is wrong?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Nothing; equality with NULL is always true."
+        },
+        {
+          "id": "b",
+          "text": "The predicate is UNKNOWN; use `deleted_at IS NULL`."
+        },
+        {
+          "id": "c",
+          "text": "Use `deleted_at = 0` because NULL is stored as zero."
+        },
+        {
+          "id": "d",
+          "text": "IS NULL is invalid SQL."
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Ordinary equality with NULL evaluates to UNKNOWN, and WHERE keeps only TRUE predicates. IS NULL selects missing values."
+    },
+    {
+      "id": "q6",
+      "type": "single_select",
+      "prompt": "A query should return rows where cancelled_at has not been set. Which predicate is correct?",
+      "options": [
+        {
+          "id": "a",
+          "text": "cancelled_at = NULL"
+        },
+        {
+          "id": "b",
+          "text": "cancelled_at <> NULL"
+        },
+        {
+          "id": "c",
+          "text": "cancelled_at IS NULL"
+        },
+        {
+          "id": "d",
+          "text": "COALESCE(cancelled_at, false)"
+        }
+      ],
+      "correctOptionId": "c",
+      "explanation": "NULL is tested with IS NULL or IS NOT NULL; ordinary equality comparisons with NULL yield UNKNOWN."
+    },
+    {
+      "id": "q7",
+      "type": "multi_select",
+      "prompt": "Which expressions can evaluate to UNKNOWN in SQL's three-valued logic? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "NULL = 5"
+        },
+        {
+          "id": "b",
+          "text": "NULL <> 5"
+        },
+        {
+          "id": "c",
+          "text": "TRUE AND FALSE"
+        },
+        {
+          "id": "d",
+          "text": "NULL IS NULL"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b"
+      ],
+      "explanation": "Ordinary comparisons with NULL produce UNKNOWN. TRUE AND FALSE is FALSE, and IS NULL returns a definite boolean."
+    },
+    {
+      "id": "q8",
+      "type": "true_false",
+      "prompt": "In a WHERE clause, a predicate that evaluates to UNKNOWN keeps the row just like TRUE.",
+      "correctAnswer": false,
+      "explanation": "WHERE keeps only rows for which the predicate is TRUE; FALSE and UNKNOWN are filtered out."
+    },
+    {
+      "id": "q9",
+      "type": "single_select",
+      "prompt": "A NOT IN subquery can unexpectedly return no rows when the subquery contains a NULL. What is a robust alternative when checking for absence of a related row?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Use NOT EXISTS with a correlated condition"
+        },
+        {
+          "id": "b",
+          "text": "Replace NOT IN with <> ALL without checking NULL behavior"
+        },
+        {
+          "id": "c",
+          "text": "Compare the column to NULL using ="
+        },
+        {
+          "id": "d",
+          "text": "Add ORDER BY to the subquery"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "NOT EXISTS expresses absence without the NULL poisoning behavior of NOT IN, provided the correlation condition matches the intended relationship."
+    },
+    {
+      "id": "q10",
+      "type": "multi_select",
+      "prompt": "Which aggregate behaviors are accurate in PostgreSQL? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "COUNT(*) counts rows even if some columns are NULL."
+        },
+        {
+          "id": "b",
+          "text": "COUNT(column) ignores rows where that expression is NULL."
+        },
+        {
+          "id": "c",
+          "text": "SUM(column) returns zero for an empty input set by default."
+        },
+        {
+          "id": "d",
+          "text": "COALESCE can supply a fallback when an aggregate result is NULL."
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "COUNT(*) counts rows; COUNT(expression) skips NULL expressions. SUM over no input rows is NULL, so COALESCE may be appropriate when zero is the desired business meaning."
+    },
+    {
+      "id": "q11",
+      "type": "single_select",
+      "prompt": "A LEFT JOIN finds customers with no successful payments. Which condition correctly identifies the unmatched side if payment.id is non-null for real rows?",
+      "options": [
+        {
+          "id": "a",
+          "text": "WHERE payment.status <> 'success'"
+        },
+        {
+          "id": "b",
+          "text": "WHERE payment.id IS NULL"
+        },
+        {
+          "id": "c",
+          "text": "WHERE customer.id IS NULL"
+        },
+        {
+          "id": "d",
+          "text": "WHERE payment.id = NULL"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "A left join's unmatched right-side columns are NULL. Test a non-nullable right-side key with IS NULL; filtering status <> 'success' also has tricky NULL behavior and can miss customers."
+    },
+    {
+      "id": "q12",
+      "type": "true_false",
+      "prompt": "COALESCE(SUM(amount), 0) is always semantically correct whenever SUM returns NULL.",
+      "correctAnswer": false,
+      "explanation": "Zero may be a useful presentation default, but the query must distinguish no qualifying rows from unknown or unavailable amounts if the domain cares about that difference."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "s1",
+      "prompt": "A nightly exclusion query uses NOT IN and unexpectedly returns zero eligible customers. The subquery reads a nullable customer_id column. Diagnose and repair it.",
+      "skillsTested": [
+        "three-valued logic",
+        "anti-joins",
+        "data correctness"
+      ],
+      "strongAnswerPoints": [
+        "Check whether the subquery returns NULL.",
+        "Explain how NOT IN can evaluate to UNKNOWN.",
+        "Replace it with NOT EXISTS using the intended equality predicate when appropriate.",
+        "Inspect whether the outer key can be NULL and decide how such rows should behave.",
+        "Add a regression test with a NULL in the subquery."
+      ],
+      "pitfalls": [
+        "Saying NULL equals NULL.",
+        "Replacing the query without defining outer-key semantics.",
+        "Assuming this is an optimizer bug."
+      ],
+      "referenceAnswer": "I would inspect the subquery for NULL values. With NOT IN, a non-matching value compared against a set containing NULL can yield UNKNOWN, and WHERE removes it. I would usually rewrite this as NOT EXISTS with an explicit matching predicate, then decide how a nullable outer customer_id should be treated. I would add a test with both matching and NULL subquery rows to prevent regression."
+    },
+    {
+      "id": "s2",
+      "prompt": "An endpoint must return accounts with no successful payments in the last 30 days. The data can contain NULL payment status and NULL timestamps. Compare NOT IN, NOT EXISTS, and LEFT JOIN approaches, then state the intended NULL semantics.",
+      "skillsTested": [
+        "three-valued logic",
+        "anti-joins",
+        "NULL semantics",
+        "requirements clarification",
+        "correctness testing"
+      ],
+      "strongAnswerPoints": [
+        "Define whether a NULL status or timestamp should count as a successful payment; normally it cannot qualify as success.",
+        "Prefer NOT EXISTS for a correlated absence check when nullable subquery values could poison NOT IN.",
+        "Put the time window and successful-status condition inside the correlated subquery.",
+        "If using LEFT JOIN, test a non-nullable payment key for NULL and avoid optional-side WHERE predicates that change semantics.",
+        "Test accounts with no payments, only failed payments, NULL status, NULL timestamp, and a recent success."
+      ],
+      "pitfalls": [
+        "Using status <> 'success' to find accounts with no successful payment.",
+        "Using NOT IN without checking whether the subquery can return NULL.",
+        "Assuming COALESCE can resolve every ambiguous business meaning."
+      ],
+      "referenceAnswer": "I would write the absence rule as NOT EXISTS over successful payments whose timestamp falls in the last 30 days. NULL status does not satisfy status = 'success', and a NULL timestamp does not satisfy the time-window predicate, so those rows would not count as a successful payment unless the product defines another rule. NOT EXISTS avoids the classic NOT IN issue when a subquery returns NULL. A LEFT JOIN anti-join can also work if its optional-side predicates are in ON and the outer WHERE checks a non-nullable payment key for NULL. I would test all edge cases explicitly."
+    }
+  ],
+  "schemaVersion": "2.0.0",
+  "topicId": "databases",
+  "description": "NULL Semantics, Three-Valued Logic, and Common SQL Pitfalls. Interview-focused explanations, worked examples, trade-offs, and practice."
+}

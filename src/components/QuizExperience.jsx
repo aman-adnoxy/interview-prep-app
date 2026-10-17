@@ -1,14 +1,9 @@
 import React, { useState } from 'react';
 import { 
   X, 
-  HelpCircle, 
   Check, 
   ArrowRight, 
-  AlertCircle, 
-  CheckCircle2, 
   Lightbulb, 
-  Sparkles, 
-  Zap, 
   Heart 
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -16,7 +11,6 @@ import { sound } from '../services/sound';
 import { evaluateAnswer } from '../services/quiz';
 
 export default function QuizExperience({
-  sectionId,
   questions = [],
   onFinishQuiz,
   onExit
@@ -86,7 +80,7 @@ export default function QuizExperience({
           origin: { y: 0.8 },
           colors: ['#58cc02', '#1cb0f6', '#ffc800']
         });
-      } catch (e) {}
+      } catch {}
     } else {
       sound.playIncorrect();
       setLives((prev) => Math.max(1, prev - 1));
