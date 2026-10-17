@@ -313,7 +313,7 @@ export default function App() {
         {viewState === 'summary' && (
           <CompletionSummary
             score={lastQuizResult?.score || 0}
-            total={lastQuizResult?.total || (currentLesson?.questionCount || 8)}
+            total={lastQuizResult?.total || (currentLesson?.questions?.length || 8)}
             records={lastQuizResult?.records || []}
             onRetakeQuiz={() => { sound.playTap(); setViewState('quiz'); }}
             onReviewLesson={() => { sound.playTap(); setViewState('lesson'); }}
