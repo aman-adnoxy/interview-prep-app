@@ -1,0 +1,356 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "database-index-fundamentals",
+  "topicId": "databases",
+  "sectionId": "index-fundamentals",
+  "title": "Database Index Fundamentals",
+  "description": "Understand what database indexes do, how they speed up reads, and what they cost.",
+  "difficulty": "beginner",
+  "estimatedMinutes": 25,
+  "questionCount": 8,
+  "learningObjectives": [
+    "Explain what a database index is and why a database may use one.",
+    "Describe the basic idea behind a B-tree index.",
+    "Recognize query patterns that can benefit from an index.",
+    "Explain the read-performance, storage, and write-performance trade-offs of indexes.",
+    "Use a PostgreSQL EXPLAIN plan at a basic level to investigate query access."
+  ],
+  "mentalModel": "Think of a table as a book and an index as the book's index at the back. Without an index, the database may inspect rows one by one. With a useful index, it can navigate a smaller, ordered structure to find candidate rows. The index is an additional structure that must be stored and kept up to date when data changes.",
+  "concepts": [
+    {
+      "id": "what-an-index-is",
+      "title": "1. What is a database index?",
+      "explanation": "A database index is a data structure maintained alongside a table that helps the database find rows without necessarily scanning every row. An index usually stores indexed key values and references that let the engine locate matching table rows. The exact implementation depends on the database and index type.",
+      "examples": [
+        {
+          "type": "sql",
+          "title": "Create an index in PostgreSQL",
+          "language": "sql",
+          "content": "CREATE INDEX idx_users_email ON users (email);\n\nSELECT id, name\nFROM users\nWHERE email = 'sam@example.com';"
+        },
+        {
+          "type": "text",
+          "title": "Key idea",
+          "content": "The index can help locate rows matching the email predicate. It does not guarantee that the planner will choose the index for every query."
+        }
+      ]
+    },
+    {
+      "id": "why-indexes-help",
+      "title": "2. Why indexes can speed up reads",
+      "explanation": "A table scan may examine a large number of rows to find a small matching subset. A suitable index can narrow the search to matching keys and row locations. The benefit depends on selectivity, table size, data distribution, the query, and the cost of fetching the matching rows.",
+      "examples": [
+        {
+          "type": "sql",
+          "title": "Filter on an indexed column",
+          "language": "sql",
+          "content": "CREATE INDEX idx_orders_customer_id ON orders (customer_id);\n\nSELECT id, total\nFROM orders\nWHERE customer_id = 42;"
+        },
+        {
+          "type": "scenario",
+          "title": "When the index may not help",
+          "content": "If a query returns a very large fraction of a small table, scanning the table may be cheaper than using the index and then fetching many rows."
+        }
+      ]
+    },
+    {
+      "id": "btree-basics",
+      "title": "3. B-tree indexes",
+      "explanation": "In PostgreSQL, B-tree is the default index type and is suitable for common equality and range comparisons, as well as ordered access patterns. Its balanced tree structure lets the engine navigate keys without checking every indexed entry. Other index types serve different workloads.",
+      "examples": [
+        {
+          "type": "sql",
+          "title": "Equality and range filters",
+          "language": "sql",
+          "content": "CREATE INDEX idx_products_price ON products (price);\n\nSELECT id, name\nFROM products\nWHERE price >= 100 AND price < 500\nORDER BY price;"
+        }
+      ]
+    },
+    {
+      "id": "indexes-and-query-patterns",
+      "title": "4. Match indexes to query patterns",
+      "explanation": "Indexes are most useful when their columns and ordering fit the predicates, joins, and ordering used by real queries. A composite index stores keys in a defined column order; that order matters. In PostgreSQL, a B-tree index on (customer_id, created_at) is generally most directly useful for conditions beginning with customer_id, and can also support ordering or filtering patterns involving the leading column.",
+      "examples": [
+        {
+          "type": "sql",
+          "title": "Composite index",
+          "language": "sql",
+          "content": "CREATE INDEX idx_orders_customer_created\nON orders (customer_id, created_at DESC);\n\nSELECT id, created_at\nFROM orders\nWHERE customer_id = 42\nORDER BY created_at DESC\nLIMIT 10;"
+        }
+      ]
+    },
+    {
+      "id": "indexes-have-costs",
+      "title": "5. Indexes are not free",
+      "explanation": "Indexes consume disk space and add work to inserts, deletes, and updates that affect indexed values. They may also increase maintenance work. Creating an index without a real query need can slow writes and increase storage without improving the workload meaningfully.",
+      "examples": [
+        {
+          "type": "scenario",
+          "title": "Write-heavy table",
+          "content": "If a table receives frequent inserts and updates, measure the value of each index. Keep indexes that support important query patterns and revisit redundant or unused indexes carefully."
+        }
+      ]
+    },
+    {
+      "id": "selectivity-and-planner",
+      "title": "6. Selectivity and the query planner",
+      "explanation": "Selectivity describes how narrowly a predicate filters the rows. A predicate that matches very few rows is often more attractive for index access than one matching most rows. PostgreSQL's planner estimates costs and chooses a plan; the presence of an index does not force its use.",
+      "examples": [
+        {
+          "type": "sql",
+          "title": "Inspect a query plan",
+          "language": "sql",
+          "content": "EXPLAIN\nSELECT *\nFROM users\nWHERE email = 'sam@example.com';"
+        },
+        {
+          "type": "text",
+          "title": "Plan interpretation",
+          "content": "Look for nodes such as Seq Scan, Index Scan, Index Only Scan, or Bitmap Index Scan. EXPLAIN shows the planned operations; EXPLAIN ANALYZE executes the query and reports actual timings and row counts, so use it thoughtfully."
+        }
+      ]
+    },
+    {
+      "id": "index-only-scan-basics",
+      "title": "7. Index scans versus table scans",
+      "explanation": "A sequential scan reads table pages and checks rows against the condition. An index scan navigates an index and fetches matching rows. An index-only scan may satisfy a query from index contents without fetching every corresponding table row, subject to the index contents and PostgreSQL visibility-map conditions.",
+      "examples": [
+        {
+          "type": "sql",
+          "title": "A query that may be covered by an index",
+          "language": "sql",
+          "content": "CREATE INDEX idx_users_email_name ON users (email) INCLUDE (name);\n\nSELECT name\nFROM users\nWHERE email = 'sam@example.com';"
+        }
+      ]
+    },
+    {
+      "id": "verify-before-adding-indexes",
+      "title": "8. Verify with evidence",
+      "explanation": "Start from a slow or important query, inspect its execution plan, understand its filtering and ordering, and measure before and after changes. Avoid adding indexes based only on a column name or intuition. Production decisions should consider both read latency and write/storage costs.",
+      "examples": [
+        {
+          "type": "text",
+          "title": "A practical workflow",
+          "content": "1. Capture the query and its parameters.\n2. Inspect EXPLAIN or EXPLAIN ANALYZE where safe.\n3. Check row estimates, actual rows, and scan type.\n4. Propose an index that matches the query pattern.\n5. Compare representative performance and write overhead."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    "An index makes some access patterns cheaper; it does not make every query faster.",
+    "PostgreSQL's planner may choose a sequential scan when it estimates that scanning the table is cheaper.",
+    "A composite B-tree index's column order matters; an index on (a, b) is not equivalent to an index on (b, a).",
+    "Indexes increase storage use and can add overhead to inserts, deletes, and updates.",
+    "Low-selectivity predicates may not benefit from an ordinary index, depending on the table and query.",
+    "EXPLAIN shows the planned operations; EXPLAIN ANALYZE executes the query, so be careful with expensive or side-effecting statements.",
+    "Do not assume all databases use the same index types, storage structures, or query-planner rules."
+  ],
+  "revisionSheet": [
+    "An index is an auxiliary data structure that helps locate rows efficiently.",
+    "PostgreSQL uses B-tree by default; it supports equality, range and ordered access patterns.",
+    "Index usefulness depends on the query, selectivity, data distribution, table size and cost estimates.",
+    "The query planner chooses a plan; the mere existence of an index does not guarantee index usage.",
+    "Composite index column order matters.",
+    "Indexes trade storage and write overhead for potential read improvements.",
+    "Use EXPLAIN to inspect a plan and EXPLAIN ANALYZE to measure actual execution.",
+    "Design indexes from real workload patterns and validate with measurements."
+  ],
+  "questions": [
+    {
+      "id": "index-fundamentals-q1",
+      "type": "single_select",
+      "prompt": "What is the primary purpose of a database index?",
+      "options": [
+        {
+          "id": "a",
+          "text": "To eliminate the need for storing table rows"
+        },
+        {
+          "id": "b",
+          "text": "To help the database locate matching rows more efficiently"
+        },
+        {
+          "id": "c",
+          "text": "To guarantee that every query runs in constant time"
+        },
+        {
+          "id": "d",
+          "text": "To automatically prevent duplicate values in every column"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "An index provides an additional access structure that can help the database find matching rows without examining the entire table. It does not replace the table or guarantee a particular runtime. Uniqueness is enforced only by a suitable unique constraint or unique index."
+    },
+    {
+      "id": "index-fundamentals-q2",
+      "type": "single_select",
+      "prompt": "In PostgreSQL, which index type is the default and commonly supports equality and range comparisons?",
+      "options": [
+        {
+          "id": "a",
+          "text": "B-tree"
+        },
+        {
+          "id": "b",
+          "text": "GIN only"
+        },
+        {
+          "id": "c",
+          "text": "BRIN only"
+        },
+        {
+          "id": "d",
+          "text": "Hash is the default for every index"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "B-tree is PostgreSQL's default index type and supports common equality, range, and ordered-access patterns. GIN and BRIN are useful for different data and workload patterns."
+    },
+    {
+      "id": "index-fundamentals-q3",
+      "type": "true_false",
+      "prompt": "If a PostgreSQL table has an index on a column, PostgreSQL must use that index whenever a query filters on the column.",
+      "correctAnswer": false,
+      "explanation": "The planner estimates the costs of available plans. If a sequential scan is expected to be cheaper—for example, when many rows must be read—it may choose that instead."
+    },
+    {
+      "id": "index-fundamentals-q4",
+      "type": "multi_select",
+      "prompt": "Which are common costs or trade-offs of maintaining indexes? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "Additional storage consumption"
+        },
+        {
+          "id": "b",
+          "text": "Extra work for relevant inserts, updates and deletes"
+        },
+        {
+          "id": "c",
+          "text": "Guaranteed faster writes"
+        },
+        {
+          "id": "d",
+          "text": "Potential maintenance overhead"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": "Indexes consume storage and need maintenance as table data changes. They can improve some reads, but they do not guarantee faster writes; write operations may become more expensive."
+    },
+    {
+      "id": "index-fundamentals-q5",
+      "type": "single_select",
+      "prompt": "A query returns most rows from a small table. Why might PostgreSQL choose a sequential scan even when a relevant index exists?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Indexes cannot be used on small tables"
+        },
+        {
+          "id": "b",
+          "text": "Fetching many rows through the index may cost more than scanning the table"
+        },
+        {
+          "id": "c",
+          "text": "A sequential scan always has a lower cost by definition"
+        },
+        {
+          "id": "d",
+          "text": "PostgreSQL ignores indexes after the first query"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "An index is not automatically the cheapest route. When a large fraction of rows must be read, index navigation plus fetching many table rows can cost more than reading the table sequentially."
+    },
+    {
+      "id": "index-fundamentals-q6",
+      "type": "single_select",
+      "prompt": "Given a PostgreSQL B-tree index on (customer_id, created_at), which query pattern most directly matches the leading column?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Filtering by customer_id and ordering by created_at"
+        },
+        {
+          "id": "b",
+          "text": "Filtering only by an unrelated column called status"
+        },
+        {
+          "id": "c",
+          "text": "Filtering only by a completely different table's primary key"
+        },
+        {
+          "id": "d",
+          "text": "Any query, regardless of its predicates"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The index begins with customer_id, so queries that constrain that leading column and then use created_at can often benefit. Actual usefulness still depends on the full query, sort direction, predicates and planner estimates."
+    },
+    {
+      "id": "index-fundamentals-q7",
+      "type": "true_false",
+      "prompt": "In PostgreSQL, EXPLAIN ANALYZE executes the statement being analyzed.",
+      "correctAnswer": true,
+      "explanation": "EXPLAIN ANALYZE runs the statement and reports actual execution information in addition to the plan. Be cautious with statements that modify data or with queries that are expensive to run."
+    },
+    {
+      "id": "index-fundamentals-q8",
+      "type": "multi_select",
+      "prompt": "Which practices help you decide whether an index is useful? Select all that apply.",
+      "options": [
+        {
+          "id": "a",
+          "text": "Inspect the actual query and its filtering or ordering pattern"
+        },
+        {
+          "id": "b",
+          "text": "Review the execution plan"
+        },
+        {
+          "id": "c",
+          "text": "Measure representative performance before and after a change"
+        },
+        {
+          "id": "d",
+          "text": "Add an index to every column without measuring"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "Good index design starts from real query patterns, uses execution plans to understand current behavior, and validates improvements through measurement. Indexing every column blindly can increase storage and write costs."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "slow-query-despite-index",
+      "prompt": "A production query is slow even though an index exists on the column used in its WHERE clause. How would you investigate?",
+      "skillsTested": [
+        "Query-plan analysis",
+        "Selectivity and cardinality reasoning",
+        "Index design",
+        "Performance measurement"
+      ],
+      "strongAnswerPoints": [
+        "Inspect the exact query, parameters, and execution plan.",
+        "Compare estimated and actual row counts where safe using EXPLAIN ANALYZE.",
+        "Check whether the predicate is selective and whether the index matches the filter, sort, and join patterns.",
+        "Look for expensive row fetches, stale statistics, locks, I/O pressure, or other bottlenecks.",
+        "Test a targeted change on representative data and measure read and write effects."
+      ],
+      "pitfalls": [
+        "Assuming an index must be used because it exists.",
+        "Adding another index before examining the plan.",
+        "Running expensive EXPLAIN ANALYZE queries on production without considering impact."
+      ],
+      "referenceAnswer": "I would first capture the exact query and representative parameters, then inspect EXPLAIN to see the chosen plan. If safe, I would use EXPLAIN ANALYZE to compare estimated and actual rows and identify where time is spent. I would verify selectivity, statistics, predicate shape, composite-index column order, sorting and joins. I would also check whether the delay is caused by locking, I/O or another bottleneck. Only then would I test a targeted index or query rewrite and measure the result against representative workload data."
+    }
+  ]
+}

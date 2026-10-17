@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "1.0.0",
+  "title": "Interview Prep",
+  "description": "A structured, section-based technical interview preparation curriculum.",
+  "timezone": "Asia/Kolkata",
+  "progression": {
+    "unit": "section",
+    "missedDayBehavior": "resume-next-incomplete",
+    "ordering": "fixed"
+  },
+  "topics": [
+    {
+      "id": "databases",
+      "title": "Databases",
+      "description": "Indexes, query performance, caching, database trade-offs and scale.",
+      "order": 1,
+      "sections": [
+        {
+          "id": "index-fundamentals",
+          "title": "Database Index Fundamentals",
+          "difficulty": "beginner",
+          "questionCount": 8,
+          "lessonPath": "lessons/databases/index-fundamentals.json",
+          "order": 1,
+          "status": "published"
+        }
+      ]
+    },
+    {
+      "id": "backend",
+      "title": "Backend Engineering",
+      "description": "Backend fundamentals and API engineering.",
+      "order": 2,
+      "sections": []
+    },
+    {
+      "id": "oop-api-design",
+      "title": "OOP and API Design",
+      "description": "Object-oriented design, design patterns and API design.",
+      "order": 3,
+      "sections": []
+    },
+    {
+      "id": "dsa",
+      "title": "Data Structures and Algorithms",
+      "description": "Problem solving and core data structures.",
+      "order": 4,
+      "sections": []
+    },
+    {
+      "id": "system-design",
+      "title": "System Design",
+      "description": "Design scalable and reliable systems.",
+      "order": 5,
+      "sections": []
+    },
+    {
+      "id": "ai-engineering",
+      "title": "AI Engineering",
+      "description": "RAG, agents, evaluation and production AI systems.",
+      "order": 6,
+      "sections": []
+    }
+  ]
+}
