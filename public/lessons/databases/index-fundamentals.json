@@ -24,6 +24,10 @@
       "title": "What is a database index?",
       "blocks": [
         {
+          "type": "paragraph",
+          "text": "A database index is a data structure maintained alongside a table that helps the database find rows without necessarily scanning every row. An index usually stores indexed key values and references that let the engine locate matching table rows. The exact implementation depends on the database and index type."
+        },
+        {
           "type": "code",
           "language": "sql",
           "title": "Create an index in PostgreSQL",
@@ -39,6 +43,10 @@
       "id": "why-indexes-help",
       "title": "Why indexes can speed up reads",
       "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A table scan may examine a large number of rows to find a small matching subset. A suitable index can narrow the search to matching keys and row locations. The benefit depends on selectivity, table size, data distribution, the query, and the cost of fetching the matching rows."
+        },
         {
           "type": "code",
           "language": "sql",
@@ -57,6 +65,10 @@
       "id": "btree-basics",
       "title": "B-tree indexes",
       "blocks": [
+        {
+          "type": "paragraph",
+          "text": "In PostgreSQL, B-tree is the default index type and is suitable for common equality and range comparisons, as well as ordered access patterns. Its balanced tree structure lets the engine navigate keys without checking every indexed entry. Other index types serve different workloads."
+        },
         {
           "type": "code",
           "language": "sql",
@@ -170,6 +182,10 @@
       "title": "Match indexes to query patterns",
       "blocks": [
         {
+          "type": "paragraph",
+          "text": "Indexes are most useful when their columns and ordering fit the predicates, joins, and ordering used by real queries. A composite index stores keys in a defined column order; that order matters. In PostgreSQL, a B-tree index on (customer_id, created_at) is generally most directly useful for conditions beginning with customer_id, and can also support ordering or filtering patterns involving the leading column."
+        },
+        {
           "type": "code",
           "language": "sql",
           "title": "Composite index",
@@ -182,6 +198,10 @@
       "title": "Indexes are not free",
       "blocks": [
         {
+          "type": "paragraph",
+          "text": "Indexes consume disk space and add work to inserts, deletes, and updates that affect indexed values. They may also increase maintenance work. Creating an index without a real query need can slow writes and increase storage without improving the workload meaningfully."
+        },
+        {
           "type": "callout",
           "kind": "info",
           "title": "Write-heavy table",
@@ -193,6 +213,10 @@
       "id": "selectivity-and-planner",
       "title": "Selectivity and the query planner",
       "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Selectivity describes how narrowly a predicate filters the rows. A predicate that matches very few rows is often more attractive for index access than one matching most rows. PostgreSQL's planner estimates costs and chooses a plan; the presence of an index does not force its use."
+        },
         {
           "type": "code",
           "language": "sql",
@@ -210,6 +234,10 @@
       "title": "Index scans versus table scans",
       "blocks": [
         {
+          "type": "paragraph",
+          "text": "A sequential scan reads table pages and checks rows against the condition. An index scan navigates an index and fetches matching rows. An index-only scan may satisfy a query from index contents without fetching every corresponding table row, subject to the index contents and PostgreSQL visibility-map conditions."
+        },
+        {
           "type": "code",
           "language": "sql",
           "title": "A query that may be covered by an index",
@@ -221,6 +249,10 @@
       "id": "verify-before-adding-indexes",
       "title": "Verify with evidence",
       "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Start from a slow or important query, inspect its execution plan, understand its filtering and ordering, and measure before and after changes. Avoid adding indexes based only on a column name or intuition. Production decisions should consider both read latency and write/storage costs."
+        },
         {
           "type": "paragraph",
           "text": "A practical workflow\n\n1. Capture the query and its parameters.\n2. Inspect EXPLAIN or EXPLAIN ANALYZE where safe.\n3. Check row estimates, actual rows, and scan type.\n4. Propose an index that matches the query pattern.\n5. Compare representative performance and write overhead."
