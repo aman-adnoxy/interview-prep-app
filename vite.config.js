@@ -29,16 +29,17 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.endsWith('.json'),
-            handler: 'StaleWhileRevalidate',
+            handler: 'NetworkFirst',
             options: {
-              cacheName: 'curriculum-content-cache',
+              cacheName: 'curriculum-content-cache-v2',
+              networkTimeoutSeconds: 5,
               expiration: {
                 maxEntries: 60,
-                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+                maxAgeSeconds: 24 * 60 * 60, // 1 day; prefer the latest published curriculum when online
               },
             },
           },
