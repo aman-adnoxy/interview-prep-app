@@ -7,7 +7,8 @@ const ref = process.env.CONTENT_REF || 'main';
 const base = 'https://raw.githubusercontent.com/aman-adnoxy/interview-prep/' + encodeURIComponent(ref) + '/dist';
 
 async function readRemote(relativePath) {
-  const response = await fetch(base + '/' + relativePath);
+  // Avoid stale raw.githubusercontent.com CDN responses immediately after content publishes.
+  const response = await fetch(base + '/' + relativePath + '?sync=' + Date.now(), { cache: 'no-store' });
   if (!response.ok) throw new Error('Canonical content fetch failed for ' + relativePath + ' (HTTP ' + response.status + ', ref ' + ref + ').');
   return response.text();
 }
