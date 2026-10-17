@@ -58,9 +58,9 @@ export default function App() {
         setActiveSection(initialActive);
 
         // Preload lesson for active section
-        if (initialActive?.lessonPath) {
+        if (initialActive?.lessonId || initialActive?.id) {
           try {
-            const lessonData = await fetchLesson(initialActive.lessonPath);
+            const lessonData = await fetchLesson(initialActive.lessonId || initialActive.id);
             setCurrentLesson(lessonData);
           } catch (e) {
             console.error('Failed to preload active lesson', e);
@@ -84,12 +84,12 @@ export default function App() {
       return null;
     }
     // If the currently loaded lesson already matches this section, don't refetch
-    if (currentLesson && currentLesson.sectionId === section.id) {
+    if (currentLesson && currentLesson.id === (section.lessonId || section.id)) {
       return currentLesson;
     }
     try {
       setLoading(true);
-      const lessonData = await fetchLesson(section.lessonPath);
+      const lessonData = await fetchLesson(section.lessonId || section.id);
       setCurrentLesson(lessonData);
       return lessonData;
     } catch (err) {
