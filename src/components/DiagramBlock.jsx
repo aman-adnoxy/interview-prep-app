@@ -54,10 +54,9 @@ export default function DiagramBlock({ example }) {
         {example.format === 'interactive' && example.interactiveType === 'btree-search' ? (
           <BTreeInteractiveVisual activeStepIndex={currentStep} />
         ) : example.format === 'svg' ? (
-          <div 
-            className="svg-graphic-wrapper"
-            dangerouslySetInnerHTML={{ __html: example.content }}
-          />
+          <div className="svg-graphic-wrapper" role="img" aria-label={example.alt || example.title || 'Legacy diagram source'}>
+            <pre className="svg-source-fallback">{example.content}</pre>
+          </div>
         ) : (
           /* Default clean responsive SVG renderer for B-Tree if raw or fallback */
           <div className="ascii-or-rendered-canvas">
@@ -121,7 +120,7 @@ export default function DiagramBlock({ example }) {
       )}
 
       <style>{`
-        .diagram-container-card {
+        .svg-source-fallback { white-space: pre-wrap; overflow-x: auto; max-width: 100%; padding: 12px; color: #334155; background: #f8fafc; }\n        .diagram-container-card {
           background: #ffffff;
           border: 2px solid #e2e8f0;
           border-radius: var(--radius-md);
