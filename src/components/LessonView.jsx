@@ -114,10 +114,7 @@ export default function LessonView({
               <h1 className="concept-main-title">
                 {currentConcept.title.replace(/^\d+\.\s*/, '')}
               </h1>
-              <div className="concept-explanation-text">
-                {currentConcept.blocks?.filter(block => block.type === 'paragraph').length === 0 && <p>{currentConcept.title}</p>}
               </div>
-            </div>
 
             {/* Mental Model Callout on first card */}
             {conceptIndex === 0 && lesson.mentalModel && (
