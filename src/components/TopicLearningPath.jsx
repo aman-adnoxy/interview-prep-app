@@ -114,8 +114,9 @@ export default function TopicLearningPath({
           sections.map((section, idx) => {
             const prog = progressMap[section.id];
             const isCompleted = prog?.completed;
-            const isCurrent = !isCompleted && (idx === 0 || progressMap[sections[idx - 1]?.id]?.completed);
-            const isLocked = !isCompleted && !isCurrent;
+            const isCurrent = section.status === 'published' && !isCompleted && (idx === 0 || progressMap[sections[idx - 1]?.id]?.completed);
+            const isLocked = section.status !== 'published' || (!isCompleted && !isCurrent);
+            const scoreTotal = section.questionCount ?? prog?.totalQuestions;
             const xOffset = offsets[idx % offsets.length];
 
             return (
@@ -171,12 +172,12 @@ export default function TopicLearningPath({
                       </span>
                       {isCompleted && (
                         <span className="passed-badge">
-                          {prog?.bestScore ?? prog?.lastScore}/{section.questionCount} Correct
+                          {(prog?.bestScore ?? prog?.lastScore)}/{scoreTotal} Correct
                         </span>
                       )}
                     </div>
                     <div className="label-title">{section.title}</div>
-                    <div className="label-footer">{section.questionCount} Questions • 1 Case</div>
+                    <div className="label-footer">{Number.isInteger(section.questionCount) ? `${section.questionCount} Questions • 1 Case` : 'Lesson coming soon'}</div>
                   </div>
                 </div>
               </div>
