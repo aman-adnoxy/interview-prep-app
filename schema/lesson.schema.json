@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/aman-adnoxy/interview-prep/blob/main/schema/lesson.schema.json",
   "title": "Interview Prep Lesson",
-  "description": "Schema for a complete section-based interview-preparation lesson, its knowledge-check quiz, and separate open-ended interview scenarios.",
+  "description": "Canonical version 2 lesson contract. Structural correctness is supplemented by semantic validation in scripts/validate-content.mjs.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,7 +13,6 @@
     "title",
     "difficulty",
     "estimatedMinutes",
-    "questionCount",
     "learningObjectives",
     "mentalModel",
     "concepts",
@@ -24,8 +23,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "type": "string",
-      "const": "1.0.0"
+      "const": "2.0.0"
     },
     "id": {
       "$ref": "#/$defs/id"
@@ -44,7 +42,6 @@
       "type": "string"
     },
     "difficulty": {
-      "type": "string",
       "enum": [
         "beginner",
         "intermediate",
@@ -52,10 +49,6 @@
       ]
     },
     "estimatedMinutes": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "questionCount": {
       "type": "integer",
       "minimum": 1
     },
@@ -68,8 +61,7 @@
       }
     },
     "mentalModel": {
-      "type": "string",
-      "minLength": 1
+      "$ref": "#/$defs/paragraphBlock"
     },
     "concepts": {
       "type": "array",
@@ -80,8 +72,7 @@
         "required": [
           "id",
           "title",
-          "explanation",
-          "examples"
+          "blocks"
         ],
         "properties": {
           "id": {
@@ -91,14 +82,11 @@
             "type": "string",
             "minLength": 1
           },
-          "explanation": {
-            "type": "string",
-            "minLength": 1
-          },
-          "examples": {
+          "blocks": {
             "type": "array",
+            "minItems": 1,
             "items": {
-              "$ref": "#/$defs/example"
+              "$ref": "#/$defs/block"
             }
           }
         }
@@ -106,18 +94,14 @@
     },
     "tradeoffsAndPitfalls": {
       "type": "array",
-      "minItems": 1,
       "items": {
-        "type": "string",
-        "minLength": 1
+        "$ref": "#/$defs/block"
       }
     },
     "revisionSheet": {
       "type": "array",
-      "minItems": 1,
       "items": {
-        "type": "string",
-        "minLength": 1
+        "$ref": "#/$defs/block"
       }
     },
     "questions": {
@@ -140,49 +124,7 @@
     "interviewScenarios": {
       "type": "array",
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "prompt",
-          "skillsTested",
-          "strongAnswerPoints",
-          "pitfalls",
-          "referenceAnswer"
-        ],
-        "properties": {
-          "id": {
-            "$ref": "#/$defs/id"
-          },
-          "prompt": {
-            "type": "string",
-            "minLength": 1
-          },
-          "skillsTested": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string"
-            }
-          },
-          "strongAnswerPoints": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string"
-            }
-          },
-          "pitfalls": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "referenceAnswer": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
+        "$ref": "#/$defs/interviewScenario"
       }
     }
   },
@@ -191,68 +133,325 @@
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
     },
-    "example": {
+    "paragraphBlock": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "type",
-        "content"
+        "text"
       ],
       "properties": {
         "type": {
-          "type": "string",
-          "enum": [
-            "sql",
-            "code",
-            "table",
-            "execution_plan",
-            "scenario",
-            "text",
-            "diagram",
-            "interactive_stepper"
-          ]
+          "const": "paragraph"
         },
-        "title": {
-          "type": "string"
-        },
-        "language": {
-          "type": "string"
-        },
-        "content": {
+        "text": {
           "type": "string",
           "minLength": 1
-        },
-        "format": {
-          "type": "string",
-          "enum": ["svg", "mermaid", "ascii", "interactive"]
-        },
-        "alt": {
-          "type": "string"
-        },
-        "learningPoint": {
-          "type": "string"
-        },
-        "steps": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["stepNumber", "title", "description"],
-            "properties": {
-              "stepNumber": { "type": "integer" },
-              "title": { "type": "string" },
-              "description": { "type": "string" },
-              "highlightNode": { "type": "string" }
-            }
-          }
         }
       }
     },
-    "baseQuestion": {
+    "block": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/paragraphBlock"
+        },
+        {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "required": [
+            "type",
+            "kind",
+            "title",
+            "content"
+          ],
+          "properties": {
+            "type": {
+              "const": "callout"
+            },
+            "kind": {
+              "enum": [
+                "info",
+                "tip",
+                "warning",
+                "pitfall"
+              ]
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "content": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "language",
+            "source"
+          ],
+          "properties": {
+            "type": {
+              "const": "code"
+            },
+            "language": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "required": [
+            "type",
+            "columns",
+            "rows"
+          ],
+          "properties": {
+            "type": {
+              "const": "table"
+            },
+            "title": {
+              "type": "string"
+            },
+            "columns": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "rows": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "diagramType",
+            "alt",
+            "nodes",
+            "edges"
+          ],
+          "properties": {
+            "type": {
+              "const": "diagram"
+            },
+            "diagramType": {
+              "enum": [
+                "btree"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "alt": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodes": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "label"
+                ],
+                "properties": {
+                  "id": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "edges": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "from",
+                  "to"
+                ],
+                "properties": {
+                  "from": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "to": {
+                    "$ref": "#/$defs/id"
+                  }
+                }
+              }
+            },
+            "highlightedNodeIds": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "title",
+            "steps"
+          ],
+          "properties": {
+            "type": {
+              "const": "steps"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "steps": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "title",
+                  "description"
+                ],
+                "properties": {
+                  "id": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "problem",
+            "reasoning",
+            "outcome"
+          ],
+          "properties": {
+            "type": {
+              "const": "worked_example"
+            },
+            "problem": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reasoning": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "outcome": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "required": [
+            "type",
+            "prompt",
+            "answer",
+            "explanation"
+          ],
+          "properties": {
+            "type": {
+              "const": "checkpoint"
+            },
+            "prompt": {
+              "type": "string",
+              "minLength": 1
+            },
+            "answer": {
+              "type": "string",
+              "minLength": 1
+            },
+            "explanation": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "option": {
       "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "singleSelectQuestion": {
+      "type": "object",
+      "additionalProperties": false,
       "required": [
         "id",
         "type",
         "prompt",
+        "options",
+        "correctOptionId",
         "explanation"
       ],
       "properties": {
@@ -260,11 +459,21 @@
           "$ref": "#/$defs/id"
         },
         "type": {
-          "type": "string"
+          "const": "single_select"
         },
         "prompt": {
           "type": "string",
           "minLength": 1
+        },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/option"
+          }
+        },
+        "correctOptionId": {
+          "$ref": "#/$defs/id"
         },
         "explanation": {
           "type": "string",
@@ -275,159 +484,130 @@
         }
       }
     },
-    "singleSelectQuestion": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/baseQuestion"
-        },
-        {
-          "type": "object",
-          "unevaluatedProperties": false,
-          "required": [
-            "id",
-            "type",
-            "prompt",
-            "options",
-            "correctOptionId",
-            "explanation"
-          ],
-          "properties": {
-            "id": {
-              "$ref": "#/$defs/id"
-            },
-            "type": {
-              "const": "single_select"
-            },
-            "prompt": {
-              "type": "string",
-              "minLength": 1
-            },
-            "options": {
-              "$ref": "#/$defs/options"
-            },
-            "correctOptionId": {
-              "type": "string",
-              "minLength": 1
-            },
-            "explanation": {
-              "type": "string",
-              "minLength": 1
-            },
-            "hint": {
-              "type": "string"
-            }
-          }
-        }
-      ]
-    },
     "multiSelectQuestion": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/baseQuestion"
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "prompt",
+        "options",
+        "correctOptionIds",
+        "explanation"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
         },
-        {
-          "type": "object",
-          "unevaluatedProperties": false,
-          "required": [
-            "id",
-            "type",
-            "prompt",
-            "options",
-            "correctOptionIds",
-            "explanation"
-          ],
-          "properties": {
-            "id": {
-              "$ref": "#/$defs/id"
-            },
-            "type": {
-              "const": "multi_select"
-            },
-            "prompt": {
-              "type": "string",
-              "minLength": 1
-            },
-            "options": {
-              "$ref": "#/$defs/options"
-            },
-            "correctOptionIds": {
-              "type": "array",
-              "minItems": 1,
-              "uniqueItems": true,
-              "items": {
-                "type": "string"
-              }
-            },
-            "explanation": {
-              "type": "string",
-              "minLength": 1
-            },
-            "hint": {
-              "type": "string"
-            }
+        "type": {
+          "const": "multi_select"
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/option"
           }
+        },
+        "correctOptionIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "explanation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hint": {
+          "type": "string"
         }
-      ]
+      }
     },
     "trueFalseQuestion": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/baseQuestion"
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "prompt",
+        "correctAnswer",
+        "explanation"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
         },
-        {
-          "type": "object",
-          "unevaluatedProperties": false,
-          "required": [
-            "id",
-            "type",
-            "prompt",
-            "correctAnswer",
-            "explanation"
-          ],
-          "properties": {
-            "id": {
-              "$ref": "#/$defs/id"
-            },
-            "type": {
-              "const": "true_false"
-            },
-            "prompt": {
-              "type": "string",
-              "minLength": 1
-            },
-            "correctAnswer": {
-              "type": "boolean"
-            },
-            "explanation": {
-              "type": "string",
-              "minLength": 1
-            },
-            "hint": {
-              "type": "string"
-            }
-          }
+        "type": {
+          "const": "true_false"
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "correctAnswer": {
+          "type": "boolean"
+        },
+        "explanation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hint": {
+          "type": "string"
         }
-      ]
+      }
     },
-    "options": {
-      "type": "array",
-      "minItems": 2,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "text"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "text": {
+    "interviewScenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "prompt",
+        "skillsTested",
+        "strongAnswerPoints",
+        "pitfalls",
+        "referenceAnswer"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "skillsTested": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
             "type": "string",
             "minLength": 1
           }
+        },
+        "strongAnswerPoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "pitfalls": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "referenceAnswer": {
+          "type": "string",
+          "minLength": 1
         }
       }
     }

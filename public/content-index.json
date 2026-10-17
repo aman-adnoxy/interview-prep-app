@@ -1,0 +1,11 @@
+{
+  "indexVersion": "1.0.0",
+  "schemaVersion": "2.0.0",
+  "lessons": {
+    "database-index-fundamentals": {
+      "path": "/lessons/databases/index-fundamentals.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 8
+    }
+  }
+}

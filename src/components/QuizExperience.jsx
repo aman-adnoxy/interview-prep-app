@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { sound } from '../services/sound';
+import { evaluateAnswer } from '../services/quiz';
 
 export default function QuizExperience({
   sectionId,
@@ -44,20 +45,7 @@ export default function QuizExperience({
   const isSubmitted = !!submittedStates[qId];
   const userSelection = selectedAnswers[qId];
 
-  // Evaluate correctness
-  let isCorrect = false;
-  if (isSubmitted) {
-    if (currentQ.type === 'single_select') {
-      isCorrect = userSelection === currentQ.correctOptionId;
-    } else if (currentQ.type === 'true_false') {
-      isCorrect = userSelection === currentQ.correctAnswer;
-    } else if (currentQ.type === 'multi_select') {
-      const correctSet = new Set(currentQ.correctOptionIds || []);
-      const userList = Array.isArray(userSelection) ? userSelection : [];
-      const userSet = new Set(userList);
-      isCorrect = correctSet.size === userSet.size && [...correctSet].every((id) => userSet.has(id));
-    }
-  }
+  const isCorrect = isSubmitted ? evaluateAnswer(currentQ, userSelection) : false;
 
   const handleSelectOption = (optionId) => {
     if (isSubmitted) return;
@@ -87,17 +75,7 @@ export default function QuizExperience({
 
     setSubmittedStates({ ...submittedStates, [qId]: true });
 
-    let correct = false;
-    if (currentQ.type === 'single_select') {
-      correct = userSelection === currentQ.correctOptionId;
-    } else if (currentQ.type === 'true_false') {
-      correct = userSelection === currentQ.correctAnswer;
-    } else if (currentQ.type === 'multi_select') {
-      const correctSet = new Set(currentQ.correctOptionIds || []);
-      const userList = Array.isArray(userSelection) ? userSelection : [];
-      const userSet = new Set(userList);
-      correct = correctSet.size === userSet.size && [...correctSet].every((id) => userSet.has(id));
-    }
+    const correct = evaluateAnswer(currentQ, userSelection);
 
     if (correct) {
       sound.playCorrect();
