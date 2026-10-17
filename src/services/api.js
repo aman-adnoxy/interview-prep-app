@@ -60,13 +60,32 @@ export function resolveActiveAssignment(manifest, progressMap) {
 
   if (allSections.length === 0) return null;
 
-  // Find first section that is NOT marked as completed
+  const todayStr = getTodayKolkataString();
+
+  // Check if any section was completed TODAY (Asia/Kolkata date)
+  // Section progress records store completedAtDate or we can check lastAttemptDate / completedAt
+  const completedTodaySection = allSections.find((s) => {
+    const prog = progressMap[s.id];
+    if (!prog || !prog.completed) return false;
+    const compDate = prog.completedDate || (prog.lastAttemptDate ? prog.lastAttemptDate.split('T')[0] : null);
+    return compDate === todayStr;
+  });
+
+  // If the user already completed a section today, that section remains today's active assignment
+  // allowing revision, review, and retakes, while locking the next section until tomorrow.
+  if (completedTodaySection) {
+    return {
+      ...completedTodaySection,
+      completedToday: true
+    };
+  }
+
+  // Otherwise, find the first section in order that is NOT yet completed
   const currentIncomplete = allSections.find((s) => {
     const prog = progressMap[s.id];
     return !prog || !prog.completed;
   });
 
-  // When all published sections are completed, return null so UI can show completion state
   return currentIncomplete || null;
 }
 

@@ -282,7 +282,7 @@
         },
         {
           "type": "object",
-          "additionalProperties": false,
+          "unevaluatedProperties": false,
           "required": [
             "id",
             "type",
@@ -327,7 +327,7 @@
         },
         {
           "type": "object",
-          "additionalProperties": false,
+          "unevaluatedProperties": false,
           "required": [
             "id",
             "type",
@@ -376,7 +376,7 @@
         },
         {
           "type": "object",
-          "additionalProperties": false,
+          "unevaluatedProperties": false,
           "required": [
             "id",
             "type",

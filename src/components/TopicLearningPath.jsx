@@ -113,9 +113,18 @@ export default function TopicLearningPath({
         {sections.length > 0 ? (
           sections.map((section, idx) => {
             const prog = progressMap[section.id];
-            const isCompleted = prog?.completed;
-            const isCurrent = !isCompleted && (idx === 0 || progressMap[sections[idx - 1]?.id]?.completed);
-            const isLocked = !isCompleted && !isCurrent;
+            const isCompleted = Boolean(prog?.completed);
+            const isPublished = section.status === 'published';
+            // Only published sections can be active/unlocked.
+            // A section is current only if it is published, not yet completed,
+            // and all prior published sections in the sequence are completed.
+            const priorSectionsCompleted = sections
+              .slice(0, idx)
+              .filter((s) => s.status === 'published')
+              .every((s) => progressMap[s.id]?.completed);
+
+            const isCurrent = isPublished && !isCompleted && priorSectionsCompleted;
+            const isLocked = !isPublished || (!isCompleted && !isCurrent);
             const xOffset = offsets[idx % offsets.length];
 
             return (
@@ -138,7 +147,13 @@ export default function TopicLearningPath({
                       onSelectSection(section);
                     }}
                     disabled={isLocked}
-                    title={isLocked ? 'Complete earlier sections to unlock' : section.title}
+                    title={
+                      !isPublished 
+                        ? `${section.title} (Upcoming)` 
+                        : isLocked 
+                        ? 'Complete earlier sections to unlock' 
+                        : section.title
+                    }
                   >
                     {isCompleted ? (
                       <Check size={32} color="#ffffff" strokeWidth={3} />
@@ -169,11 +184,13 @@ export default function TopicLearningPath({
                       <span className={`badge badge-${section.difficulty || 'beginner'}`}>
                         {section.difficulty}
                       </span>
-                      {isCompleted && (
+                      {!isPublished ? (
+                        <span className="upcoming-tag">Upcoming</span>
+                      ) : isCompleted ? (
                         <span className="passed-badge">
                           {prog?.bestScore ?? prog?.lastScore}/{section.questionCount} Correct
                         </span>
-                      )}
+                      ) : null}
                     </div>
                     <div className="label-title">{section.title}</div>
                     <div className="label-footer">{section.questionCount} Questions • 1 Case</div>
@@ -417,6 +434,18 @@ export default function TopicLearningPath({
           background: var(--duo-green-bg);
           padding: 2px 6px;
           border-radius: var(--radius-full);
+        }
+
+        .upcoming-tag {
+          font-size: 0.68rem;
+          font-weight: 800;
+          color: #64748b;
+          background: #f1f5f9;
+          border: 1px solid #cbd5e1;
+          padding: 2px 6px;
+          border-radius: var(--radius-full);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
         }
 
         .label-title {
