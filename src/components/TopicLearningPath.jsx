@@ -113,9 +113,10 @@ export default function TopicLearningPath({
         {sections.length > 0 ? (
           sections.map((section, idx) => {
             const prog = progressMap[section.id];
-            const isCompleted = prog?.completed;
-            const isCurrent = section.status === 'published' && !isCompleted && (idx === 0 || progressMap[sections[idx - 1]?.id]?.completed);
-            const isLocked = section.status !== 'published' || (!isCompleted && !isCurrent);
+            const isCompleted = Boolean(prog?.completed);
+            const isPublished = section.status === 'published';
+            const isCurrent = isPublished && !isCompleted && (idx === 0 || progressMap[sections[idx - 1]?.id]?.completed);
+            const isLocked = !isPublished || (!isCompleted && !isCurrent);
             const scoreTotal = section.questionCount ?? prog?.totalQuestions;
             const xOffset = offsets[idx % offsets.length];
 
