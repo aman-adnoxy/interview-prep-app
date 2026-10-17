@@ -113,18 +113,10 @@ export default function TopicLearningPath({
         {sections.length > 0 ? (
           sections.map((section, idx) => {
             const prog = progressMap[section.id];
-            const isCompleted = Boolean(prog?.completed);
-            const isPublished = section.status === 'published';
-            // Only published sections can be active/unlocked.
-            // A section is current only if it is published, not yet completed,
-            // and all prior published sections in the sequence are completed.
-            const priorSectionsCompleted = sections
-              .slice(0, idx)
-              .filter((s) => s.status === 'published')
-              .every((s) => progressMap[s.id]?.completed);
-
-            const isCurrent = isPublished && !isCompleted && priorSectionsCompleted;
-            const isLocked = !isPublished || (!isCompleted && !isCurrent);
+            const isCompleted = prog?.completed;
+            const isCurrent = section.status === 'published' && !isCompleted && (idx === 0 || progressMap[sections[idx - 1]?.id]?.completed);
+            const isLocked = section.status !== 'published' || (!isCompleted && !isCurrent);
+            const scoreTotal = section.questionCount ?? prog?.totalQuestions;
             const xOffset = offsets[idx % offsets.length];
 
             return (
@@ -188,12 +180,12 @@ export default function TopicLearningPath({
                         <span className="upcoming-tag">Upcoming</span>
                       ) : isCompleted ? (
                         <span className="passed-badge">
-                          {prog?.bestScore ?? prog?.lastScore}/{section.questionCount} Correct
+                          {(prog?.bestScore ?? prog?.lastScore)}/{scoreTotal} Correct
                         </span>
                       ) : null}
                     </div>
                     <div className="label-title">{section.title}</div>
-                    <div className="label-footer">{section.questionCount} Questions • 1 Case</div>
+                    <div className="label-footer">{Number.isInteger(section.questionCount) ? `${section.questionCount} Questions • 1 Case` : 'Lesson coming soon'}</div>
                   </div>
                 </div>
               </div>

@@ -19,55 +19,50 @@
           "id": "index-fundamentals",
           "title": "Database Index Fundamentals",
           "difficulty": "beginner",
-          "questionCount": 8,
-          "lessonPath": "lessons/databases/index-fundamentals.json",
           "order": 1,
-          "status": "published"
+          "status": "published",
+          "lessonPath": "database-index-fundamentals",
+          "questionCount": 8
         },
         {
           "id": "index-design-performance",
           "title": "Index Design and Performance",
           "difficulty": "intermediate",
-          "questionCount": 9,
-          "lessonPath": "lessons/databases/index-design-performance.json",
           "order": 2,
-          "status": "upcoming"
+          "status": "upcoming",
+          "lessonPath": "database-index-design-performance"
         },
         {
           "id": "advanced-database-internals",
           "title": "Advanced Database Internals",
           "difficulty": "advanced",
-          "questionCount": 8,
-          "lessonPath": "lessons/databases/advanced-database-internals.json",
           "order": 3,
-          "status": "upcoming"
+          "status": "upcoming",
+          "lessonPath": "advanced-database-internals"
         },
         {
           "id": "redis-and-caching",
           "title": "Redis and Caching Architecture",
           "difficulty": "intermediate",
-          "questionCount": 10,
-          "lessonPath": "lessons/databases/redis-and-caching.json",
           "order": 4,
-          "status": "upcoming"
+          "status": "upcoming",
+          "lessonPath": "redis-and-caching"
         },
         {
           "id": "postgresql-vs-mongodb",
           "title": "PostgreSQL vs. MongoDB Trade-offs",
           "difficulty": "intermediate",
-          "questionCount": 10,
-          "lessonPath": "lessons/databases/postgresql-vs-mongodb.json",
           "order": 5,
-          "status": "upcoming"
+          "status": "upcoming",
+          "lessonPath": "postgresql-vs-mongodb"
         },
         {
           "id": "scaling-and-reliability",
           "title": "Scaling and Reliability",
           "difficulty": "advanced",
-          "questionCount": 10,
-          "lessonPath": "lessons/databases/scaling-and-reliability.json",
           "order": 6,
-          "status": "upcoming"
+          "status": "upcoming",
+          "lessonPath": "scaling-and-reliability"
         }
       ]
     },

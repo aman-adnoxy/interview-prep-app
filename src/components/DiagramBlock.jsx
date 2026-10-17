@@ -119,23 +119,9 @@ export default function DiagramBlock({ example }) {
       <div className="diagram-canvas">
         {isBTree ? (
           <BTreeInteractiveVisual activeStepIndex={currentStep} />
-        ) : isSvg ? (
-          <div 
-            className="svg-graphic-wrapper"
-            dangerouslySetInnerHTML={{ 
-              __html: sanitizeAndScopeSvg(example.content, `svg_${example.title?.replace(/\s+/g, '_') || 'diag'}`) 
-            }}
-          />
-        ) : isAscii ? (
-          <div className="ascii-diagram-wrapper">
-            <pre className="ascii-diagram-pre">{example.content}</pre>
-          </div>
-        ) : isMermaid ? (
-          <div className="mermaid-diagram-card">
-            <div className="mermaid-code-box">
-              <pre className="mermaid-pre">{example.content}</pre>
-            </div>
-            {example.alt && <p className="diagram-alt-caption">{example.alt}</p>}
+        ) : example.format === 'svg' ? (
+          <div className="svg-graphic-wrapper" role="img" aria-label={example.alt || example.title || 'Legacy diagram source'}>
+            <pre className="svg-source-fallback">{example.content}</pre>
           </div>
         ) : (
           /* Text or general visual fallback */
@@ -204,7 +190,7 @@ export default function DiagramBlock({ example }) {
       )}
 
       <style>{`
-        .diagram-container-card {
+        .svg-source-fallback { white-space: pre-wrap; overflow-x: auto; max-width: 100%; padding: 12px; color: #334155; background: #f8fafc; }\n        .diagram-container-card {
           background: #ffffff;
           border: 2px solid #e2e8f0;
           border-radius: var(--radius-md);

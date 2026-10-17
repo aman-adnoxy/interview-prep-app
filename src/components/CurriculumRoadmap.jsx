@@ -66,12 +66,13 @@ export default function CurriculumRoadmap({
                     const prog = progressMap[sec.id];
                     const isCompleted = prog?.completed;
                     const isActive = activeSectionId === sec.id;
+                    const isPublished = sec.status === 'published';
 
                     return (
                       <div
                         key={sec.id}
-                        className={`section-row glass-panel ${isActive ? 'is-active' : ''} ${isCompleted ? 'is-completed' : ''}`}
-                        onClick={() => onSelectSection(sec)}
+                        className={`section-row glass-panel ${isActive ? 'is-active' : ''} ${isCompleted ? 'is-completed' : ''} ${!isPublished ? 'is-locked' : ''}`}
+                        onClick={() => { if (isPublished) onSelectSection(sec); }}
                       >
                         <div className="status-indicator">
                           {isCompleted ? (
@@ -89,7 +90,7 @@ export default function CurriculumRoadmap({
                             {isActive && <span className="active-pill">Today's Focus</span>}
                           </div>
                           <h4 className="section-name">{sec.title}</h4>
-                          <span className="section-qcount">{sec.questionCount || 8} Questions • 1 Case Study</span>
+                          <span className="section-qcount">{Number.isInteger(sec.questionCount) ? `${sec.questionCount} Questions • 1 Case Study` : 'Lesson coming soon'}</span>
                         </div>
 
                         <ArrowRight size={18} className="row-arrow" />
