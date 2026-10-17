@@ -84,8 +84,12 @@ export default function DailyAssignmentCard({
         <div className="status-banner completed-banner">
           <CheckCircle2 size={22} className="status-icon done" />
           <div className="status-text">
-            <strong>Section Mastered!</strong>
-            <span>Best score: {progress?.bestScore ?? progress?.lastScore ?? questionCount}/{questionCount} questions correct</span>
+            <strong>{section.completedToday ? "Today's Mission Complete!" : "Section Mastered!"}</strong>
+            <span>
+              {section.completedToday 
+                ? "You completed today's daily allocation (1 section/day). Review or retake anytime—tomorrow's section unlocks at midnight!"
+                : `Best score: ${progress?.bestScore ?? progress?.lastScore ?? questionCount}/${questionCount} questions correct`}
+            </span>
           </div>
         </div>
       ) : (

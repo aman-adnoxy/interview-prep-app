@@ -16,6 +16,67 @@ import { sound } from '../services/sound';
  * 2. High-precision vector SVG diagrams
  * 3. Execution plan and node split flows
  */
+/**
+ * Clean and sanitize SVG markup to prevent script execution / attribute injection,
+ * and scope IDs (e.g. markers, gradients, filters) to avoid collisions across multiple diagrams.
+ */
+function sanitizeAndScopeSvg(rawSvg, prefixId = 'diag') {
+  if (!rawSvg || typeof rawSvg !== 'string') return '';
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(rawSvg, 'image/svg+xml');
+    
+    // Check for parse error
+    const parserError = doc.querySelector('parsererror');
+    if (parserError) {
+      console.warn('SVG parse error, fallback to text');
+      return '';
+    }
+
+    // Strip unsafe elements: script, iframe, object, embed, foreignObject with html
+    const forbiddenTags = ['script', 'iframe', 'object', 'embed'];
+    forbiddenTags.forEach((tag) => {
+      doc.querySelectorAll(tag).forEach((el) => el.remove());
+    });
+
+    // Strip all inline event handlers (onload, onclick, onerror, etc.)
+    const allElements = doc.querySelectorAll('*');
+    allElements.forEach((el) => {
+      const attrs = Array.from(el.attributes);
+      attrs.forEach((attr) => {
+        if (attr.name.toLowerCase().startsWith('on') || attr.value.toLowerCase().includes('javascript:')) {
+          el.removeAttribute(attr.name);
+        }
+      });
+    });
+
+    const svgEl = doc.querySelector('svg');
+    if (!svgEl) return '';
+
+    // Scope unique IDs in defs/markers/filters to prevent collision
+    const idMap = new Map();
+    const elementsWithId = svgEl.querySelectorAll('[id]');
+    elementsWithId.forEach((el) => {
+      const oldId = el.getAttribute('id');
+      const newId = `${prefixId}_${oldId}`;
+      idMap.set(oldId, newId);
+      el.setAttribute('id', newId);
+    });
+
+    let serialized = new XMLSerializer().serializeToString(svgEl);
+    idMap.forEach((newId, oldId) => {
+      serialized = serialized.replaceAll(`url(#${oldId})`, `url(#${newId})`);
+      serialized = serialized.replaceAll(`href="#${oldId}"`, `href="#${newId}"`);
+      serialized = serialized.replaceAll(`xlink:href="#${oldId}"`, `xlink:href="#${newId}"`);
+    });
+
+    return serialized;
+  } catch (e) {
+    console.error('Failed to sanitize SVG:', e);
+    return '';
+  }
+}
+
 export default function DiagramBlock({ example }) {
   const [currentStep, setCurrentStep] = useState(0);
   const steps = example.steps || [];
@@ -36,6 +97,11 @@ export default function DiagramBlock({ example }) {
     }
   };
 
+  const isBTree = example.format === 'interactive' && example.interactiveType === 'btree-search';
+  const isSvg = example.format === 'svg';
+  const isAscii = example.format === 'ascii';
+  const isMermaid = example.format === 'mermaid';
+
   return (
     <div className="diagram-container-card">
       {/* Diagram Header */}
@@ -44,23 +110,27 @@ export default function DiagramBlock({ example }) {
           <Layers size={16} className="diagram-type-icon" />
           <span className="diagram-title">{example.title || 'Technical Diagram'}</span>
         </div>
-        {example.learningPoint && (
-          <span className="diagram-concept-badge">Core Visual</span>
-        )}
+        <span className="diagram-concept-badge">
+          {example.format ? example.format.toUpperCase() : 'VISUAL'}
+        </span>
       </div>
 
       {/* Main Diagram Canvas */}
       <div className="diagram-canvas">
-        {example.format === 'interactive' && example.interactiveType === 'btree-search' ? (
+        {isBTree ? (
           <BTreeInteractiveVisual activeStepIndex={currentStep} />
         ) : example.format === 'svg' ? (
           <div className="svg-graphic-wrapper" role="img" aria-label={example.alt || example.title || 'Legacy diagram source'}>
             <pre className="svg-source-fallback">{example.content}</pre>
           </div>
         ) : (
-          /* Default clean responsive SVG renderer for B-Tree if raw or fallback */
-          <div className="ascii-or-rendered-canvas">
-            <BTreeInteractiveVisual activeStepIndex={currentStep} />
+          /* Text or general visual fallback */
+          <div className="general-diagram-canvas">
+            {example.content ? (
+              <pre className="ascii-diagram-pre">{example.content}</pre>
+            ) : (
+              <p className="fallback-diagram-text">{example.alt || 'Technical diagram content'}</p>
+            )}
           </div>
         )}
       </div>
@@ -173,6 +243,80 @@ export default function DiagramBlock({ example }) {
           overflow-x: auto;
           display: flex;
           justify-content: center;
+          align-items: center;
+        }
+
+        .svg-graphic-wrapper {
+          width: 100%;
+          display: flex;
+          justify-content: center;
+          overflow-x: auto;
+        }
+
+        .svg-graphic-wrapper svg {
+          max-width: 100%;
+          height: auto;
+          display: block;
+        }
+
+        .ascii-diagram-wrapper {
+          width: 100%;
+          background: #0f172a;
+          border-radius: var(--radius-sm);
+          padding: 16px;
+          overflow-x: auto;
+          box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+        }
+
+        .ascii-diagram-pre {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+          font-size: 0.82rem;
+          line-height: 1.45;
+          color: #38bdf8;
+          margin: 0;
+          white-space: pre;
+        }
+
+        .mermaid-diagram-card {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .mermaid-code-box {
+          background: #f8fafc;
+          border: 1.5px solid #e2e8f0;
+          border-radius: var(--radius-sm);
+          padding: 16px;
+          overflow-x: auto;
+        }
+
+        .mermaid-pre {
+          font-family: ui-monospace, SFMono-Regular, monospace;
+          font-size: 0.82rem;
+          line-height: 1.4;
+          color: #1e293b;
+          margin: 0;
+        }
+
+        .diagram-alt-caption {
+          font-size: 0.76rem;
+          color: #64748b;
+          font-style: italic;
+          margin: 0;
+          text-align: center;
+        }
+
+        .general-diagram-canvas {
+          width: 100%;
+          padding: 12px;
+        }
+
+        .fallback-diagram-text {
+          color: #64748b;
+          font-size: 0.88rem;
+          text-align: center;
         }
 
         .stepper-control-box {

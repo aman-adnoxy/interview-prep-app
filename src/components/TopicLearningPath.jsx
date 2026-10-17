@@ -139,7 +139,13 @@ export default function TopicLearningPath({
                       onSelectSection(section);
                     }}
                     disabled={isLocked}
-                    title={isLocked ? 'Complete earlier sections to unlock' : section.title}
+                    title={
+                      !isPublished 
+                        ? `${section.title} (Upcoming)` 
+                        : isLocked 
+                        ? 'Complete earlier sections to unlock' 
+                        : section.title
+                    }
                   >
                     {isCompleted ? (
                       <Check size={32} color="#ffffff" strokeWidth={3} />
@@ -170,11 +176,13 @@ export default function TopicLearningPath({
                       <span className={`badge badge-${section.difficulty || 'beginner'}`}>
                         {section.difficulty}
                       </span>
-                      {isCompleted && (
+                      {!isPublished ? (
+                        <span className="upcoming-tag">Upcoming</span>
+                      ) : isCompleted ? (
                         <span className="passed-badge">
                           {(prog?.bestScore ?? prog?.lastScore)}/{scoreTotal} Correct
                         </span>
-                      )}
+                      ) : null}
                     </div>
                     <div className="label-title">{section.title}</div>
                     <div className="label-footer">{Number.isInteger(section.questionCount) ? `${section.questionCount} Questions • 1 Case` : 'Lesson coming soon'}</div>
@@ -418,6 +426,18 @@ export default function TopicLearningPath({
           background: var(--duo-green-bg);
           padding: 2px 6px;
           border-radius: var(--radius-full);
+        }
+
+        .upcoming-tag {
+          font-size: 0.68rem;
+          font-weight: 800;
+          color: #64748b;
+          background: #f1f5f9;
+          border: 1px solid #cbd5e1;
+          padding: 2px 6px;
+          border-radius: var(--radius-full);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
         }
 
         .label-title {

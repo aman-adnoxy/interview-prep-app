@@ -46,33 +46,28 @@ export async function getSectionProgress(sectionId) {
 }
 
 export async function getAllProgress() {
-  try {
-    const db = await openDB();
-    return new Promise((resolve) => {
-      const tx = db.transaction(STORE_PROGRESS, 'readonly');
-      const store = tx.objectStore(STORE_PROGRESS);
-      const req = store.getAll();
-      req.onsuccess = () => {
-        const list = req.result || [];
-        const map = {};
-        for (const item of list) {
-          map[item.sectionId] = item;
-        }
-        resolve(map);
-      };
-      req.onerror = () => {
-        console.error('IndexedDB read error:', req.error);
-        resolve({});
-      };
-      tx.onerror = () => {
-        console.error('IndexedDB transaction error:', tx.error);
-        resolve({});
-      };
-    });
-  } catch (err) {
-    console.error('Failed to get all progress from IndexedDB:', err);
-    return {};
-  }
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_PROGRESS, 'readonly');
+    const store = tx.objectStore(STORE_PROGRESS);
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const list = req.result || [];
+      const map = {};
+      for (const item of list) {
+        map[item.sectionId] = item;
+      }
+      resolve(map);
+    };
+    req.onerror = () => {
+      console.error('IndexedDB read error:', req.error);
+      reject(req.error || new Error('Failed to read progress from storage'));
+    };
+    tx.onerror = () => {
+      console.error('IndexedDB transaction error:', tx.error);
+      reject(tx.error || new Error('Transaction error while reading progress'));
+    };
+  });
 }
 
 export async function saveSectionProgress(progressData) {
@@ -108,12 +103,18 @@ export async function recordQuizAttempt(attempt) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_ATTEMPTS, 'readwrite');
       const store = tx.objectStore(STORE_ATTEMPTS);
+      let newId = null;
       const req = store.add({
         ...attempt,
         timestamp: new Date().toISOString(),
       });
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        newId = req.result;
+      };
+      // Crucial: resolve only when the full transaction is confirmed committed
+      tx.oncomplete = () => resolve(newId);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
     });
   } catch (err) {
     console.error('Failed to record attempt:', err);

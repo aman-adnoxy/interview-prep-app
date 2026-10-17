@@ -10,7 +10,7 @@ import InterviewScenarioView from './components/InterviewScenarioView';
 import HistoryModal from './components/HistoryModal';
 import SettingsModal from './components/SettingsModal';
 
-import { fetchManifest, fetchLesson, resolveActiveAssignment } from './services/api';
+import { fetchManifest, fetchLesson, resolveActiveAssignment, getTodayKolkataString } from './services/api';
 import { 
   getAllProgress, 
   saveSectionProgress, 
@@ -36,6 +36,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastQuizResult, setLastQuizResult] = useState(null);
+
+  // Modals state (declared at top before any conditional return)
+  const [showHistory, setShowHistory] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Initialize data on mount
   useEffect(() => {
@@ -143,6 +147,7 @@ export default function App() {
       const isPassed = score / total >= 0.75;
       const existingProg = progressMap[sectionId] || {};
       const bestScore = Math.max(existingProg.bestScore ?? 0, score);
+      const isFirstPass = !existingProg.completed && isPassed;
       
       const updatedProg = {
         sectionId,
@@ -151,7 +156,8 @@ export default function App() {
         bestScore,
         totalQuestions: total,
         attemptsCount: (existingProg.attemptsCount || 0) + 1,
-        lastAttemptDate: new Date().toISOString()
+        lastAttemptDate: new Date().toISOString(),
+        ...(isFirstPass ? { completedDate: getTodayKolkataString() } : {})
       };
 
       const saved = await saveSectionProgress(updatedProg);
@@ -168,19 +174,25 @@ export default function App() {
       const newMap = { ...progressMap, [sectionId]: updatedProg };
       setProgressMap(newMap);
 
-      if (!existingProg.completed && isPassed) {
-        const nextIncomplete = resolveActiveAssignment(manifest, newMap);
-        setActiveSection(nextIncomplete);
-        // Preload next section's lesson immediately so stale content is impossible
-        if (nextIncomplete?.lessonPath) {
-          loadSectionContent(nextIncomplete);
-        } else {
-          setCurrentLesson(null);
-        }
-      }
+      // Do NOT preemptively overwrite currentLesson or activeSection here!
+      // This preserves the completed lesson and results throughout the CompletionSummary screen
+      // so "Review Lesson" opens the lesson the user just completed.
     }
 
     setViewState('summary');
+  };
+
+  const handleDoneSummary = async () => {
+    sound.playTap();
+    // Resolve next active section only upon leaving the summary screen
+    const nextAssignment = resolveActiveAssignment(manifest, progressMap);
+    if (nextAssignment && nextAssignment.id !== activeSection?.id) {
+      setActiveSection(nextAssignment);
+      if (nextAssignment.lessonPath) {
+        await loadSectionContent(nextAssignment);
+      }
+    }
+    setViewState(selectedTopic ? 'topic-path' : 'home');
   };
 
   const completedCount = Object.values(progressMap).filter((p) => p.completed).length;
@@ -220,19 +232,22 @@ export default function App() {
     );
   }
 
-  // Modal state
-  const [showHistory, setShowHistory] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-
-  const handleResetProgress = async () => {
-    await clearAllProgress();
-    setProgressMap({});
-    const initialActive = resolveActiveAssignment(manifest, {});
-    setActiveSection(initialActive);
-    if (initialActive?.lessonPath) {
-      loadSectionContent(initialActive);
-    }
-  };
+  if (error && !manifest) {
+    return (
+      <div className="app-loader">
+        <div style={{ fontSize: '3rem' }}>⚠️</div>
+        <h2 style={{ color: '#ef4444', fontWeight: 900, margin: '8px 0' }}>Data Loading Error</h2>
+        <p style={{ color: '#64748b', maxWidth: '380px', textAlign: 'center', lineHeight: 1.5 }}>{error}</p>
+        <button
+          className="btn btn-primary"
+          style={{ marginTop: '16px' }}
+          onClick={() => window.location.reload()}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -317,7 +332,7 @@ export default function App() {
             records={lastQuizResult?.records || []}
             onRetakeQuiz={() => { sound.playTap(); setViewState('quiz'); }}
             onReviewLesson={() => { sound.playTap(); setViewState('lesson'); }}
-            onDone={() => { sound.playTap(); setViewState(selectedTopic ? 'topic-path' : 'home'); }}
+            onDone={handleDoneSummary}
           />
         )}
 
