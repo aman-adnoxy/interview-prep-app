@@ -3,17 +3,18 @@
   "sectionId": "sql-joins",
   "title": "SQL Joins: INNER, LEFT, RIGHT, and FULL OUTER JOIN",
   "difficulty": "beginner",
-  "estimatedMinutes": 44,
+  "estimatedMinutes": 49,
   "learningObjectives": [
     "Predict which rows survive each common join type.",
     "Explain how join predicates and NULL extension affect results.",
     "Distinguish filtering rows in ON from filtering rows in WHERE.",
     "Recognize one-to-many row multiplication and accidental duplicates.",
-    "Choose a join shape that answers a concrete business question."
+    "Choose a join shape that answers a concrete business question.",
+    "Explain sql joins: inner, left, right, and full outer join using the six-layer interview framework."
   ],
   "mentalModel": {
     "type": "paragraph",
-    "text": "A join combines row pairs that satisfy a matching condition. Think in terms of candidate pairs, the ON predicate, and then whether unmatched rows are preserved. Most join mistakes come from forgetting one of those stages or assuming a join returns one output row per entity."
+    "text": "A join makes pairs of rows that match a condition. Imagine matching customers to their orders. One customer with three orders appears three times because there are three customer-order pairs. The join type decides what happens to rows with no match; ON decides what counts as a match, and WHERE filters the result afterward."
   },
   "concepts": [
     {
@@ -22,7 +23,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "For each row on the left, SQL considers rows on the right that satisfy the join condition. INNER JOIN returns matching pairs. LEFT JOIN additionally returns each unmatched left row once, filling right-side columns with NULL. RIGHT JOIN is the mirror image. FULL OUTER JOIN preserves unmatched rows from both sides."
+          "text": "A JOIN combines rows that satisfy a relationship. Before choosing the join, decide which rows must remain in the result."
+        },
+        {
+          "type": "paragraph",
+          "text": "A join matches rows from two tables. INNER JOIN keeps only matching pairs. LEFT JOIN keeps every row from the left table, even when no right-side row matches. RIGHT JOIN does the same for the right table, and FULL OUTER JOIN keeps unmatched rows from both sides too."
         },
         {
           "type": "table",
@@ -58,6 +63,16 @@
               "Kept"
             ]
           ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "customers has Asha and Ravi. orders has two rows for Asha and none for Ravi.",
+          "reasoning": [
+            "INNER JOIN returns Asha's two customer-order pairs and omits Ravi.",
+            "LEFT JOIN returns those two pairs and also one Ravi row with NULL in the order columns.",
+            "Each matching pair becomes an output row, so a join does not automatically mean one row per customer."
+          ],
+          "outcome": "Use INNER JOIN when only matches matter and LEFT JOIN when every left-side row must remain."
         }
       ]
     },
@@ -65,6 +80,10 @@
       "id": "worked-join",
       "title": "Predict output before running SQL",
       "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Predict the rows before running the query. This makes join behavior easier to debug."
+        },
         {
           "type": "code",
           "language": "sql",
@@ -109,11 +128,22 @@
         },
         {
           "type": "paragraph",
-          "text": "Asha appears twice because she has two matching orders. The unmatched order with customer_id = 4 does not appear in this LEFT JOIN because the left side is customers. This is expected, not duplicate corruption."
+          "text": "In the sample data, Asha has two orders; Ben and Chen have none. The order with customer_id = 4 has no matching customer. A LEFT JOIN starting from customers keeps Ben and Chen with NULL order columns, but it does not show that orphan order. A RIGHT JOIN or FULL OUTER JOIN can show the orphan because those joins preserve rows from the orders side too."
         },
         {
           "type": "paragraph",
           "text": "Worked join matrix: these are raw staging tables without an enforced foreign key, so the order with customer_id = 4 is an intentional orphan representing an import-quality exception. A production schema with an enforced valid foreign key would reject it."
+        },
+        {
+          "type": "worked_example",
+          "reasoning": [
+            "INNER JOIN: 2 rows, one for each of Asha's matching orders.",
+            "LEFT JOIN: 4 rows—Asha twice, Ben once with NULL order columns, and Chen once with NULL order columns.",
+            "RIGHT JOIN: 3 rows—Asha's two orders and the orphan order for customer_id 4. Ben and Chen are not preserved.",
+            "FULL OUTER JOIN: 5 rows—Asha's two matches, Ben and Chen unmatched on the left, and the orphan order unmatched on the right."
+          ],
+          "outcome": "The join type determines which unmatched side survives. Matching rows still appear once per matching pair.",
+          "problem": "Count the rows before looking at the output tables."
         },
         {
           "type": "table",
@@ -294,6 +324,16 @@
               "90"
             ]
           ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "You need every customer, but only their paid orders.",
+          "reasoning": [
+            "Put `o.status = 'paid'` in the LEFT JOIN's ON condition so pending orders do not count as matches.",
+            "A customer without a paid order remains in the result with NULL order columns.",
+            "Putting that condition in WHERE removes those NULL rows, so the customers disappear."
+          ],
+          "outcome": "For outer joins, ON controls which rows match; WHERE filters the result after unmatched rows have been preserved."
         }
       ]
     },
@@ -303,7 +343,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "ON defines which row pairs count as matches. WHERE filters the joined result. With an outer join, moving a predicate from ON to WHERE can remove NULL-extended rows and change the query's meaning."
+          "text": "With an outer join, moving a filter between ON and WHERE can change which parent rows survive."
+        },
+        {
+          "type": "paragraph",
+          "text": "ON decides which order rows count as a match; WHERE filters the joined result. Put orders.status = 'paid' in WHERE and customers with no paid order disappear. Put it in ON when you want to keep every customer but attach only paid orders."
         },
         {
           "type": "code",
@@ -322,6 +366,16 @@
           "kind": "pitfall",
           "title": "Why the second query changes behavior",
           "content": "For customers without a paid order, o.status is NULL after the outer join. The WHERE predicate is not TRUE, so those rows are removed. The query behaves like an inner filter for this condition."
+        },
+        {
+          "type": "worked_example",
+          "problem": "You want all customers and their paid orders, including customers who have never paid.",
+          "reasoning": [
+            "Use `LEFT JOIN orders o ON o.customer_id = c.id AND o.status = 'paid'`.",
+            "A customer with no paid order still produces a row with NULL order columns.",
+            "If `o.status = 'paid'` appears in WHERE instead, that NULL row is removed."
+          ],
+          "outcome": "Put right-table conditions in ON when they decide what counts as a match but should not remove left-side rows."
         }
       ]
     },
@@ -331,7 +385,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "If a customer has three orders and two addresses, joining both one-to-many relations can yield six rows for that customer. This is the product of matching child counts, not necessarily a database bug. Aggregating after such a join can inflate totals."
+          "text": "Joining two one-to-many relationships can multiply rows, even when each JOIN is correct."
+        },
+        {
+          "type": "paragraph",
+          "text": "Suppose one customer has 3 orders and 2 addresses. Joining both child tables can produce 3 × 2 = 6 rows. Summing order totals after this join may count each order twice. Aggregate each child table first, or use EXISTS when you only need to know whether a match exists."
         },
         {
           "type": "code",
@@ -348,6 +406,16 @@
           "language": "sql",
           "title": "Customers who have at least one paid order",
           "source": "SELECT c.id, c.name\nFROM customers c\nWHERE EXISTS (\n  SELECT 1 FROM orders o\n  WHERE o.customer_id = c.id\n    AND o.status = 'paid'\n);"
+        },
+        {
+          "type": "worked_example",
+          "problem": "A customer has three orders and two addresses. A report joins both tables and sums order totals.",
+          "reasoning": [
+            "The join can create six rows: each order pairs with each address.",
+            "Each order total appears twice, so SUM can be doubled.",
+            "Aggregate orders and addresses separately before joining, or use EXISTS if you only need to test for a related row."
+          ],
+          "outcome": "Check the result grain and row multiplication before trusting aggregates over multiple child tables."
         }
       ]
     },
@@ -357,7 +425,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Start by stating the required output grain: one row per customer, per order, or per customer-order pair? Then identify which side must be preserved and whether you need child columns or only existence. This is often more important than memorizing join syntax."
+          "text": "A good join starts with the meaning of one output row, not with the syntax."
+        },
+        {
+          "type": "paragraph",
+          "text": "Before writing a join, say what one output row should represent: one customer, one order, or one customer-order pair. Then decide which side must remain even without a match and whether you need related columns or only need to test that a row exists."
         },
         {
           "type": "table",
@@ -388,6 +460,77 @@
               "A regular join can duplicate customers when multiple orders match."
             ]
           ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "A report needs one row per customer and the number of paid orders.",
+          "reasoning": [
+            "Joining customers to paid orders creates one row per matching order, not one row per customer.",
+            "Group paid orders by customer_id first, then LEFT JOIN those counts to customers.",
+            "Use COALESCE for a missing count only if displaying zero is the intended meaning."
+          ],
+          "outcome": "Define the output grain first. Aggregate a one-to-many relation before joining when the result must stay one row per parent."
+        }
+      ]
+    },
+    {
+      "id": "interview-synthesis-six-layers",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — Related business facts are stored in different tables to avoid duplication, but a report often needs columns from both. A join combines related rows without requiring the data to be copied into one giant table."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — A join matches rows using a predicate. INNER JOIN keeps matching pairs; LEFT JOIN also preserves every left-side row, filling right-side columns with NULL when no match exists. Choose the join from the required output semantics, not from which syntax looks familiar."
+        },
+        {
+          "type": "steps",
+          "title": "3. Internal mechanism: trace the work",
+          "steps": [
+            {
+              "id": "mechanism-step-1",
+              "title": "Read the inputs",
+              "description": "The optimizer chooses access paths for each table or intermediate result."
+            },
+            {
+              "id": "mechanism-step-2",
+              "title": "Match rows",
+              "description": "A nested-loop, hash, or merge join algorithm evaluates the join condition using a plan suited to estimates and available ordering."
+            },
+            {
+              "id": "mechanism-step-3",
+              "title": "Preserve or discard unmatched rows",
+              "description": "INNER JOIN discards unmatched rows; LEFT JOIN emits the left row with NULLs for missing right-side values."
+            },
+            {
+              "id": "mechanism-step-4",
+              "title": "Apply remaining filters",
+              "description": "WHERE filters the joined result; putting a predicate in ON can change outer-join behavior."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "For customers and orders, a LEFT JOIN keeps customers who have never ordered. Moving `orders.status = 'paid'` from the ON clause into WHERE rejects the NULL-extended rows, making the result behave like an inner join for that condition.",
+          "reasoning": [
+            "Reason about the desired row set first, then place predicates deliberately. A join can multiply rows when the relationship is one-to-many, so count the expected grain before trusting aggregates.",
+            "Check the actual query shape, data distribution, concurrency, and database-engine behavior before generalizing the result."
+          ],
+          "outcome": "Reason about the desired row set first, then place predicates deliberately. A join can multiply rows when the relationship is one-to-many, so count the expected grain before trusting aggregates."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "5. Anti-pattern to avoid",
+          "content": "Do not add `DISTINCT` reflexively to hide duplicate rows. First determine whether the join key is unique and whether one-to-many multiplication is correct for the question."
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "6. Interview probe — Why can a LEFT JOIN unexpectedly remove rows after adding a WHERE condition on the right table?",
+          "answer": "Rows with no right-side match receive NULLs, and a WHERE predicate such as `orders.status = 'paid'` evaluates to unknown for those rows, so they are filtered out.",
+          "explanation": "Outer joins preserve unmatched rows only until later predicates reject them. Predicate placement is part of query semantics."
         }
       ]
     }

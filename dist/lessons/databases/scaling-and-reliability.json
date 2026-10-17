@@ -1,0 +1,690 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "scaling-and-reliability",
+  "topicId": "databases",
+  "sectionId": "scaling-and-reliability",
+  "title": "Database Scaling and Reliability",
+  "description": "Database Scaling and Reliability. Interview-first coverage of bottleneck diagnosis, replication, partitioning, backpressure, and recovery.",
+  "difficulty": "advanced",
+  "estimatedMinutes": 55,
+  "learningObjectives": [
+    "Distinguish vertical scaling, read replicas, partitioning, and sharding by the bottleneck they address.",
+    "Explain replication lag, failover, consistency, RPO, and RTO.",
+    "Design connection pooling, backpressure, timeouts, and retries to protect a database.",
+    "Choose partition and shard keys that avoid hotspots and preserve queryability.",
+    "Plan safe schema migrations and validate recovery with SLOs.",
+    "Explain database scaling and reliability using the six-layer interview framework."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "When a database slows down, first find what it is waiting on. More CPU helps CPU pressure, a better query helps unnecessary work, and a read replica helps only reads that can tolerate its lag. Reliability also means knowing how much data could be lost, how quickly service must return, and proving those targets with recovery drills."
+  },
+  "concepts": [
+    {
+      "id": "find-bottleneck",
+      "title": "Scale the measured bottleneck",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Before adding servers, find the bottleneck. If a query does too much work, improving it may be cheaper than buying more hardware. Read replicas can serve suitable read traffic, but writes still go to the primary and a replica may be a little behind."
+        },
+        {
+          "type": "table",
+          "title": "Intervention map",
+          "columns": [
+            "Bottleneck",
+            "First options",
+            "Does not solve"
+          ],
+          "rows": [
+            [
+              "Slow query",
+              "Plan, index fit, statistics",
+              "Connection exhaustion by itself"
+            ],
+            [
+              "CPU/I/O saturation",
+              "Reduce work, tune queries, right-size capacity",
+              "Hot-row contention automatically"
+            ],
+            [
+              "Read throughput",
+              "Cache or eligible read replicas",
+              "Replica lag and primary writes"
+            ],
+            [
+              "Connection exhaustion",
+              "Pool limits, queueing, shorter transactions",
+              "More connections can worsen saturation"
+            ]
+          ]
+        },
+        {
+          "type": "steps",
+          "title": "Scaling loop",
+          "steps": [
+            {
+              "id": "measure-slo",
+              "title": "Measure SLO",
+              "description": "Break down latency, throughput, errors, and saturation."
+            },
+            {
+              "id": "localize",
+              "title": "Localize constraint",
+              "description": "Separate query work, lock waits, pool waits, and storage latency."
+            },
+            {
+              "id": "target-cause",
+              "title": "Target one cause",
+              "description": "Prefer a reversible change tied to evidence."
+            },
+            {
+              "id": "load-test",
+              "title": "Load-test",
+              "description": "Use representative data and read/write mix."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "API p95 latency rises from 120 ms to 1.5 seconds during a traffic spike.",
+          "reasoning": [
+            "Break latency into pool wait, query execution, lock wait, and network/application time; do not assume the database needs a bigger machine.",
+            "Compare throughput and saturation: CPU, I/O, active sessions, pool queue, slow queries, and lock waits.",
+            "If pool wait dominates, adding database CPU may not help. If one query scans too many rows, fix the query or index before adding replicas."
+          ],
+          "outcome": "Scale the measured bottleneck. The same high latency symptom can come from different causes and needs a different intervention."
+        }
+      ]
+    },
+    {
+      "id": "replication-failover",
+      "title": "Replication, failover, and consistency",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A read replica may take time to receive the latest write. If a user saves a profile and immediately reads old data from that replica, the replica may not have caught up; send that read to the primary or wait until it does. When planning recovery, define the recovery point objective (RPO: how much recent data loss is acceptable) and recovery time objective (RTO: how long service may take to return). Failover also needs a safe way to promote the new primary, reconnect clients, and prevent two nodes from accepting conflicting writes."
+        },
+        {
+          "type": "table",
+          "title": "Recovery objectives",
+          "columns": [
+            "Term",
+            "Meaning",
+            "Question"
+          ],
+          "rows": [
+            [
+              "RPO",
+              "Tolerable data loss in time",
+              "Can the last 5 seconds of writes be lost?"
+            ],
+            [
+              "RTO",
+              "Target time to restore service",
+              "Must writes resume within 60 seconds?"
+            ],
+            [
+              "Failover",
+              "Promote and route to a healthy node",
+              "How do clients find the new primary?"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "A replica is not automatically a backup. Replication can copy accidental deletes or corruption; backups and restore drills protect against different failures."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A user changes their email and immediately opens the profile page, but the old email appears.",
+          "reasoning": [
+            "The write commits on the primary, but replication to the read replica has not caught up.",
+            "Route this read to the primary or use a mechanism that waits until the replica has replayed the required write.",
+            "Define how long the application may wait and what it does if the replica cannot catch up."
+          ],
+          "outcome": "Replicas can improve read capacity, but read-after-write behavior must be designed explicitly. Do not assume a successful primary write is instantly visible everywhere."
+        },
+        {
+          "type": "paragraph",
+          "text": "Failover also has a data-loss question: asynchronous replication may not have shipped or replayed the newest committed writes when the primary fails. The promoted replica can therefore be missing recent changes. RPO describes the loss you are prepared to tolerate; it is not a promise that no data will be lost."
+        }
+      ]
+    },
+    {
+      "id": "partitioning-sharding",
+      "title": "Partitioning versus sharding",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Partitioning splits a large table into smaller pieces inside one database, often by date so old data is easier to manage and queries can skip irrelevant partitions. Sharding distributes rows across separate database nodes. Sharding adds routing and rebalancing work, so the shard key should fit both data distribution and the queries the app runs."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Range partition example",
+          "source": "CREATE TABLE events (\n tenant_id bigint NOT NULL,\n created_at timestamptz NOT NULL,\n payload jsonb NOT NULL\n) PARTITION BY RANGE (created_at);"
+        },
+        {
+          "type": "worked_example",
+          "problem": "An events table grows by billions of rows and most queries filter by time.",
+          "reasoning": [
+            "Confirm time predicates are consistently present and old data has a retention policy.",
+            "Partition by time if pruning and maintenance benefits justify partition count and index overhead.",
+            "Do not confuse partitioning inside a database with distributing writes across multiple nodes."
+          ],
+          "outcome": "Partitioning can improve lifecycle management and pruning; sharding is a separate distribution decision."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A support team queries events from the last seven days, while events older than a year can be removed.",
+          "reasoning": [
+            "Monthly range partitions on `created_at` can let PostgreSQL skip old partitions when the query has a matching time range.",
+            "Dropping an expired partition can be easier than deleting millions of rows one by one, but partitioning adds DDL, index, and planning considerations.",
+            "If writes are still bottlenecked on one primary, partitioning alone does not distribute writes across servers; sharding is a separate architecture with routing and rebalancing costs."
+          ],
+          "outcome": "Partition by a key that supports pruning or lifecycle management. Shard only when measured limits justify distributing ownership across nodes."
+        }
+      ]
+    },
+    {
+      "id": "pooling-backpressure",
+      "title": "Connection pools, backpressure, and retries",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Every database connection uses resources. If 20 application instances each open 50 connections, they can create 1,000 connections before workers or admin tools are counted. Set a total budget, limit queues, and use timeouts. Retries should stop after a bounded number of attempts and use backoff so an outage doesn't create even more traffic. For latency, p99 means 99% of requests finish within that time; the slowest 1% take longer."
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Connection budget sketch",
+          "source": "total_possible_connections = app_replicas * pool_max_per_replica\nreserve capacity for admin, migrations, monitoring, and workers\nmeasure pool wait and DB saturation before increasing limits"
+        },
+        {
+          "type": "worked_example",
+          "problem": "A deployment doubles app replicas and PostgreSQL reports too many connections.",
+          "reasoning": [
+            "Calculate total connections across replicas, workers, and rolling-deployment overlap.",
+            "Set a global budget and right-size pools or use a pooling proxy.",
+            "Measure pool wait and saturation before changing max_connections."
+          ],
+          "outcome": "Pool sizing is a global capacity problem; bound concurrency at both application and database boundaries."
+        },
+        {
+          "type": "paragraph",
+          "text": "Retries can amplify an outage. If a database request fails and every application instance retries immediately, the retry traffic arrives on top of new user traffic. Use bounded attempts, exponential backoff with jitter, request deadlines, and idempotency for operations that may be repeated. When the queue is full, reject or shed work rather than allowing unlimited requests to wait."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A slow database causes 1,000 requests to time out, and each request retries three times immediately.",
+          "reasoning": [
+            "The original 1,000 requests can become up to 4,000 attempts, increasing connection and CPU pressure while the database is already struggling.",
+            "Backoff with jitter spreads retries; a request deadline prevents work continuing after the caller has given up.",
+            "Bound concurrency and queue length, and retry only operations that are safe to repeat."
+          ],
+          "outcome": "Retries help transient failures only when they are bounded and coordinated with backpressure."
+        }
+      ]
+    },
+    {
+      "id": "migrations-recovery",
+      "title": "Safe migrations and recovery drills",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Changing a live database schema can lock tables or conflict with old application versions. A safer approach is to add the new structure first, deploy code that works with both versions, copy data in small batches, switch over, and remove the old structure later. Backups matter, but also test how long restore and failover actually take."
+        },
+        {
+          "type": "steps",
+          "title": "Expand-and-contract",
+          "steps": [
+            {
+              "id": "expand",
+              "title": "Expand",
+              "description": "Add backward-compatible schema."
+            },
+            {
+              "id": "compatibility",
+              "title": "Dual compatibility",
+              "description": "Deploy code compatible with old and new representations."
+            },
+            {
+              "id": "backfill",
+              "title": "Backfill",
+              "description": "Use bounded, restartable batches and monitor locks/lag."
+            },
+            {
+              "id": "switch",
+              "title": "Switch",
+              "description": "Verify parity and route reads to the new representation."
+            },
+            {
+              "id": "contract",
+              "title": "Contract",
+              "description": "Remove old schema after rollback windows close."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "Rename `users.full_name` to `display_name` while old and new application versions may run at the same time.",
+          "reasoning": [
+            "Add `display_name` without removing `full_name`, then deploy code that can read both and writes the new field safely.",
+            "Backfill existing rows in bounded batches and compare counts or values to confirm parity.",
+            "Switch reads only after the new field is populated; remove the old field in a later release after rollback is no longer needed."
+          ],
+          "outcome": "Expand-and-contract keeps each deployment compatible with the schema during rollout. A migration is not safe merely because the DDL succeeds."
+        }
+      ]
+    },
+    {
+      "id": "interview-synthesis-six-layers",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — Database Scaling and Reliability. Interview-first coverage of bottleneck diagnosis, replication, partitioning, backpressure, and recovery.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. Before adding servers, find the bottleneck. If a query does too much work, improving it may be cheaper than buying more hardware. Read replicas can serve suitable read traffic, but writes still go to the primary and a replica may be a little behind."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — When a database slows down, first find what it is waiting on. More CPU helps CPU pressure, a better query helps unnecessary work, and a read replica helps only reads that can tolerate its lag. Reliability also means knowing how much data could be lost, how quickly service must return, and proving those targets with recovery drills. Make assumptions explicit."
+        },
+        {
+          "type": "steps",
+          "title": "3. Internal mechanism: trace the sequence",
+          "steps": [
+            {
+              "id": "mechanism-step-1",
+              "title": "Scale the measured bottleneck",
+              "description": "Before adding servers, find the bottleneck. If a query does too much work, improving it may be cheaper than buying more hardware. Read replicas can serve suitable read traffic, but writes still go to the primary and a replica may be a little behind."
+            },
+            {
+              "id": "mechanism-step-2",
+              "title": "Replication, failover, and consistency",
+              "description": "A read replica may take time to receive the latest write. If a user saves a profile and immediately reads old data from that replica, the replica may not have caught up; send that read to the primary or wait until it does. When planning recovery, define the recovery point objective (RPO: how much recent data loss is acceptable) and recovery time objective (RTO: how long service may take to return). Failover also needs a safe way to promote the new primary, reconnect clients, and prevent two nodes from accepting conflicting writes."
+            },
+            {
+              "id": "mechanism-step-3",
+              "title": "Partitioning versus sharding",
+              "description": "Partitioning splits a large table into smaller pieces inside one database, often by date so old data is easier to manage and queries can skip irrelevant partitions. Sharding distributes rows across separate database nodes. Sharding adds routing and rebalancing work, so the shard key should fit both data distribution and the queries the app runs."
+            },
+            {
+              "id": "mechanism-step-4",
+              "title": "Connection pools, backpressure, and retries",
+              "description": "Every database connection uses resources. If 20 application instances each open 50 connections, they can create 1,000 connections before workers or admin tools are counted. Set a total budget, limit queues, and use timeouts. Retries should stop after a bounded number of attempts and use backoff so an outage doesn't create even more traffic. For latency, p99 means 99% of requests finish within that time; the slowest 1% take longer."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "4. Trade-offs and scale — Apply Database Scaling and Reliability to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "reasoning": [
+            "More replicas or connections do not fix every bottleneck; first distinguish CPU, I/O, locks, pool waits, and query work.",
+            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
+            "Compare correctness, performance, resource cost, operational complexity, and failure behavior."
+          ],
+          "outcome": "Choose based on the workload and invariants, then validate with representative measurements and edge cases."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "5. Anti-pattern to avoid",
+          "content": "More replicas or connections do not fix every bottleneck; first distinguish CPU, I/O, locks, pool waits, and query work."
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "6. Interview probe — CPU is low but p99 latency is high and many sessions wait on one inventory row. What should be investigated first?",
+          "answer": "Lock waits indicate contention; more concurrent sessions can make it worse.",
+          "explanation": "A strong answer connects the problem to the mechanism, states assumptions and trade-offs, and explains how to verify the decision in practice."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Do not scale symptoms",
+      "content": "More replicas or connections do not fix every bottleneck; first distinguish CPU, I/O, locks, pool waits, and query work."
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Test the failure path",
+      "content": "Measure failover and restore time, replica lag, client retries, and data integrity under realistic conditions."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Scale the measured bottleneck; replicas help eligible reads but not primary write throughput."
+    },
+    {
+      "type": "paragraph",
+      "text": "Partitioning organizes data within a database; sharding distributes it across nodes."
+    },
+    {
+      "type": "paragraph",
+      "text": "RPO is tolerable data loss; RTO is recovery duration."
+    },
+    {
+      "type": "paragraph",
+      "text": "Bound pools, queues, timeouts, and retries; test restores and failovers."
+    }
+  ],
+  "questions": [
+    {
+      "id": "scaling-and-reliability-q1",
+      "type": "single_select",
+      "prompt": "CPU is low but p99 latency is high and many sessions wait on one inventory row. What should be investigated first?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Lock contention and the hot-row update path"
+        },
+        {
+          "id": "b",
+          "text": "Read replicas for all writes"
+        },
+        {
+          "id": "c",
+          "text": "Random sharding without query analysis"
+        },
+        {
+          "id": "d",
+          "text": "A much larger connection pool"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Lock waits indicate contention; more concurrent sessions can make it worse."
+    },
+    {
+      "id": "scaling-and-reliability-q2",
+      "type": "single_select",
+      "prompt": "A replica is 8 seconds behind. A user writes a profile and immediately reads old data from that replica. Why?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The replica has not yet applied the recent commit"
+        },
+        {
+          "id": "b",
+          "text": "The primary transaction necessarily rolled back"
+        },
+        {
+          "id": "c",
+          "text": "Replicas always provide linearizable reads"
+        },
+        {
+          "id": "d",
+          "text": "The profile needs a larger B-tree"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Asynchronous replication can lag; read-after-write flows need consistency-aware routing."
+    },
+    {
+      "id": "scaling-and-reliability-q3",
+      "type": "single_select",
+      "prompt": "What distinguishes partitioning by time from sharding across nodes?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Partitioning organizes pieces within a database; sharding distributes data across nodes"
+        },
+        {
+          "id": "b",
+          "text": "Partitioning always adds servers"
+        },
+        {
+          "id": "c",
+          "text": "Sharding has no routing impact"
+        },
+        {
+          "id": "d",
+          "text": "They are identical in all systems"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Partitioning helps pruning/lifecycle; sharding adds distribution and routing complexity."
+    },
+    {
+      "id": "scaling-and-reliability-q4",
+      "type": "single_select",
+      "prompt": "There are 20 application replicas, each with pool max 50. What is their configured upper bound before rollout overlap?",
+      "options": [
+        {
+          "id": "a",
+          "text": "1,000 connections"
+        },
+        {
+          "id": "b",
+          "text": "70 connections"
+        },
+        {
+          "id": "c",
+          "text": "100 connections"
+        },
+        {
+          "id": "d",
+          "text": "20,050 connections"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "20 multiplied by 50 is 1,000 potential connections, before other workers and reserves."
+    },
+    {
+      "id": "scaling-and-reliability-q5",
+      "type": "single_select",
+      "prompt": "A shard key distributes data evenly, but most queries filter by tenant_id and the key is unrelated. What can happen?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Queries scatter across many shards"
+        },
+        {
+          "id": "b",
+          "text": "Every query becomes local automatically"
+        },
+        {
+          "id": "c",
+          "text": "Rebalancing is eliminated"
+        },
+        {
+          "id": "d",
+          "text": "The database changes the shard key per query"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Distribution alone is insufficient; shard keys should also align with query routing."
+    },
+    {
+      "id": "scaling-and-reliability-q6",
+      "type": "single_select",
+      "prompt": "Which distinction between RPO and RTO is correct?",
+      "options": [
+        {
+          "id": "a",
+          "text": "RPO bounds tolerable data loss; RTO targets service restoration time"
+        },
+        {
+          "id": "b",
+          "text": "RPO is latency and RTO is index size"
+        },
+        {
+          "id": "c",
+          "text": "Both measure replica count"
+        },
+        {
+          "id": "d",
+          "text": "RPO is isolation and RTO is a backup file"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "RPO concerns data loss; RTO concerns recovery duration."
+    },
+    {
+      "id": "scaling-and-reliability-q7",
+      "type": "single_select",
+      "prompt": "A retry policy immediately retries every failed write forever. During an outage, load increases. What should change?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Bound retries, add backoff/jitter and idempotency, and apply backpressure"
+        },
+        {
+          "id": "b",
+          "text": "Retry faster and forever"
+        },
+        {
+          "id": "c",
+          "text": "Remove timeouts"
+        },
+        {
+          "id": "d",
+          "text": "Maximize every pool"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Unbounded immediate retries amplify load and can duplicate side effects."
+    },
+    {
+      "id": "scaling-and-reliability-q8",
+      "type": "single_select",
+      "prompt": "A costly backfill is needed on a busy table. Which migration approach is safer?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Expand compatibly, backfill in batches, switch use, then contract later"
+        },
+        {
+          "id": "b",
+          "text": "Lock the table for the entire release"
+        },
+        {
+          "id": "c",
+          "text": "Deploy code requiring the column before adding it"
+        },
+        {
+          "id": "d",
+          "text": "Run one unbounded transaction at peak traffic"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Expand-and-contract separates compatibility, backfill, cutover, and removal."
+    },
+    {
+      "id": "scaling-and-reliability-q9",
+      "type": "multi_select",
+      "prompt": "Which are valid reasons to introduce a read replica?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Distribute eligible reads when lag is acceptable"
+        },
+        {
+          "id": "b",
+          "text": "Provide a failover target"
+        },
+        {
+          "id": "c",
+          "text": "Improve read capacity after measuring primary read pressure"
+        },
+        {
+          "id": "d",
+          "text": "Make write throughput unlimited"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "Replicas can help reads and availability; writes still flow through the primary."
+    },
+    {
+      "id": "scaling-and-reliability-q10",
+      "type": "multi_select",
+      "prompt": "Which practices protect a database during overload?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Bound pool concurrency and queue length"
+        },
+        {
+          "id": "b",
+          "text": "Use deadlines and controlled load shedding"
+        },
+        {
+          "id": "c",
+          "text": "Use bounded retries with backoff and idempotency"
+        },
+        {
+          "id": "d",
+          "text": "Retry indefinitely until recovery"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "Bounded concurrency, deadlines, and controlled retries prevent overload amplification."
+    },
+    {
+      "id": "scaling-and-reliability-q11",
+      "type": "true_false",
+      "prompt": "A replica is a complete substitute for a backup because deletes and corruption are not replicated.",
+      "correctAnswer": false,
+      "explanation": "Replication often copies deletes and corruption; backups and restore drills cover different failures."
+    },
+    {
+      "id": "scaling-and-reliability-q12",
+      "type": "true_false",
+      "prompt": "Increasing a connection pool can worsen latency when the database is already saturated.",
+      "correctAnswer": true,
+      "explanation": "More concurrent queries can increase memory use, lock contention, and queueing without increasing throughput."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "scaling-and-reliability-scenario-1",
+      "prompt": "A marketplace database is near capacity. Reads are 80% of traffic, some tolerate two seconds of staleness, and writes must remain consistent.",
+      "skillsTested": [
+        "Bottleneck analysis",
+        "Read scaling",
+        "Consistency"
+      ],
+      "strongAnswerPoints": [
+        "Measure query shape, CPU/I/O, lock waits, and pool wait first.",
+        "Optimize expensive queries and cache stable reads with a freshness contract.",
+        "Route only eligible reads to replicas and monitor lag and origin saturation."
+      ],
+      "pitfalls": [
+        "Routing every read to replicas without a consistency contract",
+        "Change one variable at a time and measure the effect."
+      ],
+      "referenceAnswer": "I would measure the actual bottleneck, optimize expensive queries, cache stable reads, then route only eligible reads to replicas. Read-after-write flows remain on the primary or use consistency-aware routing; I would load-test lag and failover."
+    },
+    {
+      "id": "scaling-and-reliability-scenario-2",
+      "prompt": "Design reliability for a payment service with a 60-second recovery target and near-zero acknowledged-write loss tolerance.",
+      "skillsTested": [
+        "HA/DR",
+        "RPO/RTO",
+        "Operational testing"
+      ],
+      "strongAnswerPoints": [
+        "Translate the business target into explicit RPO/RTO and acknowledgement semantics.",
+        "Choose replication/failover and fencing that meet the target, plus independent backups.",
+        "Test failover, restore, client reconnection, idempotency, and the runbook."
+      ],
+      "pitfalls": [
+        "Claiming asynchronous replication guarantees zero data loss",
+        "Change one variable at a time and measure the effect."
+      ],
+      "referenceAnswer": "I would make the RPO/RTO explicit, select a failover design that meets tolerated loss, keep independent backups, and run timed failover and restore drills. Application retries must be idempotent."
+    }
+  ]
+}

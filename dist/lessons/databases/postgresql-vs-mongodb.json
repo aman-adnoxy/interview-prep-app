@@ -1,0 +1,674 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "postgresql-vs-mongodb",
+  "topicId": "databases",
+  "sectionId": "postgresql-vs-mongodb",
+  "title": "PostgreSQL vs. MongoDB Trade-offs",
+  "description": "PostgreSQL vs. MongoDB Trade-offs. Interview-first coverage of modeling, invariants, transactions, indexing, and migration trade-offs.",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 48,
+  "learningObjectives": [
+    "Choose storage based on access patterns, invariants, and change frequency.",
+    "Model embedded and referenced relationships in MongoDB.",
+    "Explain relational constraints, joins, transactions, and indexing trade-offs.",
+    "Plan a migration or polyglot boundary with clear data ownership and consistency rules.",
+    "Explain postgresql vs. mongodb trade-offs using the six-layer interview framework."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Choose a database by asking what the application needs to store and how it will read and change that data. Orders, payments, and shared relationships often fit a relational model. A self-contained document that is usually read and updated as one unit may fit MongoDB well. Neither choice is automatically faster; the data model and queries decide."
+  },
+  "concepts": [
+    {
+      "id": "model-invariants",
+      "title": "Model first: entities and invariants",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Start with the rules the application must never break. For example, an order must belong to a customer and payment totals must reconcile. PostgreSQL makes relationships, joins, and constraints explicit. MongoDB can fit data that is usually read and updated together as one document. Compare actual queries and rules rather than picking by popularity."
+        },
+        {
+          "type": "table",
+          "title": "Workload signals",
+          "columns": [
+            "Signal",
+            "Often a fit",
+            "Why"
+          ],
+          "rows": [
+            [
+              "Many cross-entity joins and relational constraints",
+              "PostgreSQL",
+              "Relational modeling and declarative constraints"
+            ],
+            [
+              "Bounded aggregate read/written together",
+              "MongoDB document model",
+              "Embedding can fetch a coherent aggregate"
+            ],
+            [
+              "Variable optional fields",
+              "MongoDB or PostgreSQL JSONB",
+              "Flexibility still needs validation/indexing"
+            ],
+            [
+              "Reporting across normalized entities",
+              "PostgreSQL",
+              "SQL joins and aggregations"
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "An order contains customer, line items, prices, and payment state.",
+          "reasoning": [
+            "List invariants such as valid customer references, positive quantities, and auditable state transitions.",
+            "Separate bounded order-owned data from shared entities.",
+            "Embed line-item price snapshots if appropriate while keeping shared relationships and constraints explicit."
+          ],
+          "outcome": "Start with invariants and query patterns, not a blanket rule that one model always wins."
+        },
+        {
+          "type": "paragraph",
+          "text": "Imagine a marketplace with customers, orders, products, inventory, and refunds. If reports regularly join these entities and the database must reject invalid references or enforce uniqueness, PostgreSQL's relational model may make those rules easier to express. If a product page is usually loaded as one bounded document and its fields are naturally owned together, MongoDB's document model may make that access simpler. Either database can support more than one pattern; the point is to compare the actual operations and invariants."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A product has a current catalog price, but old orders must keep the price the buyer paid.",
+          "reasoning": [
+            "Keep the current catalog price as the authoritative product fact.",
+            "Store `unitPriceAtPurchase` on the order line because it describes a historical transaction, not the current catalog.",
+            "In either database, make the choice explicit so changing the catalog price does not rewrite old order totals."
+          ],
+          "outcome": "Choose where facts live by what they mean and how they change—not by a slogan that one database is normalized and the other is not."
+        }
+      ]
+    },
+    {
+      "id": "embedding-references",
+      "title": "Embedding versus references",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Embedding means keeping related data inside one document; referencing means storing an ID that points to another document. Embedding a small list of items in an order can make it easy to load the full order at once. But don't embed an unlimited stream of events or duplicate a changing product record everywhere. A purchase-time price belongs on the order because it records what was charged then."
+        },
+        {
+          "type": "table",
+          "title": "Embedding decision",
+          "columns": [
+            "Question",
+            "Embed when",
+            "Reference when"
+          ],
+          "rows": [
+            [
+              "Are children bounded?",
+              "Yes, belong to parent lifecycle",
+              "No, or grow without bound"
+            ],
+            [
+              "Read together?",
+              "Usually together",
+              "Often queried independently"
+            ],
+            [
+              "Duplication acceptable?",
+              "Snapshot is intentional",
+              "Data must stay canonical"
+            ],
+            [
+              "Shared by many parents?",
+              "Rarely",
+              "Frequently"
+            ]
+          ]
+        },
+        {
+          "type": "code",
+          "language": "javascript",
+          "title": "Order document example",
+          "source": "{\n  _id: ObjectId(\"...\"),\n  customerId: ObjectId(\"...\"),\n  items: [{ sku: \"A-17\", quantity: 2, unitPriceAtPurchase: 499 }],\n  status: \"pending\"\n}"
+        },
+        {
+          "type": "paragraph",
+          "text": "A purchase-time price snapshot is deliberate denormalization, not a reason to duplicate the current product catalog everywhere."
+        },
+        {
+          "type": "worked_example",
+          "problem": "Each order contains 1–20 line items, while products are shared across thousands of orders and their descriptions change.",
+          "reasoning": [
+            "Embedding the bounded line items in an order can make reading the order convenient.",
+            "Keep a purchase-time price snapshot inside each line item because it must not change with the catalog.",
+            "Reference the shared product by ID rather than copying its current description as if that were authoritative. If the order must preserve the description shown at purchase, store that as a separate historical snapshot with an explicit purpose."
+          ],
+          "outcome": "Embed bounded data owned by the parent; reference shared entities; duplicate historical values only when the snapshot itself is a business fact."
+        }
+      ]
+    },
+    {
+      "id": "transactions-consistency",
+      "title": "Transactions and consistency",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A database transaction can keep related database changes together, but it cannot make an external action such as charging a payment provider part of the same transaction. Both PostgreSQL and MongoDB support transactions. A common solution is an outbox table: save the business change and a record saying 'publish this event' in the same transaction, then let a worker publish it. Make the worker idempotent, meaning safely repeatable, so a retry does not apply the same effect twice."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Conditional inventory update",
+          "source": "BEGIN;\nUPDATE inventory SET quantity = quantity - 1\nWHERE sku = 'A-17' AND quantity > 0\nRETURNING quantity;\n-- Verify one row changed before commit.\nCOMMIT;"
+        },
+        {
+          "type": "worked_example",
+          "problem": "An order must decrement inventory and create an order record without overselling.",
+          "reasoning": [
+            "Define the invariant and transaction boundary.",
+            "In PostgreSQL, use a transaction with a conditional update and check affected rows.",
+            "In MongoDB, keep the invariant in one document when practical, or use a transaction and test retry behavior."
+          ],
+          "outcome": "Choose the model that makes the invariant enforceable and operationally understandable."
+        },
+        {
+          "type": "paragraph",
+          "text": "A payment workflow illustrates the boundary. A database transaction can atomically create an order and an outbox event. It cannot atomically commit with an external payment provider over the network. If the provider charges the card but the application times out before receiving the response, the application needs an idempotency key and a reconciliation/retry strategy; simply rolling back the database does not undo the external charge."
+        },
+        {
+          "type": "worked_example",
+          "problem": "The application writes an order, then crashes before publishing `OrderCreated` to a message broker.",
+          "reasoning": [
+            "If the order commit and message publish are separate operations, the crash can leave the order saved but no event published.",
+            "Write the order and an outbox row in the same database transaction.",
+            "A worker publishes unsent outbox rows and marks them delivered; consumers must tolerate duplicate delivery."
+          ],
+          "outcome": "The outbox makes the intent to publish durable with the business change. It does not make the broker call part of the database transaction, so delivery still needs retries and idempotency."
+        }
+      ]
+    },
+    {
+      "id": "query-indexing",
+      "title": "Queries, indexes, and flexibility",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Both databases support indexes, but the right type depends on the query. PostgreSQL can combine relational tables with JSONB for flexible attributes; MongoDB has indexes for document fields and arrays. In either system, indexes take space and slow some writes, and flexible fields still need validation and a plan for changes."
+        },
+        {
+          "type": "code",
+          "language": "javascript",
+          "title": "MongoDB compound index",
+          "source": "db.orders.createIndex({ tenantId: 1, createdAt: -1 })\ndb.orders.find({ tenantId: \"t-42\" }).sort({ createdAt: -1 }).limit(50)"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "PostgreSQL JSONB index",
+          "source": "CREATE INDEX events_payload_gin ON events USING GIN (payload);\nSELECT id FROM events WHERE payload @> '{\"kind\":\"purchase\"}';"
+        },
+        {
+          "type": "worked_example",
+          "problem": "An endpoint lists the 50 newest orders for one tenant.",
+          "reasoning": [
+            "The access pattern filters by `tenantId`, sorts by `createdAt` descending, and limits the result to 50.",
+            "A compound index beginning with tenantId and then createdAt can support both the filter and ordering in MongoDB; PostgreSQL can use the analogous B-tree index.",
+            "Check the actual plan and write rate. An index helps this query but adds storage and maintenance to every relevant write."
+          ],
+          "outcome": "Index both systems for real query shapes and verify with each engine's plan tools; document flexibility does not remove index trade-offs."
+        }
+      ]
+    },
+    {
+      "id": "migration-polyglot",
+      "title": "Migration and polyglot persistence",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Running two databases means operating two systems and keeping related data in sync. Decide which database owns each fact, how updates reach the other system, and how to repair a missed update. Add a second database only when a real workload benefit outweighs the extra deployment, backup, monitoring, and debugging work."
+        },
+        {
+          "type": "steps",
+          "title": "A controlled migration",
+          "steps": [
+            {
+              "id": "inventory",
+              "title": "Inventory access patterns",
+              "description": "Capture query shapes, constraints, volume, and latency SLOs."
+            },
+            {
+              "id": "ownership",
+              "title": "Define ownership",
+              "description": "Choose the authoritative system and change propagation path."
+            },
+            {
+              "id": "backfill",
+              "title": "Backfill and reconcile",
+              "description": "Copy in batches and compare counts, checksums, and invariants."
+            },
+            {
+              "id": "dual-run",
+              "title": "Dual-run carefully",
+              "description": "Use an outbox or change stream with idempotent consumers."
+            },
+            {
+              "id": "cutover",
+              "title": "Cut over and rollback",
+              "description": "Switch gradually and retain a tested rollback path."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "For example, moving order data to a second database is not complete when the initial copy finishes. An order may change during the backfill, or an event may be delivered twice. Define which system owns writes, replay changes safely, compare important totals and invariants, and rehearse cutover and rollback before switching production traffic."
+        }
+      ]
+    },
+    {
+      "id": "interview-synthesis-six-layers",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — PostgreSQL vs. MongoDB Trade-offs. Interview-first coverage of modeling, invariants, transactions, indexing, and migration trade-offs.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. Start with the rules the application must never break. For example, an order must belong to a customer and payment totals must reconcile. PostgreSQL makes relationships, joins, and constraints explicit. MongoDB can fit data that is usually read and updated together as one document. Compare actual queries and rules rather than picking by popularity."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — Choose a database by asking what the application needs to store and how it will read and change that data. Orders, payments, and shared relationships often fit a relational model. A self-contained document that is usually read and updated as one unit may fit MongoDB well. Neither choice is automatically faster; the data model and queries decide. Make assumptions explicit."
+        },
+        {
+          "type": "steps",
+          "title": "3. Internal mechanism: trace the sequence",
+          "steps": [
+            {
+              "id": "mechanism-step-1",
+              "title": "Model first: entities and invariants",
+              "description": "Start with the rules the application must never break. For example, an order must belong to a customer and payment totals must reconcile. PostgreSQL makes relationships, joins, and constraints explicit. MongoDB can fit data that is usually read and updated together as one document. Compare actual queries and rules rather than picking by popularity."
+            },
+            {
+              "id": "mechanism-step-2",
+              "title": "Embedding versus references",
+              "description": "Embedding means keeping related data inside one document; referencing means storing an ID that points to another document. Embedding a small list of items in an order can make it easy to load the full order at once. But don't embed an unlimited stream of events or duplicate a changing product record everywhere. A purchase-time price belongs on the order because it records what was charged then."
+            },
+            {
+              "id": "mechanism-step-3",
+              "title": "Transactions and consistency",
+              "description": "A database transaction can keep related database changes together, but it cannot make an external action such as charging a payment provider part of the same transaction. Both PostgreSQL and MongoDB support transactions. A common solution is an outbox table: save the business change and a record saying 'publish this event' in the same transaction, then let a worker publish it. Make the worker idempotent, meaning safely repeatable, so a retry does not apply the same effect twice."
+            },
+            {
+              "id": "mechanism-step-4",
+              "title": "Queries, indexes, and flexibility",
+              "description": "Both databases support indexes, but the right type depends on the query. PostgreSQL can combine relational tables with JSONB for flexible attributes; MongoDB has indexes for document fields and arrays. In either system, indexes take space and slow some writes, and flexible fields still need validation and a plan for changes."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "4. Trade-offs and scale — Apply PostgreSQL vs. MongoDB Trade-offs to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "reasoning": [
+            "A document database is not automatically faster, and a relational database is not automatically rigid. Choose based on access patterns and invariants.",
+            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
+            "Compare correctness, performance, resource cost, operational complexity, and failure behavior."
+          ],
+          "outcome": "Choose based on the workload and invariants, then validate with representative measurements and edge cases."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "5. Anti-pattern to avoid",
+          "content": "A document database is not automatically faster, and a relational database is not automatically rigid. Choose based on access patterns and invariants."
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "6. Interview probe — A service relies on joins, foreign keys, and multi-row invariants across orders and payments. What is the strongest starting point?",
+          "answer": "The relational model and declarative constraints align with this workload.",
+          "explanation": "A strong answer connects the problem to the mechanism, states assumptions and trade-offs, and explains how to verify the decision in practice."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Avoid database-by-trend",
+      "content": "A document database is not automatically faster, and a relational database is not automatically rigid. Choose based on access patterns and invariants."
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Name the source of truth",
+      "content": "If two datastores contain overlapping data, define which one owns updates and how derived copies are repaired."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Choose by relationship patterns, invariants, and access patterns, not fashion."
+    },
+    {
+      "type": "paragraph",
+      "text": "Embed bounded aggregate data; reference unbounded or independently queried entities."
+    },
+    {
+      "type": "paragraph",
+      "text": "Both databases support transactions, but external side effects need explicit coordination."
+    },
+    {
+      "type": "paragraph",
+      "text": "Polyglot persistence adds ownership, synchronization, backup, and operational costs."
+    }
+  ],
+  "questions": [
+    {
+      "id": "postgresql-vs-mongodb-q1",
+      "type": "single_select",
+      "prompt": "A service relies on joins, foreign keys, and multi-row invariants across orders and payments. What is the strongest starting point?",
+      "options": [
+        {
+          "id": "a",
+          "text": "PostgreSQL because relational queries and constraints fit"
+        },
+        {
+          "id": "b",
+          "text": "MongoDB because documents always eliminate joins"
+        },
+        {
+          "id": "c",
+          "text": "Redis because key-value storage guarantees foreign keys"
+        },
+        {
+          "id": "d",
+          "text": "A separate database for every table"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The relational model and declarative constraints align with this workload."
+    },
+    {
+      "id": "postgresql-vs-mongodb-q2",
+      "type": "single_select",
+      "prompt": "An order has a bounded line-item list that must preserve purchase-time price. What MongoDB model is often reasonable?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Embed line-item snapshots in the order"
+        },
+        {
+          "id": "b",
+          "text": "Rewrite historical orders when current catalog price changes"
+        },
+        {
+          "id": "c",
+          "text": "Store each quantity in an unrelated database"
+        },
+        {
+          "id": "d",
+          "text": "Duplicate the entire current catalog in every order"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Embedding bounded order-owned snapshots keeps purchase-time values coherent with the order."
+    },
+    {
+      "id": "postgresql-vs-mongodb-q3",
+      "type": "single_select",
+      "prompt": "A MongoDB document contains an array of millions of events queried independently by time. What is the concern?",
+      "options": [
+        {
+          "id": "a",
+          "text": "An unbounded embedded array can grow inefficiently and complicate queries"
+        },
+        {
+          "id": "b",
+          "text": "MongoDB cannot index any array"
+        },
+        {
+          "id": "c",
+          "text": "PostgreSQL cannot store events"
+        },
+        {
+          "id": "d",
+          "text": "Every document must have one field"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Unbounded child collections often belong in their own collection with indexes based on access patterns."
+    },
+    {
+      "id": "postgresql-vs-mongodb-q4",
+      "type": "single_select",
+      "prompt": "Which statement about transactions is accurate?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Both systems support transactions; data model and scope affect cost"
+        },
+        {
+          "id": "b",
+          "text": "MongoDB has no atomicity at any level"
+        },
+        {
+          "id": "c",
+          "text": "PostgreSQL cannot update multiple rows transactionally"
+        },
+        {
+          "id": "d",
+          "text": "A database transaction makes an external payment call atomic"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Both support transactions; external side effects need explicit coordination."
+    },
+    {
+      "id": "postgresql-vs-mongodb-q5",
+      "type": "single_select",
+      "prompt": "A team chooses MongoDB for flexible schema. What must it still design?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Validation, document versioning, indexes, and migration strategy"
+        },
+        {
+          "id": "b",
+          "text": "Nothing because fields never change"
+        },
+        {
+          "id": "c",
+          "text": "A collection for every optional field"
+        },
+        {
+          "id": "d",
+          "text": "Equal byte length for every document"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Flexible storage still needs controlled contracts and evolution."
+    },
+    {
+      "id": "postgresql-vs-mongodb-q6",
+      "type": "single_select",
+      "prompt": "A few JSON attributes need filtering while relational constraints remain important. What should be evaluated before adding a new datastore?",
+      "options": [
+        {
+          "id": "a",
+          "text": "PostgreSQL JSONB with appropriate operators and indexes"
+        },
+        {
+          "id": "b",
+          "text": "Move all tables to a key-value store immediately"
+        },
+        {
+          "id": "c",
+          "text": "Store JSON only in logs"
+        },
+        {
+          "id": "d",
+          "text": "Remove constraints for performance"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "PostgreSQL can combine relational structures with JSONB when query patterns fit."
+    },
+    {
+      "id": "postgresql-vs-mongodb-q7",
+      "type": "single_select",
+      "prompt": "An order is committed to PostgreSQL and then an event is published. The process can crash between these steps. What addresses the gap?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Write an outbox record in the same transaction and publish idempotently"
+        },
+        {
+          "id": "b",
+          "text": "Assume the process never crashes"
+        },
+        {
+          "id": "c",
+          "text": "Increase SQL timeout"
+        },
+        {
+          "id": "d",
+          "text": "Store the event in ephemeral cache only"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The outbox couples the domain change and event intent; an idempotent worker publishes with retry."
+    },
+    {
+      "id": "postgresql-vs-mongodb-q8",
+      "type": "single_select",
+      "prompt": "A team wants both PostgreSQL and MongoDB. What should be decided first?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Authoritative owner for each data domain and synchronization semantics"
+        },
+        {
+          "id": "b",
+          "text": "Which database has a more modern logo"
+        },
+        {
+          "id": "c",
+          "text": "How to dual-write without retries"
+        },
+        {
+          "id": "d",
+          "text": "How to skip reconciliation"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Clear ownership and synchronization prevent silent divergence."
+    },
+    {
+      "id": "postgresql-vs-mongodb-q9",
+      "type": "multi_select",
+      "prompt": "Which factors matter when choosing relational tables versus document modeling?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Relationship and join patterns"
+        },
+        {
+          "id": "b",
+          "text": "Required invariants and transaction boundaries"
+        },
+        {
+          "id": "c",
+          "text": "Whether related data is bounded and read together"
+        },
+        {
+          "id": "d",
+          "text": "The belief one database is universally more scalable"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "Choose based on access patterns, invariants, and aggregate shape."
+    },
+    {
+      "id": "postgresql-vs-mongodb-q10",
+      "type": "multi_select",
+      "prompt": "Which can justify using both PostgreSQL and MongoDB?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Distinct workloads benefit from different models"
+        },
+        {
+          "id": "b",
+          "text": "Data ownership and synchronization are explicitly designed"
+        },
+        {
+          "id": "c",
+          "text": "The team can operate both systems reliably"
+        },
+        {
+          "id": "d",
+          "text": "Avoiding schema and migration planning"
+        }
+      ],
+      "correctOptionIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": "Polyglot persistence can fit distinct workloads but adds operational complexity."
+    },
+    {
+      "id": "postgresql-vs-mongodb-q11",
+      "type": "true_false",
+      "prompt": "MongoDB's flexible document model makes validation and schema evolution unnecessary.",
+      "correctAnswer": false,
+      "explanation": "Flexibility makes validation and versioning more important, not less."
+    },
+    {
+      "id": "postgresql-vs-mongodb-q12",
+      "type": "true_false",
+      "prompt": "Adding MongoDB without a distinct workload need can increase operational complexity without clear benefit.",
+      "correctAnswer": true,
+      "explanation": "A second datastore adds synchronization, backup, security, monitoring, and ownership costs."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "postgresql-vs-mongodb-scenario-1",
+      "prompt": "Design a marketplace with users, listings, bookings, payments, and flexible listing attributes.",
+      "skillsTested": [
+        "Data modeling",
+        "Consistency",
+        "Trade-offs"
+      ],
+      "strongAnswerPoints": [
+        "Keep booking/payment invariants and relationships explicit.",
+        "Evaluate JSONB or a document store only for attributes whose access patterns justify it.",
+        "Define ownership, indexes, and operating costs before polyglot persistence."
+      ],
+      "pitfalls": [
+        "Choosing MongoDB solely because attributes vary",
+        "Change one variable at a time and measure the effect."
+      ],
+      "referenceAnswer": "I would map invariants and query patterns first. PostgreSQL is a strong default for bookings, payments, relationships, and constraints; JSONB may handle flexible listing attributes. I would add MongoDB only if a distinct document workload justified synchronization and operational overhead."
+    },
+    {
+      "id": "postgresql-vs-mongodb-scenario-2",
+      "prompt": "A team migrates a high-volume event collection from PostgreSQL to MongoDB. How would you make it safe?",
+      "skillsTested": [
+        "Migration planning",
+        "Reconciliation",
+        "Cutover"
+      ],
+      "strongAnswerPoints": [
+        "Define source of truth and target shape, indexes, and validation.",
+        "Backfill in batches and replay changes idempotently.",
+        "Compare business invariants and cut over gradually with rollback criteria."
+      ],
+      "pitfalls": [
+        "Uncontrolled dual writes and row-count-only validation",
+        "Change one variable at a time and measure the effect."
+      ],
+      "referenceAnswer": "I would define ownership and mapping, backfill with progress tracking, replay changes idempotently, and compare both systems on real queries and invariants. I would shift traffic gradually and keep rollback available until reconciliation and latency are stable."
+    }
+  ]
+}

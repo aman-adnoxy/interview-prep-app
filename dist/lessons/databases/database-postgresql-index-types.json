@@ -6,16 +6,17 @@
   "title": "PostgreSQL Index Types: B-tree, GIN, GiST, BRIN, Partial, and Expression Indexes",
   "description": "PostgreSQL Index Types: B-tree, GIN, GiST, BRIN, Partial, and Expression Indexes. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.",
   "difficulty": "intermediate",
-  "estimatedMinutes": 40,
+  "estimatedMinutes": 45,
   "learningObjectives": [
     "Match PostgreSQL index families to operators and data shape.",
     "Explain GIN, GiST, and BRIN trade-offs.",
     "Use partial and expression indexes when predicates match.",
-    "Recognize operator-class requirements."
+    "Recognize operator-class requirements.",
+    "Explain postgresql index types: b-tree, gin, gist, brin, partial, and expression indexes using the six-layer interview framework."
   ],
   "mentalModel": {
     "type": "paragraph",
-    "text": "An index is useful only when its operator class supports query operators. B-tree is the general default for equality, ranges, and ordering; GIN indexes component values; GiST provides generalized search structures; BRIN summarizes physical block ranges. Partial and expression indexes specialize which rows or expressions are indexed."
+    "text": "Different indexes are like different lookup tools. A B-tree is a good everyday choice for exact values, ranges, and sorting. GIN is useful when searching inside arrays or JSON documents. BRIN summarizes large runs of nearby table pages. Pick the tool that supports the question your query is asking."
   },
   "concepts": [
     {
@@ -24,7 +25,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "B-tree is the general-purpose PostgreSQL index for equality, inequalities, ranges, and compatible ordering. Hash supports equality but not ordered range traversal."
+          "text": "B-tree is the general-purpose starting point because it supports equality, range conditions, and ordered results. Hash is narrower: it supports equality lookups."
+        },
+        {
+          "type": "paragraph",
+          "text": "B-tree is the general-purpose choice for equality checks, ranges, and sorted results. Hash indexes support equality checks but not range searches or ordered output. Start with B-tree unless the query needs a different kind of search."
         },
         {
           "type": "code",
@@ -34,29 +39,44 @@
         },
         {
           "type": "table",
-          "title": "Key distinctions",
+          "title": "Match the index to the search",
           "columns": [
-            "Concept",
-            "Mechanism",
-            "Trade-off"
+            "Index type",
+            "Good starting point",
+            "Remember"
           ],
           "rows": [
             [
-              "Access path",
-              "Structure used to locate candidate rows",
-              "Does not guarantee planner selection."
+              "B-tree",
+              "Exact matches, ranges, and sorted results.",
+              "The everyday default for many scalar columns."
             ],
             [
-              "Physical work",
-              "Pages, tuple visibility, result rows",
-              "May dominate logical lookup cost."
+              "GIN",
+              "Finding values inside arrays or JSONB; supported text search.",
+              "Can be larger and more expensive to update."
             ],
             [
-              "Workload fit",
-              "Predicates, ordering, distribution",
-              "Requires measurement, not assumptions."
+              "GiST",
+              "Spatial, range, and other searches supported by its operator class.",
+              "Its behavior depends on the operators and data type."
+            ],
+            [
+              "BRIN",
+              "Very large tables where nearby pages tend to contain similar values, such as timestamps.",
+              "Small summary index; matching pages may need row rechecks."
             ]
           ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "A query asks for all events between two timestamps and orders them by timestamp.",
+          "reasoning": [
+            "A B-tree on timestamp can navigate to the range and return keys in order.",
+            "A hash index can help equality checks but cannot provide a timestamp range or sorted output.",
+            "Choose the index type that supports the operators and ordering the query needs."
+          ],
+          "outcome": "Start with B-tree for common scalar searches unless the workload gives a clear reason to choose another type."
         }
       ]
     },
@@ -66,7 +86,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "GIN maps component keys to rows containing those keys. It can support array membership, JSONB containment, and text-search patterns when the operator class supports the operator."
+          "text": "GIN is an inverted index: it maps each component to the rows that contain that component. This suits searches inside composite values such as arrays and JSONB."
+        },
+        {
+          "type": "paragraph",
+          "text": "A GIN index helps find rows that contain a particular component, such as a value inside an array or a key/value pattern inside JSONB. It stores a lookup from each component to the rows that contain it, so it is useful for supported containment and text-search queries."
         },
         {
           "type": "code",
@@ -94,6 +118,26 @@
               "description": "Use actual rows and buffers to compare prediction with observed work."
             }
           ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "An events table has JSONB tags and the query asks for events whose tags contain 'security'.",
+          "reasoning": [
+            "A GIN index can index components inside the JSONB value.",
+            "The query must use an operator supported by the chosen GIN operator class.",
+            "GIN can use significant storage and add write work, so validate the plan and write workload."
+          ],
+          "outcome": "GIN can speed up containment-style searches that a simple B-tree on the whole JSON document may not support well."
+        },
+        {
+          "type": "worked_example",
+          "reasoning": [
+            "A regular B-tree on the entire JSONB value is not the general tool for this containment search.",
+            "A GIN index with an operator class that supports the `@>` containment operator can index the document's components.",
+            "The query must use an operator supported by that operator class. GIN's extra entries also increase index size and write cost."
+          ],
+          "outcome": "Choose an index by the operator the query uses and the data shape—not simply because a column is JSONB.",
+          "problem": "A product's `attributes` JSONB column stores color, size, and material. The endpoint asks for products whose attributes contain `{\"color\":\"blue\"}`."
         }
       ]
     },
@@ -103,7 +147,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "GiST is a generalized search-tree framework with operator-class-specific behavior. BRIN stores summaries for heap block ranges and is compact when values correlate with physical row order, but summaries are lossy and require rechecks."
+          "text": "GiST supports several operator families, including spatial and range searches. BRIN stores summaries for groups of nearby table pages and works best when physical order correlates with the searched value."
+        },
+        {
+          "type": "paragraph",
+          "text": "GiST supports different kinds of searches, including some geometric and range operations. BRIN stores a small summary for groups of nearby table pages. BRIN is compact and useful when nearby pages contain similar values, such as timestamps inserted in order, but PostgreSQL may need to recheck matching rows."
         },
         {
           "type": "code",
@@ -113,13 +161,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "A query is slower than expected even though an index exists.",
+          "problem": "A huge append-only events table is mostly inserted in timestamp order and reports filter by a broad time range.",
           "reasoning": [
-            "Check whether index keys and predicates align.",
-            "Compare estimated and actual row counts and inspect buffers.",
-            "Account for result size, heap access, and write/storage trade-offs."
+            "BRIN can summarize minimum and maximum timestamps for groups of pages.",
+            "PostgreSQL can skip page ranges whose summaries cannot match, but it may need to recheck rows in selected pages.",
+            "If timestamps are scattered randomly through the table, the summaries become less useful."
           ],
-          "outcome": "Make a targeted change only after plan evidence supports the hypothesis."
+          "outcome": "BRIN is compact when nearby pages contain similar values; GiST fits searches supported by its operator class."
         }
       ]
     },
@@ -129,7 +177,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A partial index contains only rows satisfying its predicate, useful for stable subsets such as pending jobs. PostgreSQL can use it only when it can prove the query predicate implies the index predicate."
+          "text": "A partial index contains only rows that satisfy a condition, so it can be smaller when queries repeatedly target a stable subset."
+        },
+        {
+          "type": "paragraph",
+          "text": "A partial index includes only rows that meet a condition, such as jobs whose status is 'pending'. It can be smaller than an index on every job. PostgreSQL can use it only when it can prove that the query asks for rows covered by that condition."
         },
         {
           "type": "code",
@@ -142,6 +194,26 @@
           "prompt": "Does the existence of an index guarantee PostgreSQL will use it?",
           "answer": "No.",
           "explanation": "The planner compares estimated costs, and another access path may be cheaper."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A jobs table has ten million completed jobs but only a few thousand pending jobs, and workers repeatedly claim pending jobs.",
+          "reasoning": [
+            "Create an index on scheduling columns with a predicate such as WHERE status = 'pending'.",
+            "Queries must imply that predicate for PostgreSQL to use the partial index.",
+            "A parameterized condition can prevent the planner from proving the predicate in some plans, so test the actual prepared query."
+          ],
+          "outcome": "Partial indexes can keep a hot subset small, but the query predicate must match the index condition."
+        },
+        {
+          "type": "worked_example",
+          "reasoning": [
+            "Create a partial index containing only pending jobs, ordered by creation time.",
+            "The queue query must include a condition PostgreSQL can recognize as implying `status = 'pending'`.",
+            "If the query uses a generic prepared parameter for status, PostgreSQL may not be able to prove that the predicate always matches the partial index; test the actual prepared plan."
+          ],
+          "outcome": "Partial indexes save space by indexing only a useful subset, but their predicate must line up with the query PostgreSQL plans.",
+          "problem": "A job queue repeatedly asks for the oldest pending jobs, while most historical jobs are completed."
         }
       ]
     },
@@ -151,13 +223,89 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "An expression index stores a computed value such as lower(email). The query expression must be compatible, and functions used in PostgreSQL index expressions must be immutable."
+          "text": "An expression index stores the result of an expression, so a query can search using the same expression instead of calculating it for every row."
+        },
+        {
+          "type": "paragraph",
+          "text": "An expression index stores the result of a calculation, such as lower(email), instead of only the original column. It can help when queries use that same expression, but the query must match the indexed expression closely and PostgreSQL requires index functions to be immutable."
         },
         {
           "type": "code",
           "language": "sql",
           "title": "PostgreSQL example",
           "source": "CREATE UNIQUE INDEX users_lower_email_uq ON users (lower(email));"
+        },
+        {
+          "type": "worked_example",
+          "problem": "Email lookups should be case-insensitive and queries use lower(email) = lower($1).",
+          "reasoning": [
+            "Create an index on lower(email), not only on the raw email column.",
+            "Write the predicate using the indexed expression so PostgreSQL can match it to the index.",
+            "Define a consistent normalization and uniqueness policy if differently cased emails should count as the same address."
+          ],
+          "outcome": "Expression indexes help when the application consistently queries through that expression; they also add write cost."
+        }
+      ]
+    },
+    {
+      "id": "interview-synthesis-six-layers",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — PostgreSQL Index Types: B-tree, GIN, GiST, BRIN, Partial, and Expression Indexes. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. B-tree is the general-purpose starting point because it supports equality, range conditions, and ordered results. Hash is narrower: it supports equality lookups."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — Different indexes are like different lookup tools. A B-tree is a good everyday choice for exact values, ranges, and sorting. GIN is useful when searching inside arrays or JSON documents. BRIN summarizes large runs of nearby table pages. Pick the tool that supports the question your query is asking. Make assumptions explicit."
+        },
+        {
+          "type": "steps",
+          "title": "3. Internal mechanism: trace the sequence",
+          "steps": [
+            {
+              "id": "mechanism-step-1",
+              "title": "B-tree and hash",
+              "description": "B-tree is the general-purpose starting point because it supports equality, range conditions, and ordered results. Hash is narrower: it supports equality lookups."
+            },
+            {
+              "id": "mechanism-step-2",
+              "title": "GIN inverted indexes",
+              "description": "GIN is an inverted index: it maps each component to the rows that contain that component. This suits searches inside composite values such as arrays and JSONB."
+            },
+            {
+              "id": "mechanism-step-3",
+              "title": "GiST and BRIN",
+              "description": "GiST supports several operator families, including spatial and range searches. BRIN stores summaries for groups of nearby table pages and works best when physical order correlates with the searched value."
+            },
+            {
+              "id": "mechanism-step-4",
+              "title": "Partial indexes",
+              "description": "A partial index contains only rows that satisfy a condition, so it can be smaller when queries repeatedly target a stable subset."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "4. Trade-offs and scale — Apply PostgreSQL Index Types: B-tree, GIN, GiST, BRIN, Partial, and Expression Indexes to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "reasoning": [
+            "Index type follows operators and data shape, not column labels.",
+            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
+            "Compare correctness, performance, resource cost, operational complexity, and failure behavior."
+          ],
+          "outcome": "Choose based on the workload and invariants, then validate with representative measurements and edge cases."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "5. Anti-pattern to avoid",
+          "content": "Index type follows operators and data shape, not column labels."
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "6. Interview probe — Which is the default starting point for scalar equality, range, and ordered scans?",
+          "answer": "B-tree supports equality, range, and compatible ordering.",
+          "explanation": "A strong answer connects the problem to the mechanism, states assumptions and trade-offs, and explains how to verify the decision in practice."
         }
       ]
     }

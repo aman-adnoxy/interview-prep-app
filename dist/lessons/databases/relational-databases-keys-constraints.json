@@ -3,17 +3,18 @@
   "sectionId": "relational-databases-keys-constraints",
   "title": "Relational Databases, Primary Keys, Foreign Keys, and Constraints",
   "difficulty": "beginner",
-  "estimatedMinutes": 42,
+  "estimatedMinutes": 47,
   "learningObjectives": [
     "Explain relations, rows, columns, and the role of a relational schema.",
     "Choose primary and candidate keys based on identity and business rules.",
     "Distinguish primary, foreign, unique, check, and not-null constraints.",
     "Explain how constraints protect invariants under concurrent writes.",
-    "Diagnose when a constraint should be immediate, deferred, or represented differently."
+    "Diagnose when a constraint should be immediate, deferred, or represented differently.",
+    "Explain relational databases, primary keys, foreign keys, and constraints using the six-layer interview framework."
   ],
   "mentalModel": {
     "type": "paragraph",
-    "text": "A relational database is not merely a collection of tables. It is a system for storing facts under explicit rules. A row represents a fact about an entity or relationship; keys identify which fact it is; constraints define which states are allowed. Application validation improves user experience, but database constraints are the final shared guardrail for every writer."
+    "text": "Imagine an orders screen that shows a customer's name beside every order. If we save the name and email on every order, a later email change means fixing many rows. A relational database helps us store each kind of fact in the right table and connect those tables with keys. Constraints stop invalid data, even when two requests arrive at once."
   },
   "concepts": [
     {
@@ -22,7 +23,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A relation has a defined set of attributes (columns), and each row is a tuple containing values for those attributes. A table should model a stable entity or relationship—such as a customer, order, or order line—not mirror a UI page. One customer may have many orders, so customer and order facts normally belong in separate relations."
+          "text": "Start with the facts the application needs to remember, not the fields that happen to appear on one screen."
+        },
+        {
+          "type": "paragraph",
+          "text": "Think of a table as a list of facts about one kind of thing. A customers table describes customers; an orders table describes orders. One customer can have many orders, so each order points to its customer instead of copying every customer detail."
         },
         {
           "type": "paragraph",
@@ -30,13 +35,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "An order screen displays customer name, customer email, order number, order date, and total.",
+          "problem": "An order screen shows order number, customer name, customer email, and total.",
           "reasoning": [
-            "The screen combines facts about a customer and an order.",
-            "Store customer identity and contact details in customers; store order identity, customer reference, and date in orders.",
-            "Calculate the total from order lines when that is the authoritative definition, or persist a carefully maintained snapshot if business requirements demand it."
+            "The order number and date describe the order; name and email describe the customer.",
+            "Store customer details once in customers and refer to that customer from orders using customer_id.",
+            "Join the tables when the screen needs both sets of facts. Keep a purchase-time snapshot only when history requires it."
           ],
-          "outcome": "The model avoids duplicating mutable customer facts on every order while preserving the ability to query the screen with a JOIN."
+          "outcome": "Separate tables by the facts they own. A JOIN can assemble a screen without making every order a second source of truth for customer details."
         },
         {
           "type": "callout",
@@ -52,7 +57,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A candidate key is a minimal set of attributes that uniquely identifies a row. One candidate key is selected as the primary key; other candidate keys can be enforced with UNIQUE constraints. A primary key is unique and NOT NULL. A foreign key is not an identity for the child row: it identifies the referenced parent row."
+          "text": "A primary key answers 'which row is this?' A UNIQUE constraint answers 'which values must not be repeated?'."
+        },
+        {
+          "type": "paragraph",
+          "text": "A primary key is a row's stable ID. A candidate key is any smallest set of columns that could uniquely identify the row. For example, user_id might be the primary key while email has a UNIQUE rule. Email can change, so it is not always a good permanent ID."
         },
         {
           "type": "table",
@@ -85,13 +94,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "A users table uses email as its primary key.",
+          "problem": "A user has user_id = 42 and email = 'sam@example.com'. The user changes email next month.",
           "reasoning": [
-            "Email can change when a person changes address.",
-            "Case normalization and provider-specific semantics can be subtle.",
-            "Other tables now couple their references to a mutable contact attribute."
+            "Other tables can keep referring to user_id = 42.",
+            "A UNIQUE constraint on email can still prevent two users from claiming the same email.",
+            "If email were the primary key, changing it would also require updating every foreign key that refers to it."
           ],
-          "outcome": "Use a stable user_id as primary key and, if required, enforce the product's email uniqueness policy separately with a UNIQUE constraint and a clearly defined normalization rule."
+          "outcome": "Use a stable primary key for row identity and separate UNIQUE constraints for business rules such as email uniqueness."
         }
       ]
     },
@@ -101,7 +110,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A foreign key ensures that a referencing value matches an eligible key in the referenced table, subject to NULL rules. It prevents orphaned references when all writes obey the database constraint. A foreign key does not automatically create an index on the referencing columns in PostgreSQL; consider one when parent deletes/updates or child lookups need it."
+          "text": "A foreign key lets the database enforce that a reference points to a real parent row."
+        },
+        {
+          "type": "paragraph",
+          "text": "A foreign key is a database-enforced link to another row. If orders.customer_id points to customers.id, the database can reject an order for a customer who does not exist. PostgreSQL does not automatically index the child column, so add one when queries or parent deletes need it."
         },
         {
           "type": "code",
@@ -110,35 +123,141 @@
           "source": "CREATE TABLE customers (\n  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  email TEXT NOT NULL UNIQUE\n);\n\nCREATE TABLE orders (\n  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  customer_id BIGINT NOT NULL\n    REFERENCES customers(id) ON DELETE RESTRICT,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE INDEX idx_orders_customer_id ON orders(customer_id);"
         },
         {
+          "type": "paragraph",
+          "text": "The SQL above uses `ON DELETE RESTRICT`. That choice matters when someone tries to delete a customer who still has orders. Before choosing an action, ask: if the parent row goes away, what should happen to each dependent row? The database can enforce that decision for you."
+        },
+        {
+          "type": "paragraph",
+          "text": "### 1. RESTRICT / NO ACTION: do not allow the delete"
+        },
+        {
+          "type": "paragraph",
+          "text": "Imagine customer 12 has three orders. You try to delete customer 12. With `RESTRICT`, PostgreSQL refuses because those orders still point to that customer. The customer and orders remain unchanged. This is useful when the child records must not be left pointing at a missing parent."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Deletion is blocked while orders exist",
+          "source": "DELETE FROM customers WHERE id = 12;\n-- Fails while orders still reference customer 12"
+        },
+        {
+          "type": "paragraph",
+          "text": "`RESTRICT` and `NO ACTION` often look the same: both prevent an invalid reference. The difference is timing. `RESTRICT` blocks the operation immediately. A deferrable `NO ACTION` constraint can postpone the check until the end of the transaction, which can help when a sequence of changes temporarily breaks the relationship but restores it before commit."
+        },
+        {
+          "type": "paragraph",
+          "text": "### 2. CASCADE: delete the dependent rows too"
+        },
+        {
+          "type": "paragraph",
+          "text": "Imagine a shopping cart and its cart items. A cart item has no useful life once its cart is deleted. With `ON DELETE CASCADE`, deleting the cart also deletes its cart items. You do not need a separate DELETE for every item."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "A child that belongs only to its parent",
+          "source": "CREATE TABLE carts (\n  id BIGINT PRIMARY KEY\n);\n\nCREATE TABLE cart_items (\n  cart_id BIGINT REFERENCES carts(id) ON DELETE CASCADE,\n  product_id BIGINT NOT NULL,\n  quantity INT NOT NULL CHECK (quantity > 0),\n  PRIMARY KEY (cart_id, product_id)\n);\n\nDELETE FROM carts WHERE id = 12;\n-- Cart 12 and all its cart_items are deleted."
+        },
+        {
+          "type": "paragraph",
+          "text": "That convenience can be dangerous for orders, payments, invoices, or audit records. Those records may need to survive even if a customer account is closed. Do not use CASCADE just because it avoids writing another query; use it only when the child truly has no independent lifecycle and deletion is the intended business rule."
+        },
+        {
+          "type": "paragraph",
+          "text": "### 3. SET NULL: keep the child, clear the relationship"
+        },
+        {
+          "type": "paragraph",
+          "text": "Imagine a support ticket assigned to an employee. If that employee leaves, you may want to keep the ticket but make it unassigned. `ON DELETE SET NULL` keeps the ticket and changes `assigned_employee_id` to NULL. The column must allow NULL, and the application must know what an unassigned ticket means."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Keep the ticket after its assignee is deleted",
+          "source": "CREATE TABLE support_tickets (\n  id BIGINT PRIMARY KEY,\n  assigned_employee_id BIGINT NULL\n    REFERENCES employees(id) ON DELETE SET NULL\n);\n\nDELETE FROM employees WHERE id = 7;\n-- Tickets assigned to employee 7 remain,\n-- but assigned_employee_id becomes NULL."
+        },
+        {
+          "type": "paragraph",
+          "text": "This is not appropriate for the `orders.customer_id` column shown earlier because it is `NOT NULL`. It would also be a poor choice if you must preserve who handled a ticket for audit reasons; in that case, retain the employee record or store an appropriate historical snapshot."
+        },
+        {
+          "type": "paragraph",
+          "text": "### 4. SET DEFAULT: replace the reference with a fallback"
+        },
+        {
+          "type": "paragraph",
+          "text": "Imagine support tickets are assigned to a team. When a team is removed, you want its tickets to move to a special team called `Unassigned`. `ON DELETE SET DEFAULT` replaces the deleted team's ID with the column's default value. That default must still point to a real team, or the foreign-key check will fail."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Use a valid fallback team",
+          "source": "CREATE TABLE teams (\n  id BIGINT PRIMARY KEY,\n  name TEXT NOT NULL UNIQUE\n);\n\nINSERT INTO teams (id, name) VALUES (0, 'Unassigned');\n\nCREATE TABLE tickets (\n  id BIGINT PRIMARY KEY,\n  team_id BIGINT NOT NULL DEFAULT 0\n    REFERENCES teams(id) ON DELETE SET DEFAULT\n);\n\n-- Deleting a non-default team moves its tickets to team_id = 0.\n-- Team 0 must remain present for the foreign key to stay valid."
+        },
+        {
+          "type": "paragraph",
+          "text": "`SET DEFAULT` does not mean 'accept any missing parent'. It substitutes the default, then the foreign key still checks that the new value exists. This is useful only when the fallback has a clear meaning and is guaranteed to exist."
+        },
+        {
+          "type": "paragraph",
+          "text": "### Compare the choices"
+        },
+        {
           "type": "table",
           "columns": [
-            "Referential action",
-            "Use carefully when"
+            "Action",
+            "What happens to the child row?",
+            "Typical fit"
           ],
           "rows": [
             [
-              "RESTRICT / NO ACTION",
-              "Prevent parent deletion while dependent rows exist; NO ACTION can be deferred if the constraint is deferrable."
+              "RESTRICT",
+              "Parent deletion is rejected while child rows refer to it.",
+              "An order must keep its customer reference valid."
+            ],
+            [
+              "NO ACTION",
+              "The reference must be valid when the constraint is checked; a deferrable constraint can check at transaction end.",
+              "A multi-step transaction temporarily changes relationships before restoring validity."
             ],
             [
               "CASCADE",
-              "Delete or update dependent rows automatically when that is genuinely the lifecycle rule."
+              "The child row is deleted along with the parent.",
+              "Cart items that have no independent life outside their cart."
             ],
             [
               "SET NULL",
-              "Keep the child but remove the relationship; the foreign-key column must permit NULL."
+              "The child stays, but its foreign-key value becomes NULL.",
+              "A ticket stays after its optional assignee is removed."
             ],
             [
               "SET DEFAULT",
-              "Replace the reference with its default, which must still satisfy the constraint."
+              "The child stays, and its foreign-key value changes to the column default; that default must reference a real parent.",
+              "A ticket moves to a permanent 'Unassigned' team."
             ]
           ]
         },
         {
           "type": "callout",
           "kind": "warning",
+          "title": "Choose based on what the data means",
+          "content": "Before selecting an action, ask what the child record represents and whether it must survive the parent's deletion. For customer orders, preserving history is usually more important than automatically deleting the order. For temporary cart items, cascading deletion may be exactly right. The database action should match the product's retention and lifecycle rules."
+        },
+        {
+          "type": "callout",
+          "kind": "warning",
           "title": "CASCADE is a business decision",
           "content": "It is not merely a convenience. A cascade can remove a large graph of data. Use it when the child has no independent lifecycle and deletion is intended to propagate."
+        },
+        {
+          "type": "worked_example",
+          "problem": "An API inserts an order with customer_id = 900, but no customer with id 900 exists.",
+          "reasoning": [
+            "The application may have checked earlier, but the customer could have been deleted before the insert.",
+            "An enforced foreign key checks the relationship at write time and rejects the invalid order.",
+            "If queries often filter orders by customer_id, consider indexing that child column; PostgreSQL does not do so automatically."
+          ],
+          "outcome": "The foreign key protects relationship integrity even when requests race. Indexing the referencing column is a separate performance decision."
         }
       ]
     },
@@ -148,7 +267,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Constraints describe states the database must reject: NOT NULL for required values, UNIQUE for uniqueness, CHECK for row-level predicates, PRIMARY KEY for row identity, and FOREIGN KEY for referential integrity. Defaults provide values when a column is omitted; they do not replace constraints."
+          "text": "A constraint puts a rule next to the data, where every writer must obey it."
+        },
+        {
+          "type": "paragraph",
+          "text": "Constraints are rules the database checks before accepting data. NOT NULL means a value is required; UNIQUE prevents duplicates; CHECK enforces a rule on one row; a foreign key checks a relationship. A default fills an omitted value, but does not stop an invalid value being supplied."
         },
         {
           "type": "code",
@@ -166,49 +289,220 @@
         },
         {
           "type": "worked_example",
-          "problem": "Two requests check whether a username exists; both see no row and both attempt to insert it.",
+          "problem": "Two requests try to create username 'sam' at almost the same time.",
           "reasoning": [
-            "The reads can both be correct at the time they execute.",
-            "Without a database uniqueness rule, both inserts may succeed.",
-            "A transaction around each request does not necessarily serialize the competing requests."
+            "Both requests can check first and see no matching username.",
+            "A UNIQUE constraint on username allows at most one conflicting insert to succeed.",
+            "Handle the uniqueness error as a normal conflict; do not rely on a prior SELECT as the guarantee."
           ],
-          "outcome": "Add UNIQUE(username), attempt the insert, and handle the unique-violation result as a normal conflict. The database constraint is the concurrency-safe invariant."
+          "outcome": "Application validation improves the user message, while the database constraint provides the concurrency-safe guarantee."
         }
       ]
     },
     {
       "id": "transactions-and-constraint-timing",
-      "title": "Constraints under concurrent writes and deferred checks",
+      "title": "Immediate and deferred constraints; safe concurrent writes",
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A constraint is valuable because it is enforced at the database boundary, not because it runs in a particular application layer. Most PostgreSQL constraints are checked immediately. Some UNIQUE, PRIMARY KEY, FOREIGN KEY, and EXCLUDE constraints can be declared DEFERRABLE and checked at transaction end or when explicitly requested. CHECK and NOT NULL constraints are not deferrable."
+          "text": "PostgreSQL usually checks a constraint as each SQL statement runs. A DEFERRABLE constraint can instead be checked later, typically when the transaction commits. This matters when a sequence of changes briefly breaks a rule even though the final result will be valid."
+        },
+        {
+          "type": "paragraph",
+          "text": "Immediate checking asks, “Is the data valid after this statement?” Deferred checking asks, “Is the data valid when this transaction is ready to commit?” Deferring does not remove the rule. It changes when PostgreSQL checks it."
+        },
+        {
+          "type": "paragraph",
+          "text": "### 1. Immediate checking: the default"
+        },
+        {
+          "type": "paragraph",
+          "text": "Suppose Alice has seat 1 and Ben has seat 2. A UNIQUE constraint prevents two people from having the same seat. If you update Alice to seat 2 first, PostgreSQL sees a duplicate immediately and rejects the statement—even if you planned to move Ben to seat 1 next."
         },
         {
           "type": "code",
           "language": "sql",
-          "title": "Deferring a constraint when order of updates matters",
-          "source": "BEGIN;\nSET CONSTRAINTS ALL DEFERRED;\n-- Perform a sequence of changes that temporarily violates\n-- a DEFERRABLE constraint but restores validity before COMMIT.\nCOMMIT;"
+          "title": "The first update fails with an ordinary UNIQUE constraint",
+          "source": "CREATE TABLE seats (\n  person TEXT PRIMARY KEY,\n  seat_no INT UNIQUE\n);\nINSERT INTO seats VALUES ('Alice', 1), ('Ben', 2);\nUPDATE seats SET seat_no = 2 WHERE person = 'Alice';\n-- Fails: Ben already has seat_no = 2."
+        },
+        {
+          "type": "paragraph",
+          "text": "The problem is the order of the updates, not the final arrangement. With immediate checking, PostgreSQL does not wait to see whether a later statement would repair the temporary duplicate."
+        },
+        {
+          "type": "paragraph",
+          "text": "### 2. Deferred checking: validate at commit"
+        },
+        {
+          "type": "paragraph",
+          "text": "If swapping seat numbers is a legitimate operation, declare the UNIQUE constraint DEFERRABLE. Then defer it for this transaction. Both updates can temporarily create a duplicate, but the final values must be unique when you commit."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Swap two seat numbers with a deferred UNIQUE constraint",
+          "source": "CREATE TABLE seats (\n  person TEXT PRIMARY KEY,\n  seat_no INT,\n  CONSTRAINT seats_seat_no_uq UNIQUE (seat_no)\n    DEFERRABLE INITIALLY IMMEDIATE\n);\nINSERT INTO seats VALUES ('Alice', 1), ('Ben', 2);\n\nBEGIN;\nSET CONSTRAINTS seats_seat_no_uq DEFERRED;\nUPDATE seats SET seat_no = 2 WHERE person = 'Alice';\nUPDATE seats SET seat_no = 1 WHERE person = 'Ben';\nCOMMIT;"
+        },
+        {
+          "type": "worked_example",
+          "problem": "After the first UPDATE, both people temporarily have seat 2. After the second UPDATE, Alice has seat 2 and Ben has seat 1.",
+          "reasoning": [
+            "The constraint was declared DEFERRABLE, so PostgreSQL allows the transaction to continue after the temporary duplicate.",
+            "The second UPDATE restores uniqueness: each person has a different seat number.",
+            "At COMMIT, PostgreSQL checks the deferred constraint. If the duplicate remains, COMMIT fails."
+          ],
+          "outcome": "Deferring changes the timing of the check, not the rule itself. The transaction must end with valid data."
+        },
+        {
+          "type": "paragraph",
+          "text": "### 3. What must be true before you can defer a constraint?"
+        },
+        {
+          "type": "paragraph",
+          "text": "The constraint must have been created as DEFERRABLE. SET CONSTRAINTS cannot make a NOT DEFERRABLE constraint deferrable. In PostgreSQL, PRIMARY KEY, UNIQUE, FOREIGN KEY, and EXCLUDE constraints can be declared DEFERRABLE; CHECK and NOT NULL cannot."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Change when a deferrable constraint is checked",
+          "source": "SET CONSTRAINTS seats_seat_no_uq DEFERRED;\n-- Later, check it immediately again:\nSET CONSTRAINTS seats_seat_no_uq IMMEDIATE;"
+        },
+        {
+          "type": "paragraph",
+          "text": "INITIALLY IMMEDIATE means PostgreSQL checks after each statement unless you defer the constraint. INITIALLY DEFERRED means it starts deferred in each transaction. SET CONSTRAINTS ALL DEFERRED affects all eligible deferrable constraints; naming one constraint is often clearer."
+        },
+        {
+          "type": "paragraph",
+          "text": "### 4. When is deferring useful?"
+        },
+        {
+          "type": "paragraph",
+          "text": "Use it when a valid operation needs a temporary invalid intermediate state—for example, swapping unique position numbers, renumbering rows, or inserting rows connected by circular foreign keys. It is not a way to ignore integrity rules, and it is unnecessary when every statement can keep the data valid on its own."
         },
         {
           "type": "callout",
           "kind": "pitfall",
-          "title": "A transaction is not a substitute for a constraint",
-          "content": "A transaction groups work atomically, but it does not automatically prevent every competing transaction from creating a duplicate or violating a business invariant. Choose constraints and concurrency control together."
+          "title": "A deferred check can still fail",
+          "content": "PostgreSQL can accept the statements and then reject COMMIT because the final data still violates the constraint. Application code must handle commit-time errors too. Inside an explicit transaction, a failed statement normally leaves the transaction in an error state until rollback or recovery to a savepoint."
         },
         {
           "type": "paragraph",
-          "text": "When a write fails due to a constraint, PostgreSQL rejects the statement; in an explicit transaction, the transaction is then in an error state until rolled back or recovered with a savepoint. Application code should map known constraint failures to meaningful outcomes without exposing raw database details."
+          "text": "### 5. Concurrent requests are a different problem"
         },
         {
           "type": "paragraph",
-          "text": "RESTRICT prevents a referenced row from being deleted while dependent rows exist. NO ACTION checks the constraint at its normal check time; if the constraint is DEFERRABLE, that check can be postponed until transaction end."
+          "text": "Deferring a constraint is not the same as protecting a check-then-write race. Two registration requests can both SELECT a username, see no row, and then try to insert it. A transaction around each request does not by itself guarantee uniqueness."
         },
         {
           "type": "code",
           "language": "sql",
-          "title": "Enforce uniqueness under concurrency",
-          "source": "CREATE UNIQUE INDEX users_username_uq ON users (username);\n\nINSERT INTO users (username) VALUES ('aman') ON CONFLICT (username) DO NOTHING;"
+          "title": "Let a UNIQUE constraint arbitrate competing inserts",
+          "source": "CREATE TABLE users (\n  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  username TEXT NOT NULL UNIQUE\n);\nINSERT INTO users (username)\nVALUES ('aman')\nON CONFLICT (username) DO NOTHING;"
+        },
+        {
+          "type": "paragraph",
+          "text": "The UNIQUE rule is enforced by PostgreSQL even when requests arrive at the same time. One insert can claim the username; the conflicting insert cannot create a duplicate. ON CONFLICT DO NOTHING treats that conflict as an expected outcome; an API could instead return a clear “username already taken” response."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A bank transfer subtracts $50 from account A and adds $50 to account B.",
+          "reasoning": [
+            "Put both balance updates in one transaction so they commit together or roll back together.",
+            "A CHECK constraint can reject a negative balance, but it does not by itself prevent every lost update or concurrent-transfer problem.",
+            "Use safe update logic and appropriate row locking or transaction isolation when concurrent transfers can touch the same accounts."
+          ],
+          "outcome": "Transactions keep related writes atomic. Constraints enforce specific data rules. Concurrency control protects operations whose correctness depends on other transactions."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Tool",
+            "What it protects",
+            "What it does not do by itself"
+          ],
+          "rows": [
+            [
+              "UNIQUE constraint",
+              "Prevents duplicate values or combinations, including under concurrent writes.",
+              "Does not explain the conflict to the user; the application still handles the result."
+            ],
+            [
+              "Transaction",
+              "Commits related changes together or rolls them back together.",
+              "Does not automatically prevent every race or define business rules."
+            ],
+            [
+              "DEFERRABLE constraint",
+              "Allows an eligible constraint check to be postponed.",
+              "Does not permit invalid data to be committed."
+            ],
+            [
+              "Locking / isolation",
+              "Coordinates concurrent operations according to the chosen strategy.",
+              "Does not replace durable constraints such as uniqueness."
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "interview-synthesis-six-layers",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — An application needs to store customers, orders, and payments without contradictory copies of the same fact. Without a clear relational model, updates can leave orphaned orders, duplicate identities, or totals that disagree."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — A relational database represents entities as rows, relationships as keys, and business invariants as constraints. Compared with validating only in application code, database constraints protect the data even when several services, scripts, or concurrent requests write to it."
+        },
+        {
+          "type": "steps",
+          "title": "3. Internal mechanism: trace the work",
+          "steps": [
+            {
+              "id": "mechanism-step-1",
+              "title": "Identify the fact",
+              "description": "Choose the entity and its stable identity, such as customer_id for a customer."
+            },
+            {
+              "id": "mechanism-step-2",
+              "title": "Represent relationships",
+              "description": "Store a foreign key such as orders.customer_id that points to the owning customer."
+            },
+            {
+              "id": "mechanism-step-3",
+              "title": "Declare invariants",
+              "description": "Use PRIMARY KEY, FOREIGN KEY, UNIQUE, NOT NULL, and CHECK constraints for rules the database can enforce."
+            },
+            {
+              "id": "mechanism-step-4",
+              "title": "Commit atomically",
+              "description": "A transaction groups related changes so observers do not see a half-finished business operation."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "Suppose two requests try to register the same email at the same time. A pre-insert SELECT in application code can race: both requests see no row. A UNIQUE constraint arbitrates the conflict at the database boundary; one insert succeeds and the other receives a uniqueness violation.",
+          "reasoning": [
+            "Use database constraints for durable invariants and application validation for friendly error messages and rules that need external context. The two complement rather than replace each other.",
+            "Check the actual query shape, data distribution, concurrency, and database-engine behavior before generalizing the result."
+          ],
+          "outcome": "Use database constraints for durable invariants and application validation for friendly error messages and rules that need external context. The two complement rather than replace each other."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "5. Anti-pattern to avoid",
+          "content": "Do not treat an application-side existence check as a substitute for UNIQUE, or use a foreign key only as documentation. Concurrent writers and alternate write paths can bypass those assumptions."
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "6. Interview probe — How would you guarantee that every order belongs to a real customer and that two concurrent requests cannot create duplicate customer emails?",
+          "answer": "Use a primary key for customer identity, a foreign key from orders to customers, and a UNIQUE constraint on the normalized email representation. Handle the expected uniqueness error in the application.",
+          "explanation": "The database is the shared consistency boundary. Application checks improve user experience, but constraints enforce invariants under concurrency."
         }
       ]
     }

@@ -3,17 +3,18 @@
   "sectionId": "sql-aggregation-group-by-having-ctes",
   "title": "Aggregations, GROUP BY, HAVING, Subqueries, and CTEs",
   "difficulty": "intermediate",
-  "estimatedMinutes": 47,
+  "estimatedMinutes": 52,
   "learningObjectives": [
     "Explain how GROUP BY changes output grain.",
     "Use COUNT, SUM, AVG, MIN, MAX and understand NULL behavior.",
     "Distinguish WHERE from HAVING.",
     "Choose between a subquery, CTE, and join based on clarity and semantics.",
-    "Avoid common aggregate errors caused by joins and ambiguous grouping."
+    "Avoid common aggregate errors caused by joins and ambiguous grouping.",
+    "Explain aggregations, group by, having, subqueries, and ctes using the six-layer interview framework."
   ],
   "mentalModel": {
     "type": "paragraph",
-    "text": "Aggregation compresses many input rows into a smaller set of groups. Before writing GROUP BY, state what one output row represents. WHERE decides which input rows enter the groups; HAVING decides which completed groups survive."
+    "text": "Aggregation turns many rows into a summary. If a report should show one row per customer, GROUP BY customer_id defines that shape. WHERE decides which orders enter the calculation; HAVING decides which customer summaries stay in the final result. Decide what one output row means before writing the query."
   },
   "concepts": [
     {
@@ -22,7 +23,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "GROUP BY partitions the filtered input rows into groups sharing the grouping values. Each output row represents one group, not one source row. Every selected expression must be grouped, aggregated, or otherwise valid under the database's grouping rules."
+          "text": "GROUP BY decides what one result row represents."
+        },
+        {
+          "type": "paragraph",
+          "text": "GROUP BY combines rows that share the same grouping values. Group orders by customer_id and the result has one row per customer with matching orders, not one row per order. Every other selected value must be calculated, grouped, or chosen with a clear rule."
         },
         {
           "type": "code",
@@ -35,6 +40,16 @@
           "kind": "pitfall",
           "title": "Do not select arbitrary columns",
           "content": "A customer_id group can contain many orders. Selecting an order's created_at without defining which timestamp you mean is ambiguous. Aggregate it, group by it (which changes the grain), or use a window/latest-row pattern."
+        },
+        {
+          "type": "worked_example",
+          "problem": "The orders table has three orders for customer 7 and one for customer 9. You need total spend per customer.",
+          "reasoning": [
+            "Group by customer_id and calculate SUM(total).",
+            "The result has one row for customer 7 and one for customer 9—not one row per order.",
+            "Selecting an order-specific timestamp without aggregating it or changing the grouping is ambiguous."
+          ],
+          "outcome": "Before aggregating, say what one result row represents. That is the result grain."
         }
       ]
     },
@@ -44,7 +59,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "COUNT(*) counts input rows. COUNT(column) counts rows where that expression is not NULL. Most standard aggregates such as SUM, AVG, MIN and MAX ignore NULL inputs; except for COUNT, aggregates generally return NULL when there are no non-NULL inputs. A grouped query with no input rows produces no groups at all."
+          "text": "COUNT(*) counts rows; COUNT(column) counts only rows where that column is not NULL. SUM and AVG also ignore NULL inputs."
+        },
+        {
+          "type": "paragraph",
+          "text": "COUNT(*) counts rows; COUNT(delivered_at) counts only rows where delivered_at is not NULL. SUM and AVG ignore NULL too. If there are no values to add, SUM returns NULL rather than zero. Use COALESCE only when zero matches the business meaning."
         },
         {
           "type": "code",
@@ -71,6 +90,16 @@
           "kind": "info",
           "title": "PostgreSQL CTE behavior",
           "content": "PostgreSQL 12 and later can inline many eligible non-recursive CTEs. CTEs are not universally materialized; query shape and MATERIALIZED / NOT MATERIALIZED directives affect planning."
+        },
+        {
+          "type": "worked_example",
+          "problem": "Three delivery rows have delivered_at values of a timestamp, NULL, and NULL.",
+          "reasoning": [
+            "COUNT(*) returns 3 because there are three rows.",
+            "COUNT(delivered_at) returns 1 because only one timestamp is present.",
+            "If SUM has no non-NULL values, PostgreSQL returns NULL; use COALESCE only if the report should treat that absence as zero."
+          ],
+          "outcome": "Choose the aggregate based on what you mean to count. Missing data is not automatically the same as zero."
         }
       ]
     },
@@ -79,6 +108,10 @@
       "title": "WHERE filters rows; HAVING filters groups",
       "blocks": [
         {
+          "type": "paragraph",
+          "text": "WHERE filters individual rows before grouping; HAVING filters groups after the aggregate has been calculated."
+        },
+        {
           "type": "code",
           "language": "sql",
           "title": "Customers with more than five paid orders",
@@ -86,13 +119,23 @@
         },
         {
           "type": "paragraph",
-          "text": "WHERE runs logically before grouping, so it cannot normally filter on an aggregate calculated for that group. HAVING applies after grouping. A predicate that can be applied before aggregation should usually be in WHERE, reducing the rows to aggregate and clarifying intent."
+          "text": "WHERE filters individual rows before grouping. HAVING filters groups after totals or counts are calculated. For example, use WHERE to keep paid orders, then HAVING COUNT(*) > 5 to keep customers with more than five paid orders."
         },
         {
           "type": "callout",
           "kind": "pitfall",
           "title": "HAVING is not a universal filter",
           "content": "Putting every filter in HAVING can force unnecessary grouping and make intent less clear. Use WHERE for row predicates and HAVING for group-level predicates."
+        },
+        {
+          "type": "worked_example",
+          "problem": "Find customers with more than five paid orders.",
+          "reasoning": [
+            "Use WHERE status = 'paid' to remove unpaid orders before grouping.",
+            "Group the remaining rows by customer_id and count them.",
+            "Use HAVING COUNT(*) > 5 to keep only groups that meet the threshold."
+          ],
+          "outcome": "Use WHERE for row-level conditions and HAVING for conditions on group totals or counts."
         }
       ]
     },
@@ -102,7 +145,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A scalar subquery returns one value; a derived table is a subquery in FROM; a correlated subquery refers to values from the outer query. EXISTS tests whether a subquery returns at least one row. The optimizer may transform equivalent formulations, so do not assume every subquery is inherently slow or every JOIN inherently fast."
+          "text": "A subquery is a query inside another query. Its shape depends on whether you need one value, a set of rows, or just an existence check."
+        },
+        {
+          "type": "paragraph",
+          "text": "A subquery is a query inside another query. It can return one value, a set of rows, or test whether any row exists with EXISTS. A correlated subquery refers to the current row of the outer query. None is automatically slow; first check correctness, then inspect the plan if performance matters."
         },
         {
           "type": "code",
@@ -113,6 +160,16 @@
         {
           "type": "paragraph",
           "text": "A correlated expression is logically evaluated with outer-row values, but PostgreSQL can choose an efficient plan. Check semantics first, then inspect EXPLAIN ANALYZE if performance is in question."
+        },
+        {
+          "type": "worked_example",
+          "problem": "Find customers who have at least one paid order, without returning one row per order.",
+          "reasoning": [
+            "A normal join can return the same customer multiple times when they have several paid orders.",
+            "EXISTS checks whether a matching paid order is present without adding child rows to the output.",
+            "A subquery is not automatically slower; check the plan if performance is in question."
+          ],
+          "outcome": "Use EXISTS when the question is whether a matching row exists and you do not need the child data."
         }
       ]
     },
@@ -122,7 +179,17 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A common table expression (WITH ... AS ...) gives a subquery a name and lets a complex query be expressed as stages. This can improve readability and reuse. In PostgreSQL, a side-effect-free CTE referenced once can often be folded into the parent query; a multiply referenced CTE may be materialized depending on planner choices and directives. Do not repeat the outdated blanket claim that every CTE is an optimization fence."
+          "text": "A CTE gives a meaningful query step a name, so a complicated query can be read as smaller stages."
+        },
+        {
+          "type": "callout",
+          "content": "In PostgreSQL 12 and later, many eligible non-recursive CTEs can be inlined into the surrounding query. A CTE is therefore not automatically a temporary table or a performance barrier. `MATERIALIZED` and `NOT MATERIALIZED` can influence the choice; check the plan before assuming either form is faster.",
+          "kind": "info",
+          "title": "A CTE is a named query stage, not automatically a temporary table"
+        },
+        {
+          "type": "paragraph",
+          "text": "A CTE is a named step in a query, introduced with WITH. It can make a report easier to read by naming an intermediate result, such as monthly revenue. PostgreSQL may combine that step into the larger query, so a CTE is not automatically a performance barrier."
         },
         {
           "type": "code",
@@ -133,6 +200,77 @@
         {
           "type": "paragraph",
           "text": "Use a CTE when naming a meaningful intermediate relation improves comprehension. Use a subquery when the expression is small. Use a join when combining related row sets is the clearest model. Validate performance from the actual plan rather than choosing syntax based on folklore."
+        },
+        {
+          "type": "worked_example",
+          "problem": "You need monthly paid revenue and want to show only months above $100,000.",
+          "reasoning": [
+            "Use a CTE to calculate paid revenue grouped by month.",
+            "The outer query filters those monthly totals.",
+            "In PostgreSQL, a CTE is not automatically a performance barrier; inspect the plan if performance matters."
+          ],
+          "outcome": "Use a CTE when naming an intermediate result makes logic easier to follow. Verify performance instead of assuming syntax determines it."
+        }
+      ]
+    },
+    {
+      "id": "interview-synthesis-six-layers",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — Raw rows answer individual-event questions, but interviews and dashboards often ask for totals per customer, daily revenue, or groups that cross a threshold. Aggregation changes the grain of the result."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — GROUP BY forms one output group per distinct grouping-key combination; aggregate functions summarize each group. WHERE filters input rows before grouping, while HAVING filters groups after aggregation. Subqueries and CTEs can make multi-stage logic readable, but do not automatically make it faster."
+        },
+        {
+          "type": "steps",
+          "title": "3. Internal mechanism: trace the work",
+          "steps": [
+            {
+              "id": "mechanism-step-1",
+              "title": "Filter source rows",
+              "description": "WHERE removes rows that should not participate in the calculation."
+            },
+            {
+              "id": "mechanism-step-2",
+              "title": "Form groups",
+              "description": "Rows sharing the grouping key belong to the same group."
+            },
+            {
+              "id": "mechanism-step-3",
+              "title": "Compute aggregates",
+              "description": "SUM, COUNT, AVG, MIN, and MAX summarize each group; NULL handling differs by function."
+            },
+            {
+              "id": "mechanism-step-4",
+              "title": "Filter grouped results",
+              "description": "HAVING tests aggregate results, then the query returns the remaining groups."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "To find customers with more than five paid orders, filter paid orders in WHERE, group by customer_id, and use HAVING COUNT(*) > 5. Applying the count condition in WHERE cannot work because the group aggregate does not exist yet.",
+          "reasoning": [
+            "State the result grain explicitly: one row per what? This catches accidental over-grouping, under-grouping, and joins that inflate counts.",
+            "Check the actual query shape, data distribution, concurrency, and database-engine behavior before generalizing the result."
+          ],
+          "outcome": "State the result grain explicitly: one row per what? This catches accidental over-grouping, under-grouping, and joins that inflate counts."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "5. Anti-pattern to avoid",
+          "content": "Do not select non-aggregated columns that are not functionally determined by the grouping key, or use HAVING for ordinary row filters when WHERE can reduce work earlier."
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "6. Interview probe — You need total paid revenue per customer, but only for customers whose total exceeds ₹10,000. Where do the filters belong?",
+          "answer": "Filter individual orders by paid status in WHERE, group by customer, compute SUM(amount), then use HAVING SUM(amount) > 10000.",
+          "explanation": "WHERE controls input rows; HAVING controls groups. The distinction is both semantic and often relevant to efficiency."
         }
       ]
     }

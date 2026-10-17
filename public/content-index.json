@@ -2,6 +2,11 @@
   "indexVersion": "1.0.0",
   "schemaVersion": "2.0.0",
   "lessons": {
+    "advanced-database-internals": {
+      "path": "/lessons/databases/advanced-database-internals.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
     "advanced-sql-window-functions-set-operations": {
       "path": "/lessons/databases/advanced-sql-window-functions-set-operations.json",
       "contentVersion": "2.0.0",
@@ -42,8 +47,18 @@
       "contentVersion": "2.0.0",
       "questionCount": 8
     },
+    "postgresql-vs-mongodb": {
+      "path": "/lessons/databases/postgresql-vs-mongodb.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
     "relational-databases-keys-constraints": {
       "path": "/lessons/databases/relational-databases-keys-constraints.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 12
+    },
+    "scaling-and-reliability": {
+      "path": "/lessons/databases/scaling-and-reliability.json",
       "contentVersion": "2.0.0",
       "questionCount": 12
     },

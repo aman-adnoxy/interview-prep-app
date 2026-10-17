@@ -29,6 +29,34 @@ function openDB() {
   });
 }
 
+/**
+ * LocalStorage progress-safe mirror.
+ * Primary persistence is IndexedDB, but some browsers (private mode, strict
+ * privacy settings) silently fail or block it. The mirror keeps progress from
+ * being lost on refresh in those environments.
+ */
+const PROGRESS_MIRROR_KEY = 'interview_prep_progress_mirror';
+const ATTEMPTS_MIRROR_KEY = 'interview_prep_attempts_mirror';
+
+function readLocalJson(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    if (value === null) return fallback;
+    return JSON.parse(value) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function getSectionProgress(sectionId) {
   try {
     const db = await openDB();
@@ -46,34 +74,56 @@ export async function getSectionProgress(sectionId) {
 }
 
 export async function getAllProgress() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_PROGRESS, 'readonly');
-    const store = tx.objectStore(STORE_PROGRESS);
-    const req = store.getAll();
-    req.onsuccess = () => {
-      const list = req.result || [];
-      const map = {};
-      for (const item of list) {
-        map[item.sectionId] = item;
-      }
-      resolve(map);
-    };
-    req.onerror = () => {
-      console.error('IndexedDB read error:', req.error);
-      reject(req.error || new Error('Failed to read progress from storage'));
-    };
-    tx.onerror = () => {
-      console.error('IndexedDB transaction error:', tx.error);
-      reject(tx.error || new Error('Transaction error while reading progress'));
-    };
-  });
+  try {
+    const db = await openDB();
+    const map = await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_PROGRESS, 'readonly');
+      const store = tx.objectStore(STORE_PROGRESS);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const list = req.result || [];
+        const result = {};
+        for (const item of list) {
+          result[item.sectionId] = item;
+        }
+        resolve(result);
+      };
+      req.onerror = () => {
+        console.error('IndexedDB read error:', req.error);
+        reject(req.error || new Error('Failed to read progress from storage'));
+      };
+      tx.onerror = () => {
+        console.error('IndexedDB transaction error:', tx.error);
+        reject(tx.error || new Error('Transaction error while reading progress'));
+      };
+    });
+    if (map && Object.keys(map).length > 0) return map;
+  } catch (err) {
+    console.warn('IndexedDB unavailable, falling back to local progress mirror:', err);
+  }
+  const mirror = readLocalJson(PROGRESS_MIRROR_KEY, null);
+  return mirror && Object.keys(mirror).length > 0 ? mirror : {};
 }
 
 export async function saveSectionProgress(progressData) {
+  let mirrored = false;
+  try {
+    const mirror = readLocalJson(PROGRESS_MIRROR_KEY, {}) || {};
+    if (typeof mirror === 'object') {
+      mirror[progressData.sectionId] = {
+        ...mirror[progressData.sectionId],
+        ...progressData,
+      };
+      writeLocalJson(PROGRESS_MIRROR_KEY, mirror);
+      mirrored = true;
+    }
+  } catch (err) {
+    console.warn('Progress mirror write failed:', err);
+  }
+
   try {
     const db = await openDB();
-    return new Promise((resolve) => {
+    const saved = await new Promise((resolve) => {
       const tx = db.transaction(STORE_PROGRESS, 'readwrite');
       const store = tx.objectStore(STORE_PROGRESS);
       store.put({
@@ -91,16 +141,32 @@ export async function saveSectionProgress(progressData) {
         resolve(false);
       };
     });
+    return saved || mirrored;
   } catch (err) {
-    console.error('Failed to save progress to IndexedDB:', err);
-    return false;
+    console.warn('Failed to save progress to IndexedDB, mirror kept:', err);
+    return mirrored;
   }
 }
 
 export async function recordQuizAttempt(attempt) {
+  const mirrorAttempt = {
+    id: `mirror-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+    timestamp: new Date().toISOString(),
+    ...attempt,
+  };
+  try {
+    const mirror = readLocalJson(ATTEMPTS_MIRROR_KEY, []) || [];
+    if (Array.isArray(mirror)) {
+      mirror.push(mirrorAttempt);
+      writeLocalJson(ATTEMPTS_MIRROR_KEY, mirror);
+    }
+  } catch (err) {
+    console.warn('Attempts mirror write failed:', err);
+  }
+
   try {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return await new Promise((resolve) => {
       const tx = db.transaction(STORE_ATTEMPTS, 'readwrite');
       const store = tx.objectStore(STORE_ATTEMPTS);
       let newId = null;
@@ -113,19 +179,19 @@ export async function recordQuizAttempt(attempt) {
       };
       // Crucial: resolve only when the full transaction is confirmed committed
       tx.oncomplete = () => resolve(newId);
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+      tx.onerror = () => resolve(mirrorAttempt.id);
+      tx.onabort = () => resolve(mirrorAttempt.id);
     });
   } catch (err) {
-    console.error('Failed to record attempt:', err);
-    return null;
+    console.warn('Failed to record attempt in IndexedDB, mirror kept:', err);
+    return mirrorAttempt.id;
   }
 }
 
 export async function getQuizAttempts(sectionId) {
   try {
     const db = await openDB();
-    return new Promise((resolve) => {
+    const list = await new Promise((resolve) => {
       const tx = db.transaction(STORE_ATTEMPTS, 'readonly');
       const store = tx.objectStore(STORE_ATTEMPTS);
       const index = store.index('sectionId');
@@ -133,29 +199,35 @@ export async function getQuizAttempts(sectionId) {
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => resolve([]);
     });
+    if (list.length > 0) return list;
   } catch (err) {
-    console.error('Failed to get attempts:', err);
-    return [];
+    console.warn('Failed to get attempts from IndexedDB, using mirror:', err);
   }
+  const mirror = readLocalJson(ATTEMPTS_MIRROR_KEY, []) || [];
+  return Array.isArray(mirror) ? mirror.filter((attempt) => attempt.sectionId === sectionId) : [];
 }
 
 export async function getAllQuizAttempts() {
   try {
     const db = await openDB();
-    return new Promise((resolve) => {
+    const list = await new Promise((resolve) => {
       const tx = db.transaction(STORE_ATTEMPTS, 'readonly');
       const store = tx.objectStore(STORE_ATTEMPTS);
       const req = store.getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => resolve([]);
     });
+    if (list.length > 0) return list;
   } catch (err) {
-    console.error('Failed to get all attempts:', err);
-    return [];
+    console.warn('Failed to get all attempts from IndexedDB, using mirror:', err);
   }
+  const mirror = readLocalJson(ATTEMPTS_MIRROR_KEY, null);
+  return Array.isArray(mirror) ? mirror : [];
 }
 
 export async function clearAllProgress() {
+  writeLocalJson(PROGRESS_MIRROR_KEY, {});
+  writeLocalJson(ATTEMPTS_MIRROR_KEY, []);
   try {
     const db = await openDB();
     return new Promise((resolve) => {
@@ -166,7 +238,7 @@ export async function clearAllProgress() {
       tx.onerror = () => resolve(false);
     });
   } catch (err) {
-    console.error('Failed to clear progress:', err);
+    console.warn('Failed to clear IndexedDB progress:', err);
     return false;
   }
 }

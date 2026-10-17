@@ -150,8 +150,9 @@
           "title": "Advanced Database Internals",
           "difficulty": "advanced",
           "order": 14,
-          "status": "upcoming",
+          "status": "published",
           "lessonPath": "/lessons/databases/advanced-database-internals.json",
+          "questionCount": 12,
           "lessonId": "advanced-database-internals"
         },
         {
@@ -168,8 +169,9 @@
           "title": "PostgreSQL vs. MongoDB Trade-offs",
           "difficulty": "intermediate",
           "order": 16,
-          "status": "upcoming",
+          "status": "published",
           "lessonPath": "/lessons/databases/postgresql-vs-mongodb.json",
+          "questionCount": 12,
           "lessonId": "postgresql-vs-mongodb"
         },
         {
@@ -177,8 +179,9 @@
           "title": "Scaling and Reliability",
           "difficulty": "advanced",
           "order": 17,
-          "status": "upcoming",
+          "status": "published",
           "lessonPath": "/lessons/databases/scaling-and-reliability.json",
+          "questionCount": 12,
           "lessonId": "scaling-and-reliability"
         }
       ]

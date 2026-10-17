@@ -6,17 +6,18 @@
   "title": "Query Plan Analysis: EXPLAIN ANALYZE, Join Algorithms, Sorts, and Memory Spills",
   "description": "Query Plan Analysis: EXPLAIN ANALYZE, Join Algorithms, Sorts, and Memory Spills. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.",
   "difficulty": "advanced",
-  "estimatedMinutes": 42,
+  "estimatedMinutes": 47,
   "learningObjectives": [
     "Read plan nodes and compare estimates with actual execution.",
     "Use EXPLAIN (ANALYZE, BUFFERS) to localize work.",
     "Compare nested-loop, hash, and merge joins by input shape.",
     "Recognize sort/hash spills and temporary I/O.",
-    "Investigate plans using repeatable evidence."
+    "Investigate plans using repeatable evidence.",
+    "Explain query plan analysis: explain analyze, join algorithms, sorts, and memory spills using the six-layer interview framework."
   ],
   "mentalModel": {
     "type": "paragraph",
-    "text": "A query plan is a tree of operators: children produce rows consumed by parents. EXPLAIN shows estimates; EXPLAIN ANALYZE executes the query and reports actual rows, loops, and timing. Find where work occurs and estimates diverge before changing indexes or settings."
+    "text": "A query plan is the database's step-by-step recipe for answering a query. Each step reads rows or combines results from steps below it. EXPLAIN shows the planned recipe and estimates; EXPLAIN ANALYZE runs the query and reports what actually happened. Compare the estimate with reality and find where the work or surprise begins."
   },
   "concepts": [
     {
@@ -25,7 +26,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "EXPLAIN shows the chosen plan and estimates; EXPLAIN ANALYZE executes the statement and reports actual measurements. Use caution with data-modifying statements because ANALYZE executes them."
+          "text": "EXPLAIN shows the plan PostgreSQL expects to use. EXPLAIN ANALYZE runs the statement and reports what actually happened."
+        },
+        {
+          "type": "paragraph",
+          "text": "EXPLAIN shows the plan PostgreSQL intends to use. EXPLAIN ANALYZE actually runs the query and reports measured row counts and timing. Be careful with INSERT, UPDATE, and DELETE: ANALYZE executes them, so use a safe test or transaction when appropriate."
         },
         {
           "type": "code",
@@ -35,29 +40,39 @@
         },
         {
           "type": "table",
-          "title": "Key distinctions",
+          "title": "What the EXPLAIN options tell you",
           "columns": [
-            "Concept",
-            "Mechanism",
-            "Trade-off"
+            "Option",
+            "What it tells you",
+            "Important caution"
           ],
           "rows": [
             [
-              "Access path",
-              "Structure used to locate candidate rows",
-              "Does not guarantee planner selection."
+              "EXPLAIN",
+              "The plan PostgreSQL expects to use, including estimated row counts and costs.",
+              "Does not run the query."
             ],
             [
-              "Physical work",
-              "Pages, tuple visibility, result rows",
-              "May dominate logical lookup cost."
+              "EXPLAIN ANALYZE",
+              "Runs the query and reports actual rows and timing.",
+              "It really executes writes too; use a safe test or transaction."
             ],
             [
-              "Workload fit",
-              "Predicates, ordering, distribution",
-              "Requires measurement, not assumptions."
+              "BUFFERS",
+              "Shows buffer activity so you can see how much page access occurred.",
+              "Read it alongside row counts and plan shape, not as a standalone verdict."
             ]
           ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "A query is slow, and you want to know whether PostgreSQL is scanning too many rows.",
+          "reasoning": [
+            "Run EXPLAIN first to inspect planned nodes and estimates without executing the query.",
+            "Use EXPLAIN (ANALYZE, BUFFERS) on a representative safe query to compare estimated rows, actual rows, and page activity.",
+            "EXPLAIN ANALYZE executes writes too; use a test environment or a transaction you roll back when appropriate."
+          ],
+          "outcome": "Read the plan as evidence: estimates describe the planner's expectations, while ANALYZE reports measured execution."
         }
       ]
     },
@@ -67,7 +82,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Large cardinality errors can cause bad join order or algorithm selection. Find the earliest node where estimates diverge. Skew, correlated predicates, stale statistics, parameter values, or missing extended statistics may explain the error."
+          "text": "Cardinality is the number of rows a plan step is expected to produce. A large gap between estimated and actual rows can push the planner toward a poor join or sort strategy."
+        },
+        {
+          "type": "paragraph",
+          "text": "The planner guesses how many rows each step will produce. If it expects 900 rows but actually sees 120,000, later choices such as join order or sorting may be poor. Find the earliest step where the estimate is far off, then investigate stale statistics, uneven data, or filters that are related to each other."
         },
         {
           "type": "code",
@@ -104,15 +123,27 @@
         },
         {
           "type": "worked_example",
-          "problem": "A report sorts all orders for one tenant. The plan estimates 900 qualifying rows but observes 120,000, and the sort uses an external merge with temporary I/O.",
+          "problem": "The plan estimates 900 active customers, but EXPLAIN ANALYZE shows 120,000.",
           "reasoning": [
-            "Compare estimated and actual rows at the scan and sort. The estimate is off by over two orders of magnitude.",
-            "Inspect the tenant_id distribution, predicate, and statistics; run ANALYZE when evidence suggests stale or insufficient statistics, and consider extended statistics only when they fit the correlation involved.",
-            "Use the sort method and temporary-buffer activity as evidence that the sort exceeded in-memory capacity for this execution.",
-            "Check total buffers, execution time, and whether a suitable index could reduce rows or provide useful ordering. Do not assume an index is better without comparing plans.",
-            "If considering work_mem, scope and test the change because memory can multiply across operations and concurrent sessions."
+            "Find the earliest node where estimated and actual row counts diverge.",
+            "Check whether statistics are stale or the data distribution is uneven; run ANALYZE when appropriate.",
+            "Re-check the plan before forcing a join type. First understand why the estimate was wrong."
           ],
-          "outcome": "Investigate the estimate error first, then compare representative plans after any statistics or index change. Treat the spill as a measured symptom, not proof that one global memory setting is the right fix."
+          "outcome": "Fix the reason the planner misunderstands the data before trying to tune later plan nodes."
+        },
+        {
+          "type": "paragraph",
+          "text": "Read the example plan from the bottom up. The sequential scan returns 120,000 rows even though the planner expected 900. The Sort must therefore order far more rows than expected, and its `external merge` plus temporary I/O shows that the sort spilled to disk. The first question is why the row estimate was wrong—not simply how to increase memory."
+        },
+        {
+          "type": "worked_example",
+          "reasoning": [
+            "Find the earliest node with a large estimated-versus-actual row gap; here it is the scan's filter.",
+            "Check whether statistics are stale and whether tenant sizes are highly uneven. Run `ANALYZE` if statistics need refreshing; consider extended statistics when correlated columns cause estimation errors.",
+            "Then re-read the plan. Correcting the estimate may change join order, access path, or sort strategy without forcing a plan node manually."
+          ],
+          "outcome": "A downstream sort or join may be slow because an earlier row-count estimate was wrong. Diagnose the earliest divergence first.",
+          "problem": "A plan estimates 900 rows from a tenant filter but actually returns 120,000."
         }
       ]
     },
@@ -122,7 +153,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Nested loop often fits a small outer input plus efficient inner lookup; hash join fits equality joins with manageable build side; merge join can fit ordered inputs. Each can be bad with wrong estimates or costly sorting/spilling."
+          "text": "A nested-loop join repeats an inner lookup for each outer row. A hash join builds a lookup structure for one side and probes it with the other."
+        },
+        {
+          "type": "paragraph",
+          "text": "A nested-loop join takes each row from one side and looks for matches on the other side, so it often works well when the outer side is small and the inner lookup is cheap. A hash join builds a lookup table for one side, and a merge join walks two ordered inputs. None is always best; input size and ordering matter."
         },
         {
           "type": "code",
@@ -132,13 +167,17 @@
         },
         {
           "type": "worked_example",
-          "problem": "A query is slower than expected even though an index exists.",
+          "problem": "A nested-loop join performs 100,000 inner index lookups when the planner expected only 100 outer rows.",
           "reasoning": [
-            "Check whether index keys and predicates align.",
-            "Compare estimated and actual row counts and inspect buffers.",
-            "Account for result size, heap access, and write/storage trade-offs."
+            "Repeated inner work may dominate once the actual outer row count is much larger than expected.",
+            "A hash join may help for a large equality join, but it needs memory and may spill to disk.",
+            "Compare actual time, rows, loops, and buffers before deciding another join strategy is better."
           ],
-          "outcome": "Make a targeted change only after plan evidence supports the hypothesis."
+          "outcome": "Join algorithms are trade-offs. The right choice depends on row counts, indexes, memory, and data shape."
+        },
+        {
+          "type": "paragraph",
+          "text": "For a concrete comparison, joining 30 customers to their orders can suit a nested loop when each customer lookup uses an index and returns few rows. Joining hundreds of thousands of orders to customers may favor a hash or merge strategy. These are not fixed rules: inspect actual outer rows, inner `loops`, buffers, and whether inputs are already ordered."
         }
       ]
     },
@@ -148,7 +187,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Sort satisfies ORDER BY, merge-join ordering, DISTINCT, and related operations. An index may provide compatible order, but index access can still cost more than reading and sorting a set."
+          "text": "A Sort node orders rows when no earlier step provides the requested order at an acceptable cost."
+        },
+        {
+          "type": "paragraph",
+          "text": "A Sort step arranges rows for ORDER BY or another operation that needs order. A matching index can sometimes provide that order, but using the index may still cost more than reading many rows and sorting them together."
         },
         {
           "type": "code",
@@ -161,6 +204,16 @@
           "prompt": "Does the existence of an index guarantee PostgreSQL will use it?",
           "answer": "No.",
           "explanation": "The planner compares estimated costs, and another access path may be cheaper."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A query filters orders by customer_id and sorts by created_at DESC before returning 20 rows.",
+          "reasoning": [
+            "An index on (customer_id, created_at DESC) may provide the order directly.",
+            "Without a useful ordering index, PostgreSQL may sort all qualifying rows before applying LIMIT.",
+            "An index is not automatically better; compare the work needed to find rows with the work needed to sort them."
+          ],
+          "outcome": "Look for Sort nodes and ask whether a suitable index can provide the requested order."
         }
       ]
     },
@@ -170,13 +223,89 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Sort and hash operations have memory limits. When an operation exceeds available memory, PostgreSQL may use temporary files or multiple hash batches. work_mem applies per operation and can multiply across queries and sessions."
+          "text": "Sorts and hash joins use working memory. When a step needs more than it can keep in memory, PostgreSQL can use temporary disk space or process a hash join in batches."
+        },
+        {
+          "type": "paragraph",
+          "text": "Sorts and hash joins need working memory. If they need more than is available, PostgreSQL can write temporary data to disk or process a hash join in batches. Raising work_mem affects each operation and can multiply across many simultaneous queries, so don't increase it blindly. When a sort reports an “external merge,” it means PostgreSQL used temporary disk space rather than keeping the whole sort in memory."
         },
         {
           "type": "code",
           "language": "sql",
           "title": "PostgreSQL example",
           "source": "EXPLAIN (ANALYZE, BUFFERS) SELECT customer_id,sum(total_amount) FROM orders GROUP BY customer_id ORDER BY sum(total_amount) DESC;"
+        },
+        {
+          "type": "worked_example",
+          "problem": "EXPLAIN ANALYZE shows a sort using an external merge and large temporary reads/writes.",
+          "reasoning": [
+            "The sort exceeded its available memory and used temporary files.",
+            "Check how many rows are sorted and whether an index can provide the order or earlier filters can reduce the input.",
+            "Increasing work_mem may help one query but is not a free global fix because many operations and sessions can use memory concurrently."
+          ],
+          "outcome": "Reduce unnecessary work first, then tune memory with concurrency in mind."
+        }
+      ]
+    },
+    {
+      "id": "interview-synthesis-six-layers",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — Query Plan Analysis: EXPLAIN ANALYZE, Join Algorithms, Sorts, and Memory Spills. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. EXPLAIN shows the plan PostgreSQL expects to use. EXPLAIN ANALYZE runs the statement and reports what actually happened."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — A query plan is the database's step-by-step recipe for answering a query. Each step reads rows or combines results from steps below it. EXPLAIN shows the planned recipe and estimates; EXPLAIN ANALYZE runs the query and reports what actually happened. Compare the estimate with reality and find where the work or surprise begins. Make assumptions explicit."
+        },
+        {
+          "type": "steps",
+          "title": "3. Internal mechanism: trace the sequence",
+          "steps": [
+            {
+              "id": "mechanism-step-1",
+              "title": "Read EXPLAIN",
+              "description": "EXPLAIN shows the plan PostgreSQL expects to use. EXPLAIN ANALYZE runs the statement and reports what actually happened."
+            },
+            {
+              "id": "mechanism-step-2",
+              "title": "Estimated versus actual rows",
+              "description": "Cardinality is the number of rows a plan step is expected to produce. A large gap between estimated and actual rows can push the planner toward a poor join or sort strategy."
+            },
+            {
+              "id": "mechanism-step-3",
+              "title": "Join algorithms",
+              "description": "A nested-loop join repeats an inner lookup for each outer row. A hash join builds a lookup structure for one side and probes it with the other."
+            },
+            {
+              "id": "mechanism-step-4",
+              "title": "Sort nodes",
+              "description": "A Sort node orders rows when no earlier step provides the requested order at an acceptable cost."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "4. Trade-offs and scale — Apply Query Plan Analysis: EXPLAIN ANALYZE, Join Algorithms, Sorts, and Memory Spills to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "reasoning": [
+            "Planner costs are not milliseconds; parent timings include child work.",
+            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
+            "Compare correctness, performance, resource cost, operational complexity, and failure behavior."
+          ],
+          "outcome": "Choose based on the workload and invariants, then validate with representative measurements and edge cases."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "5. Anti-pattern to avoid",
+          "content": "Planner costs are not milliseconds; parent timings include child work."
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "6. Interview probe — What does EXPLAIN ANALYZE add?",
+          "answer": "ANALYZE executes the statement; use caution with writes.",
+          "explanation": "A strong answer connects the problem to the mechanism, states assumptions and trade-offs, and explains how to verify the decision in practice."
         }
       ]
     }

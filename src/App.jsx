@@ -21,6 +21,18 @@ import {
 } from './services/storage';
 import { sound } from './services/sound';
 
+// Remembers which lesson the learner is currently on so a refresh resumes there
+const LAST_SECTION_KEY = 'interview_prep_last_section';
+
+function findSectionInManifest(manifestData, sectionId) {
+  if (!manifestData?.topics || !sectionId) return null;
+  for (const topic of manifestData.topics) {
+    const match = (topic.sections || []).find((section) => section.id === sectionId);
+    if (match) return { ...match, topicId: topic.id, topicTitle: topic.title };
+  }
+  return null;
+}
+
 export default function App() {
   const [manifest, setManifest] = useState(null);
   const [progressMap, setProgressMap] = useState({});
@@ -64,13 +76,26 @@ export default function App() {
         setQuizAttempts(storedAttempts || []);
         setStreak(computeStreak(storedAttempts));
 
-        const initialActive = resolveActiveAssignment(manifestData, storedProgress || {});
-        setActiveSection(initialActive);
+        // Start at the first incomplete section, or resume the lesson the
+        // learner was last viewing if it is still incomplete
+        let startedSection = resolveActiveAssignment(manifestData, storedProgress || {});
+        try {
+          const lastSectionId = localStorage.getItem(LAST_SECTION_KEY);
+          const lastSection = findSectionInManifest(manifestData, lastSectionId);
+          if (lastSection && lastSection.status === 'published'
+            && !(storedProgress || {})[lastSection.id]?.completed
+            && startedSection?.id !== lastSection.id) {
+            startedSection = lastSection;
+          }
+        } catch {
+          // localStorage unavailable; fall back to the next incomplete section
+        }
+        setActiveSection(startedSection);
 
         // Preload lesson for active section
-        if (initialActive?.lessonId || initialActive?.id) {
+        if (startedSection?.lessonId || startedSection?.id) {
           try {
-            const lessonData = await fetchLesson(initialActive.lessonId || initialActive.id);
+            const lessonData = await fetchLesson(startedSection.lessonId || startedSection.id);
             setCurrentLesson(lessonData);
           } catch (e) {
             console.error('Failed to preload active lesson', e);
@@ -111,42 +136,33 @@ export default function App() {
     }
   };
 
+  // Opens a section, marks it as the learner's current lesson, and navigates
+  const openSection = async (section, view) => {
+    if (!section) return;
+    sound.playTap();
+    setActiveSection(section);
+    try {
+      if (section?.id) localStorage.setItem(LAST_SECTION_KEY, section.id);
+    } catch {
+      // localStorage unavailable; in-session state still works
+    }
+    await loadSectionContent(section);
+    setViewState(view);
+  };
+
   const handleSelectTopic = (topic) => {
     sound.playTap();
     setSelectedTopic(topic);
     setViewState('topic-path');
   };
 
-  const handleSelectSectionFromPath = async (section) => {
-    sound.playTap();
-    setActiveSection(section);
-    await loadSectionContent(section);
-    setViewState('lesson');
-  };
+  const handleSelectSectionFromPath = (section) => openSection(section, 'lesson');
 
-  const handleStartLesson = async () => {
-    sound.playTap();
-    if (activeSection) {
-      await loadSectionContent(activeSection);
-    }
-    setViewState('lesson');
-  };
+  const handleStartLesson = () => openSection(homeSection, 'lesson');
 
-  const handleStartQuiz = async () => {
-    sound.playTap();
-    if (activeSection) {
-      await loadSectionContent(activeSection);
-    }
-    setViewState('quiz');
-  };
+  const handleStartQuiz = () => openSection(homeSection, 'quiz');
 
-  const handleOpenScenario = async () => {
-    sound.playTap();
-    if (activeSection) {
-      await loadSectionContent(activeSection);
-    }
-    setViewState('scenario');
-  };
+  const handleOpenScenario = () => openSection(homeSection, 'scenario');
 
   const handleFinishQuiz = async (results) => {
     const { score, total, records } = results;
@@ -202,6 +218,11 @@ export default function App() {
 
   const handleResetProgress = async () => {
     await clearAllProgress();
+    try {
+      localStorage.removeItem(LAST_SECTION_KEY);
+    } catch {
+      // localStorage unavailable; nothing persisted to clear
+    }
     const emptied = {};
     setProgressMap(emptied);
     setActiveSection(resolveActiveAssignment(manifest, emptied));
@@ -220,7 +241,12 @@ export default function App() {
     const nextAssignment = resolveActiveAssignment(manifest, progressMap);
     if (nextAssignment && nextAssignment.id !== activeSection?.id) {
       setActiveSection(nextAssignment);
-      if (nextAssignment.lessonPath) {
+      try {
+        localStorage.setItem(LAST_SECTION_KEY, nextAssignment.id);
+      } catch {
+        // localStorage unavailable; in-session state still works
+      }
+      if (nextAssignment.lessonId || nextAssignment.id) {
         await loadSectionContent(nextAssignment);
       }
     }
@@ -228,6 +254,15 @@ export default function App() {
   };
 
   const completedCount = Object.values(progressMap).filter((p) => p.completed).length;
+
+  // The home card always reflects live progress:
+  // - the lesson the learner is currently on (incomplete), or
+  // - the next incomplete section after one was just completed
+  const activeAssignment = manifest ? resolveActiveAssignment(manifest, progressMap) : null;
+  const homeSection = (activeSection && activeSection.status === 'published'
+    && !progressMap[activeSection.id]?.completed)
+    ? activeSection
+    : activeAssignment;
 
   if (loading && !manifest) {
     return (
@@ -298,10 +333,10 @@ export default function App() {
       <main className="app-content">
         {viewState === 'home' && activeTab === 'assignment' && (
           <>
-            {activeSection ? (
+            {homeSection ? (
               <DailyAssignmentCard
-                section={activeSection}
-                progress={progressMap[activeSection.id]}
+                section={homeSection}
+                progress={progressMap[homeSection.id]}
                 onStartLesson={handleStartLesson}
                 onStartQuiz={handleStartQuiz}
                 onOpenScenario={handleOpenScenario}
@@ -378,8 +413,8 @@ export default function App() {
       {/* Audit Trail History Modal */}
       {showHistory && (
         <HistoryModal
-          sectionId={activeSection?.id || 'index-fundamentals'}
-          sectionTitle={activeSection?.title || 'Section Quiz'}
+          sectionId={homeSection?.id || activeSection?.id || 'index-fundamentals'}
+          sectionTitle={homeSection?.title || activeSection?.title || 'Section Quiz'}
           onClose={() => setShowHistory(false)}
           onRetakeQuiz={() => {
             setShowHistory(false);

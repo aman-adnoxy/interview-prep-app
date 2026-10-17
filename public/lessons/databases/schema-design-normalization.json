@@ -3,17 +3,18 @@
   "sectionId": "schema-design-normalization",
   "title": "Database Schema Design, Normalization (1NF–3NF), and Denormalization",
   "difficulty": "intermediate",
-  "estimatedMinutes": 50,
+  "estimatedMinutes": 55,
   "learningObjectives": [
     "Model entities, relationships, and cardinalities before choosing tables.",
     "Explain update, insert and delete anomalies caused by redundant facts.",
     "Apply 1NF, 2NF and 3NF as practical dependency checks.",
     "Choose between normalization and deliberate denormalization.",
-    "Design constraints and indexes that support the intended access patterns."
+    "Design constraints and indexes that support the intended access patterns.",
+    "Explain database schema design, normalization (1nf–3nf), and denormalization using the six-layer interview framework."
   ],
   "mentalModel": {
     "type": "paragraph",
-    "text": "Normalization is about placing each fact where it belongs so one fact has one authoritative home. Redundancy is dangerous when two copies can disagree. Denormalization is a deliberate exception: duplicate or precompute data for a measured access-pattern benefit, while defining how consistency is maintained."
+    "text": "Imagine storing a customer's address in every order row. When the customer moves, you must update every old order, and missing one creates conflicting addresses. Normalization splits data into tables so each fact is stored in one sensible place and other tables refer to it by key. Sometimes we intentionally copy a value, such as the price charged on an old order, because that value is part of the historical event."
   },
   "concepts": [
     {
@@ -22,7 +23,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Start by identifying entities, their identities, and the relationships between them. A one-to-many relationship typically stores the foreign key on the many side. A many-to-many relationship generally needs a junction table, often with attributes of its own. Decide what one row means before adding columns."
+          "text": "Start by deciding what one row represents and which facts belong to that thing."
+        },
+        {
+          "type": "paragraph",
+          "text": "First decide what each table represents. A customers table stores customer facts; an orders table stores order facts. If one customer can have many orders, put customer_id on each order. If students can take many courses and each course has many students, use an enrollment table for each student-course relationship."
         },
         {
           "type": "code",
@@ -33,6 +38,16 @@
         {
           "type": "paragraph",
           "text": "The enrollment is a real relationship with its own date and identity rule, not merely a repeated list of course IDs on a student row."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A student can enroll in many courses, and each course has many students. Each enrollment also has a grade.",
+          "reasoning": [
+            "The relationship is many-to-many, so create an enrollments table with student_id and course_id.",
+            "Store grade on the enrollment because it describes that student's participation in that course.",
+            "Add a uniqueness rule on the pair if a student may enroll in a course only once."
+          ],
+          "outcome": "Model a relationship as data when it has its own facts, such as grade, enrollment date, or status."
         }
       ]
     },
@@ -40,6 +55,10 @@
       "id": "anomalies",
       "title": "Why redundancy creates anomalies",
       "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Redundancy becomes risky when the same fact is copied into several rows that can drift apart."
+        },
         {
           "type": "table",
           "columns": [
@@ -63,7 +82,17 @@
         },
         {
           "type": "paragraph",
-          "text": "These are symptoms that independent facts have been stored together. Normalization separates the facts and links them with keys so each fact has one authoritative representation."
+          "text": "When the same fact is copied into many rows, changes become risky. If an address is repeated across ten orders, a move requires ten updates. If only nine are changed, the database now tells two different stories. Putting the address in one customer row removes that problem."
+        },
+        {
+          "type": "worked_example",
+          "problem": "The same instructor name is copied into 200 enrollment rows.",
+          "reasoning": [
+            "When the instructor's name changes, every copy must be updated.",
+            "If one row is missed, the database disagrees with itself about the instructor's name.",
+            "If instructors are stored only on enrollment rows, a new instructor with no students may be impossible to represent."
+          ],
+          "outcome": "Update, insertion, and deletion anomalies are signs that facts are stored at the wrong level."
         }
       ]
     },
@@ -73,21 +102,33 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1NF is commonly taught as requiring values in each cell to be atomic with respect to the model and avoiding repeating groups. 2NF requires 1NF and no non-prime attribute to depend on only part of a candidate key. This matters primarily when a candidate key is composite. 3NF removes certain transitive dependencies: informally, non-key facts should depend on the key, the whole key, and not another non-key fact."
+          "text": "Normalization checks whether a table mixes facts that depend on different things."
+        },
+        {
+          "type": "paragraph",
+          "text": "Normal forms are checks for whether a table mixes facts that depend on different things. First normal form avoids packing a list into one cell. Second normal form matters when a key has multiple columns: a non-key fact should depend on the whole key, not just one part. Third normal form catches facts that depend on another non-key fact, such as storing a department name on every employee row when department_id already determines it."
         },
         {
           "type": "paragraph",
           "text": "A composite-key dependency"
         },
         {
+          "type": "paragraph",
+          "text": "Here is a practical way to see the difference. If a row stores `course_ids = '12,18,25'`, the course list is packed into one value: finding one course or enforcing a foreign key becomes awkward. That is the problem 1NF is meant to help avoid—store each relationship as its own row when those values need to be queried and constrained independently."
+        },
+        {
+          "type": "paragraph",
+          "text": "Now consider `Enrollment(student_id, course_id, student_name, course_title, grade)` with `(student_id, course_id)` as the key. `student_name` depends only on `student_id`, and `course_title` depends only on `course_id`; those are partial dependencies, the issue 2NF addresses for composite keys. If `course_id` determines `instructor_id`, and `instructor_id` determines `instructor_name`, storing `instructor_name` on every enrollment adds a transitive dependency—the kind of problem 3NF helps remove."
+        },
+        {
           "type": "worked_example",
-          "problem": "Enrollment(student_id, course_id, student_name, course_title, grade) uses (student_id, course_id) as a key.",
           "reasoning": [
-            "student_name depends on student_id alone, not the whole composite key.",
-            "course_title depends on course_id alone.",
-            "grade depends on the enrollment pair."
+            "If the title is stored only in the courses table, one row needs updating.",
+            "If it is copied into every enrollment, every copy must be updated correctly or reports disagree.",
+            "Keep course facts with the course; keep enrollment-specific facts such as grade on the student-course relationship."
           ],
-          "outcome": "Move student facts to Students, course facts to Courses, and keep grade and enrollment-specific facts in Enrollments."
+          "outcome": "Use normal forms to find facts stored at the wrong grain. The goal is consistent data and clear ownership, not normalization for its own sake.",
+          "problem": "A course changes its title, but the title is copied into 400 enrollment rows."
         },
         {
           "type": "callout",
@@ -102,6 +143,10 @@
       "title": "A practical normalized model",
       "blocks": [
         {
+          "type": "paragraph",
+          "text": "A normalized model separates current product facts from facts about what was purchased at a particular time."
+        },
+        {
           "type": "code",
           "language": "sql",
           "title": "Orders and line items",
@@ -109,7 +154,17 @@
         },
         {
           "type": "paragraph",
-          "text": "The line item stores quantity and the price charged at purchase time. Although product catalog price is also stored in products, order_items.unit_price is not necessarily redundant: it records a historical transaction fact. Normalization does not mean eliminating every repeated-looking value; it means preserving the right meaning and dependencies."
+          "text": "A line item should store quantity and the price charged at purchase time. The product table stores today's catalog price, which may change later. The order's unit_price is not a mistake just because the number appears twice: it records what the customer was actually charged."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A product currently costs $20, but a customer bought it last year for $15.",
+          "reasoning": [
+            "products.price represents the current catalog price.",
+            "order_items.unit_price records the price charged for that purchase.",
+            "If the catalog price changes tomorrow, historical order totals should not silently change."
+          ],
+          "outcome": "Some duplication is intentional when it records a historical snapshot. Define what the duplicated value means."
         }
       ]
     },
@@ -119,7 +174,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Denormalization deliberately stores a derived or duplicated representation to improve read latency, simplify a hot query, or support reporting. Examples include a cached order total, a search document, or a materialized aggregate. It adds a consistency obligation: who updates it, how failures are repaired, and what staleness is acceptable?"
+          "text": "Denormalization deliberately stores a duplicate or precomputed value to make a measured workload faster; it adds a consistency responsibility."
+        },
+        {
+          "type": "paragraph",
+          "text": "Denormalization means deliberately copying or precomputing data to make an important read faster or simpler. A dashboard might store a daily sales total instead of adding millions of orders on every page load. That total can become stale, so the system needs a clear update and repair process."
         },
         {
           "type": "table",
@@ -154,6 +213,16 @@
         {
           "type": "paragraph",
           "text": "Denormalize only after measuring a real bottleneck and defining the consistency contract. Start with the normalized model because it is easier to reason about, then add a projection when evidence justifies it."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A dashboard repeatedly sums 50 million order rows to display today's revenue.",
+          "reasoning": [
+            "Measure the query and confirm repeated aggregation is the real bottleneck.",
+            "A daily summary table may make reads much cheaper, but it must handle new, cancelled, refunded, and corrected orders.",
+            "Define whether the dashboard may be briefly stale and how to rebuild or reconcile the summary."
+          ],
+          "outcome": "Denormalize only when the read benefit justifies the extra storage and there is a clear plan to keep the value correct."
         }
       ]
     },
@@ -163,13 +232,27 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A sound model balances invariants and access patterns. For each important query, state its filters, joins, ordering, expected result grain, write frequency, and latency target. Then choose constraints and indexes to support it. Do not add indexes or duplicate data merely because a column appears frequently in a query."
+          "text": "Review a schema against real reads, writes, and business rules rather than designing from table names alone."
+        },
+        {
+          "type": "paragraph",
+          "text": "For each important query, write down what it filters, which tables it joins, what one result row represents, how often the data changes, and how fast the query needs to be. Then choose constraints and indexes to support it. Don't duplicate data just because a column appears in a query."
         },
         {
           "type": "callout",
           "kind": "pitfall",
           "title": "Avoid premature denormalization",
           "content": "A copied field creates a synchronization contract even if no one writes that contract down. If the source changes and the copy does not, the system now has two conflicting answers."
+        },
+        {
+          "type": "worked_example",
+          "problem": "An endpoint lists the newest 20 orders for one customer and includes the customer's current name.",
+          "reasoning": [
+            "The query filters orders by customer_id and orders by created_at.",
+            "An index beginning with customer_id and then created_at may support that access pattern.",
+            "Keep customer name in customers and join it when needed unless measurements justify a maintained copy."
+          ],
+          "outcome": "Model facts correctly first, then optimize the queries the application actually runs."
         }
       ]
     },
@@ -179,7 +262,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Start with Enrollment(student_id, student_name, course_id, course_title, instructor_id, instructor_name, grade), candidate key (student_id, course_id). Assume student_id determines student_name, course_id determines course_title and instructor_id, instructor_id determines instructor_name, and (student_id, course_id) determines grade."
+          "text": "Use dependencies to decide where facts belong; don't normalize just to follow a rule mechanically."
+        },
+        {
+          "type": "paragraph",
+          "text": "Start with Enrollment(student_id, student_name, course_id, course_title, instructor_id, instructor_name, grade), where (student_id, course_id) identifies one enrollment. student_id determines student_name; course_id determines course_title and instructor_id; instructor_id determines instructor_name. Those rules tell us which facts belong together."
         },
         {
           "type": "table",
@@ -213,21 +300,80 @@
         },
         {
           "type": "worked_example",
-          "problem": "Normalize the enrollment relation while preserving the grade for each student-course pair.",
+          "problem": "Enrollment(student_id, student_name, course_id, course_title, instructor_id, instructor_name, grade) has key (student_id, course_id).",
           "reasoning": [
-            "Create Students(student_id PRIMARY KEY, student_name).",
-            "Create Instructors(instructor_id PRIMARY KEY, instructor_name).",
-            "Create Courses(course_id PRIMARY KEY, course_title, instructor_id FOREIGN KEY REFERENCES Instructors).",
-            "Create Enrollments(student_id FOREIGN KEY REFERENCES Students, course_id FOREIGN KEY REFERENCES Courses, grade, PRIMARY KEY (student_id, course_id)).",
-            "Move partial dependencies to Students and Courses; instructor_name belongs in Instructors because it depends on instructor_id."
+            "student_name depends on student_id; course_title and instructor_id depend on course_id; instructor_name depends on instructor_id.",
+            "Move students, courses, and instructors into their own tables and let enrollments refer to them.",
+            "Keep grade in enrollments because it depends on the student-course relationship."
           ],
-          "outcome": "Each fact has one authoritative home. Enrollments stores only facts that depend on the complete student-course key."
+          "outcome": "Each table now stores facts about one entity or relationship, reducing inconsistent copies while preserving the ability to query through joins."
         },
         {
           "type": "callout",
           "kind": "tip",
           "title": "Normalization is about dependencies, not visual duplication",
           "content": "The current catalog price and the historical unit price charged on an order line are different facts, even if their values happen to match."
+        }
+      ]
+    },
+    {
+      "id": "interview-synthesis-six-layers",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — When the same fact is copied into multiple rows, one update can change only some copies. These update, insert, and delete anomalies are data-modeling problems, not merely messy code."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — Normalization separates facts according to their dependencies so each fact has an appropriate home. Denormalization deliberately duplicates or precomputes data when measured read patterns justify the added consistency work."
+        },
+        {
+          "type": "steps",
+          "title": "3. Internal mechanism: trace the work",
+          "steps": [
+            {
+              "id": "mechanism-step-1",
+              "title": "Identify entities and dependencies",
+              "description": "Determine which attributes describe a customer, order, product, or relationship."
+            },
+            {
+              "id": "mechanism-step-2",
+              "title": "Choose keys",
+              "description": "A candidate key uniquely identifies a row; functional dependencies show which attributes depend on which keys."
+            },
+            {
+              "id": "mechanism-step-3",
+              "title": "Separate independent facts",
+              "description": "Move repeated product or customer facts into their own relations and reference them with foreign keys."
+            },
+            {
+              "id": "mechanism-step-4",
+              "title": "Validate query and write paths",
+              "description": "Check joins, transaction boundaries, and reporting needs; denormalize only with a refresh or consistency strategy."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "If every order row stores the product name, renaming a product requires updating many historical orders and can leave inconsistent copies. A normalized product table avoids that anomaly; a reporting snapshot may still intentionally store a product-name-at-purchase value because historical meaning differs from the current product name.",
+          "reasoning": [
+            "Normalize facts that must stay consistent, but distinguish current attributes from historical snapshots. The right schema follows business meaning and invariants, not a rule to minimize joins at all costs.",
+            "Check the actual query shape, data distribution, concurrency, and database-engine behavior before generalizing the result."
+          ],
+          "outcome": "Normalize facts that must stay consistent, but distinguish current attributes from historical snapshots. The right schema follows business meaning and invariants, not a rule to minimize joins at all costs."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "5. Anti-pattern to avoid",
+          "content": "Do not denormalize just because joins exist, and do not normalize historical facts so aggressively that a past transaction changes meaning when a current entity changes."
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "6. Interview probe — When is storing a duplicated value in an order table correct rather than a normalization mistake?",
+          "answer": "When it captures a historical fact that must remain stable, such as the price or product description shown at purchase time. Document that meaning and decide how it differs from the current catalog value.",
+          "explanation": "Normalization is about dependencies and anomalies. Intentional snapshots are valid when they represent a different business fact."
         }
       ]
     }

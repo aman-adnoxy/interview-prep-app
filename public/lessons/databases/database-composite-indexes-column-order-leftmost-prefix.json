@@ -6,16 +6,17 @@
   "title": "Composite Indexes: Column Order, Leftmost Prefix, and Covering Indexes",
   "description": "Composite Indexes: Column Order, Leftmost Prefix, and Covering Indexes. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.",
   "difficulty": "intermediate",
-  "estimatedMinutes": 38,
+  "estimatedMinutes": 43,
   "learningObjectives": [
     "Choose composite index order from predicates and ordering.",
     "Explain leading-column behavior without overstating it.",
     "Distinguish key columns from INCLUDE payload.",
-    "Diagnose why an index does not fit a query."
+    "Diagnose why an index does not fit a query.",
+    "Explain composite indexes: column order, leftmost prefix, and covering indexes using the six-layer interview framework."
   ],
   "mentalModel": {
     "type": "paragraph",
-    "text": "A composite B-tree sorts by the first key, then the second within ties, and so on. Leading columns define the most direct search ranges. Design should match real filters, joins, ordering, and projection rather than blindly indexing every column."
+    "text": "A composite index is a lookup list sorted by several columns in order. For an index on (tenant_id, status, created_at), rows are grouped by tenant first, then by status within each tenant, and then by time. That order determines which queries can jump to a narrow range and which must scan much more of the index."
   },
   "concepts": [
     {
@@ -24,7 +25,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "An index on (tenant_id,status,created_at DESC) is ordered by tenant first, status within tenant, and time within equal tenant/status values. Column order is part of the data structure."
+          "text": "A composite index sorts by its first column, then by its second column within equal first-column values, and so on."
+        },
+        {
+          "type": "paragraph",
+          "text": "For an index on (tenant_id, status, created_at DESC), tenant_id is sorted first, status is sorted within each tenant, and time is sorted within each tenant/status pair. This is why column order changes what the index can find efficiently."
         },
         {
           "type": "code",
@@ -34,29 +39,39 @@
         },
         {
           "type": "table",
-          "title": "Key distinctions",
+          "title": "What column order changes",
           "columns": [
-            "Concept",
-            "Mechanism",
-            "Trade-off"
+            "Index or query",
+            "What it can do well",
+            "Main limitation"
           ],
           "rows": [
             [
-              "Access path",
-              "Structure used to locate candidate rows",
-              "Does not guarantee planner selection."
+              "Index (tenant_id, status, created_at)",
+              "Find one tenant, then narrow by status and time.",
+              "A query filtering only by status cannot usually jump to one narrow range."
             ],
             [
-              "Physical work",
-              "Pages, tuple visibility, result rows",
-              "May dominate logical lookup cost."
+              "Index (tenant_id, created_at DESC)",
+              "Fetch one tenant's newest rows in order; LIMIT may stop early.",
+              "Does not directly provide one global newest-first list across all tenants."
             ],
             [
-              "Workload fit",
-              "Predicates, ordering, distribution",
-              "Requires measurement, not assumptions."
+              "INCLUDE (status)",
+              "Store status in the index to help return it without a table lookup when visibility permits.",
+              "Included columns do not change search order and make the index larger."
             ]
           ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "You create an index on (tenant_id, status, created_at DESC).",
+          "reasoning": [
+            "Rows are ordered first by tenant_id.",
+            "Within each tenant, rows are ordered by status.",
+            "Within each tenant/status pair, rows are ordered by newest created_at first."
+          ],
+          "outcome": "The order lets PostgreSQL narrow by leading columns and may provide a requested sort, but it is not a shortcut for every filter combination."
         }
       ]
     },
@@ -66,7 +81,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Equality predicates on leading columns often provide a narrow starting range. A range predicate can limit how much later keys narrow the scan. ORDER BY and LIMIT can be as important as selectivity."
+          "text": "Put index columns in an order that supports the queries you actually run. Equality filters on leading columns often narrow the search before a range or ordering column."
+        },
+        {
+          "type": "paragraph",
+          "text": "Put the columns used to narrow the search first, based on the actual query. Equality filters on leading columns often narrow the search well. A range filter can limit how much later columns help; ORDER BY and LIMIT can also make one order much better than another."
         },
         {
           "type": "code",
@@ -94,6 +113,26 @@
               "description": "Use actual rows and buffers to compare prediction with observed work."
             }
           ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "A feed query filters by tenant_id, sorts newest first, and returns 20 rows.",
+          "reasoning": [
+            "An index on (tenant_id, created_at DESC) can seek to one tenant and read its newest entries in order.",
+            "An index starting with created_at may not narrow to that tenant as directly.",
+            "If the query filters only by status, an index whose first column is tenant_id may not provide a narrow lookup by status alone."
+          ],
+          "outcome": "Design from WHERE, JOIN, ORDER BY, and LIMIT together; column order determines which parts of the query an index can support."
+        },
+        {
+          "type": "worked_example",
+          "reasoning": [
+            "The query filters on `tenant_id = 7` and `status = 'open'`; these equality predicates define the group to search.",
+            "Within that group, the result needs `created_at DESC`, so place the ordering column after the equality columns.",
+            "An index on `(tenant_id, status, created_at DESC)` can seek to that tenant/status range and read newest-first. An index on `(created_at DESC, tenant_id, status)` orders by time across all tenants first, so it may have to examine many entries before finding 20 rows for tenant 7."
+          ],
+          "outcome": "Leading columns determine which contiguous part of the index can be searched directly. Column order should match the query's filters and required order.",
+          "problem": "You need the latest 20 open events for tenant 7."
         }
       ]
     },
@@ -103,7 +142,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A covering index stores needed values as keys or included payload. PostgreSQL INCLUDE columns do not affect search ordering. They may reduce heap visits but enlarge the index and increase write work."
+          "text": "A covering index contains all columns needed by a query. PostgreSQL's INCLUDE adds output columns without making them part of the search order."
+        },
+        {
+          "type": "paragraph",
+          "text": "A covering index stores all the values a query needs, either as searchable key columns or as included payload. In PostgreSQL, INCLUDE columns can supply output values but do not change the index's sort order. More stored values mean a larger index and more write work."
         },
         {
           "type": "code",
@@ -113,13 +156,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "A query is slower than expected even though an index exists.",
+          "problem": "A feed query returns tenant_id, created_at, and status.",
           "reasoning": [
-            "Check whether index keys and predicates align.",
-            "Compare estimated and actual row counts and inspect buffers.",
-            "Account for result size, heap access, and write/storage trade-offs."
+            "Use `tenant_id` and `created_at` as key columns to support filtering and ordering.",
+            "If the query also returns `event_type`, include that column in the index payload so PostgreSQL may return it without fetching the heap row.",
+            "The index grows larger and updates to included values require index maintenance. Even when all columns are present, PostgreSQL may still visit the heap to check row visibility."
           ],
-          "outcome": "Make a targeted change only after plan evidence supports the hypothesis."
+          "outcome": "INCLUDE can reduce row fetches, but measure the read benefit against index size and write overhead."
         }
       ]
     },
@@ -129,7 +172,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A composite index can avoid a Sort when its key order matches ORDER BY and preceding keys are constrained compatibly. LIMIT may make an ordered path attractive because execution can stop after enough rows."
+          "text": "When an index provides the requested order, PostgreSQL may avoid a separate sort. LIMIT can make this especially useful because the scan can stop early."
+        },
+        {
+          "type": "paragraph",
+          "text": "If the index order matches a query's ORDER BY, PostgreSQL may return rows already sorted and avoid a separate Sort step. With LIMIT, it may stop once it has found enough rows, rather than sorting every matching row first."
         },
         {
           "type": "code",
@@ -142,6 +189,16 @@
           "prompt": "Does the existence of an index guarantee PostgreSQL will use it?",
           "answer": "No.",
           "explanation": "The planner compares estimated costs, and another access path may be cheaper."
+        },
+        {
+          "type": "worked_example",
+          "problem": "Return the newest 20 orders for customer 42.",
+          "reasoning": [
+            "An index on (customer_id, created_at DESC) can locate customer 42's range.",
+            "The entries already arrive newest first, so PostgreSQL may stop after finding 20 qualifying rows.",
+            "If the index order does not match the requested order, a separate Sort may be needed."
+          ],
+          "outcome": "An index can save both lookup work and sorting work when its order matches the query."
         }
       ]
     },
@@ -151,13 +208,89 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Write down WHERE, JOIN, ORDER BY, LIMIT, and selected columns. Compare leading keys and expressions, then inspect actual rows, loops, sorts, heap fetches, and estimates."
+          "text": "When an index is not helping, compare the query shape with the index definition before adding another index."
+        },
+        {
+          "type": "paragraph",
+          "text": "To diagnose an index that isn't helping, write down the query's WHERE, JOIN, ORDER BY, LIMIT, and selected columns. Compare that shape with the index's column order, then inspect the actual plan to see how many rows and table pages it reads."
         },
         {
           "type": "code",
           "language": "sql",
           "title": "PostgreSQL example",
           "source": "EXPLAIN (ANALYZE, BUFFERS) SELECT id,created_at FROM orders WHERE customer_id=42 ORDER BY created_at DESC LIMIT 10;"
+        },
+        {
+          "type": "worked_example",
+          "problem": "An index exists on (tenant_id, status, created_at), but a query filters only by status.",
+          "reasoning": [
+            "The index is sorted by tenant_id first, so rows with the same status may be spread across many tenant ranges.",
+            "Check whether another index would serve a frequent workload well enough to justify its storage and write cost.",
+            "Use EXPLAIN (ANALYZE, BUFFERS) to verify the access path and number of rows/pages touched."
+          ],
+          "outcome": "Index design is about matching real predicates and ordering, not merely including every column mentioned in the query."
+        }
+      ]
+    },
+    {
+      "id": "interview-synthesis-six-layers",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — Composite Indexes: Column Order, Leftmost Prefix, and Covering Indexes. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. A composite index sorts by its first column, then by its second column within equal first-column values, and so on."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — A composite index is a lookup list sorted by several columns in order. For an index on (tenant_id, status, created_at), rows are grouped by tenant first, then by status within each tenant, and then by time. That order determines which queries can jump to a narrow range and which must scan much more of the index. Make assumptions explicit."
+        },
+        {
+          "type": "steps",
+          "title": "3. Internal mechanism: trace the sequence",
+          "steps": [
+            {
+              "id": "mechanism-step-1",
+              "title": "Lexicographic ordering",
+              "description": "A composite index sorts by its first column, then by its second column within equal first-column values, and so on."
+            },
+            {
+              "id": "mechanism-step-2",
+              "title": "Choosing order",
+              "description": "Put index columns in an order that supports the queries you actually run. Equality filters on leading columns often narrow the search before a range or ordering column."
+            },
+            {
+              "id": "mechanism-step-3",
+              "title": "Covering and INCLUDE",
+              "description": "A covering index contains all columns needed by a query. PostgreSQL's INCLUDE adds output columns without making them part of the search order."
+            },
+            {
+              "id": "mechanism-step-4",
+              "title": "Ordering, joins, and LIMIT",
+              "description": "When an index provides the requested order, PostgreSQL may avoid a separate sort. LIMIT can make this especially useful because the scan can stop early."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "4. Trade-offs and scale — Apply Composite Indexes: Column Order, Leftmost Prefix, and Covering Indexes to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "reasoning": [
+            "Column order is a workload decision: consider equality/range predicates, ordering, joins, LIMIT, overlapping indexes, and write cost.",
+            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
+            "Compare correctness, performance, resource cost, operational complexity, and failure behavior."
+          ],
+          "outcome": "Choose based on the workload and invariants, then validate with representative measurements and edge cases."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "5. Anti-pattern to avoid",
+          "content": "Column order is a workload decision: consider equality/range predicates, ordering, joins, LIMIT, overlapping indexes, and write cost."
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "6. Interview probe — An index exists on (tenant_id, created_at DESC). A tenant feed runs `WHERE tenant_id = 7 AND created_at >= DATE '2026-10-01' ORDER BY created_at DESC LIMIT 20`. Why is this index a strong candidate?",
+          "answer": "The key order matches the equality filter followed by the range/order requirement. Whether the final plan uses it still depends on costs, statistics, and selected columns.",
+          "explanation": "A strong answer connects the problem to the mechanism, states assumptions and trade-offs, and explains how to verify the decision in practice."
         }
       ]
     }

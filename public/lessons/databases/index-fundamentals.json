@@ -6,17 +6,19 @@
   "title": "Database Index Fundamentals",
   "description": "Understand what database indexes do, how they speed up reads, and what they cost.",
   "difficulty": "beginner",
-  "estimatedMinutes": 25,
+  "estimatedMinutes": 30,
   "learningObjectives": [
     "Explain what a database index is and why a database may use one.",
     "Describe the basic idea behind a B-tree index.",
     "Recognize query patterns that can benefit from an index.",
     "Explain the read-performance, storage, and write-performance trade-offs of indexes.",
-    "Use a PostgreSQL EXPLAIN plan at a basic level to investigate query access."
+    "Use a PostgreSQL EXPLAIN plan at a basic level to investigate query access.",
+    "Explain where PostgreSQL stores index data, how caching works, and what indexes cost in disk and memory.",
+    "Explain database index fundamentals using the six-layer interview framework."
   ],
   "mentalModel": {
     "type": "paragraph",
-    "text": "Think of a table as a book and an index as the book's index at the back. Without an index, the database may inspect rows one by one. With a useful index, it can navigate a smaller, ordered structure to find candidate rows. The index is an additional structure that must be stored and kept up to date when data changes."
+    "text": "Imagine a contacts table with a million people. Without an index, finding one email may mean checking many rows. An index is like an ordered lookup list that helps the database jump toward matching rows. It can make reads faster, but the database must keep that list updated whenever the table changes."
   },
   "concepts": [
     {
@@ -25,7 +27,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A database index is a data structure maintained alongside a table that helps the database find rows without necessarily scanning every row. An index usually stores indexed key values and references that let the engine locate matching table rows. The exact implementation depends on the database and index type."
+          "text": "An index is an extra lookup structure that helps PostgreSQL find rows without checking every row in the table."
+        },
+        {
+          "type": "paragraph",
+          "text": "An index is a separate lookup structure that helps the database find table rows. Think of the index at the back of a book: instead of reading every page, you look up the topic and jump to the right pages. The database may still need to visit the table to fetch the full row."
         },
         {
           "type": "code",
@@ -36,6 +42,16 @@
         {
           "type": "paragraph",
           "text": "Key idea\n\nThe index can help locate rows matching the email predicate. It does not guarantee that the planner will choose the index for every query."
+        },
+        {
+          "type": "worked_example",
+          "problem": "An API repeatedly finds a user by email in a table with one million users.",
+          "reasoning": [
+            "Without an index, PostgreSQL may need to inspect many rows to find the email.",
+            "A B-tree index on email can navigate to the matching key, then locate the table row if the query needs other columns.",
+            "The index is separate from the table and must be maintained when indexed values change."
+          ],
+          "outcome": "An index is a shortcut to matching rows, not a second copy of the whole table and not a guarantee that every query will use it."
         }
       ]
     },
@@ -45,7 +61,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A table scan may examine a large number of rows to find a small matching subset. A suitable index can narrow the search to matching keys and row locations. The benefit depends on selectivity, table size, data distribution, the query, and the cost of fetching the matching rows."
+          "text": "An index helps most when it avoids enough table work to repay the cost of looking up keys and fetching matching rows."
+        },
+        {
+          "type": "paragraph",
+          "text": "Without an index, the database may check every row to find a few matches. With a suitable index, it can go straight to the relevant keys. The speed-up depends on how many rows match, how large the table is, and how much extra work is needed to fetch those rows."
         },
         {
           "type": "code",
@@ -58,6 +78,16 @@
           "kind": "info",
           "title": "When the index may not help",
           "content": "If a query returns a very large fraction of a small table, scanning the table may be cheaper than using the index and then fetching many rows."
+        },
+        {
+          "type": "worked_example",
+          "problem": "An endpoint fetches one order out of two million using order_id.",
+          "reasoning": [
+            "A unique index can find the matching key with only a small number of page visits.",
+            "The database then fetches the requested row if its columns are not already available in the index.",
+            "For a query that returns most orders, many row fetches may cost more than scanning table pages in sequence."
+          ],
+          "outcome": "Index benefit depends on the fraction of rows returned and the work needed after the lookup."
         }
       ]
     },
@@ -67,7 +97,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "In PostgreSQL, B-tree is the default index type and is suitable for common equality and range comparisons, as well as ordered access patterns. Its balanced tree structure lets the engine navigate keys without checking every indexed entry. Other index types serve different workloads."
+          "text": "A B-tree keeps keys sorted across balanced pages. The database narrows the possible key range at each level until it reaches the relevant leaf."
+        },
+        {
+          "type": "paragraph",
+          "text": "A B-tree is PostgreSQL's usual default index. It keeps keys in sorted, balanced pages, so the database can find a value, search a range, or read rows in a compatible order without checking every key."
         },
         {
           "type": "code",
@@ -161,13 +195,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "Find key 25 in the simplified tree shown above.",
+          "problem": "A products table has an index on price and a query asks for prices between 100 and 500 in ascending order.",
           "reasoning": [
-            "Compare 25 with the root separators 20 and 40.",
-            "Follow the child whose key range contains 25.",
-            "Search the selected leaf for the exact key."
+            "PostgreSQL navigates to the first key in the requested range.",
+            "It walks the matching leaf entries in key order until the range ends.",
+            "Because the index order matches ORDER BY price, PostgreSQL may avoid a separate sort."
           ],
-          "outcome": "Key 25 is found in the middle leaf without examining the unrelated leaf entries."
+          "outcome": "B-trees support equality lookups, range scans, and compatible ordering. They are the usual starting point for scalar columns."
         },
         {
           "type": "checkpoint",
@@ -183,13 +217,27 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Indexes are most useful when their columns and ordering fit the predicates, joins, and ordering used by real queries. A composite index stores keys in a defined column order; that order matters. In PostgreSQL, a B-tree index on (customer_id, created_at) is generally most directly useful for conditions beginning with customer_id, and can also support ordering or filtering patterns involving the leading column."
+          "text": "Build indexes around the queries the application actually runs, including their filters, joins, sort order, and limits."
+        },
+        {
+          "type": "paragraph",
+          "text": "An index should fit queries the application actually runs. If a common query filters by customer_id and sorts by created_at, an index on (customer_id, created_at) may help. The order matters: an index starting with a different column may not provide the same shortcut."
         },
         {
           "type": "code",
           "language": "sql",
           "title": "Composite index",
           "source": "CREATE INDEX idx_orders_customer_created\nON orders (customer_id, created_at DESC);\n\nSELECT id, created_at\nFROM orders\nWHERE customer_id = 42\nORDER BY created_at DESC\nLIMIT 10;"
+        },
+        {
+          "type": "worked_example",
+          "problem": "A customer page runs `WHERE customer_id = 42 ORDER BY created_at DESC LIMIT 20`.",
+          "reasoning": [
+            "An index on (customer_id, created_at DESC) narrows to that customer and provides newest-first order.",
+            "The database may stop after finding 20 qualifying rows instead of sorting every order for that customer.",
+            "An index beginning with a different column may not provide the same efficient path."
+          ],
+          "outcome": "Choose column order from the whole query shape, not from a list of columns that seem important."
         }
       ]
     },
@@ -199,13 +247,27 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Indexes consume disk space and add work to inserts, deletes, and updates that affect indexed values. They may also increase maintenance work. Creating an index without a real query need can slow writes and increase storage without improving the workload meaningfully."
+          "text": "Every index speeds only some operations and creates work for writes, storage, memory, and maintenance."
+        },
+        {
+          "type": "paragraph",
+          "text": "Indexes take space and need maintenance. Each insert, delete, or update may also change one or more indexes. Too many indexes can make writes slower and use memory that could otherwise hold useful data."
         },
         {
           "type": "callout",
           "kind": "info",
           "title": "Write-heavy table",
           "content": "If a table receives frequent inserts and updates, measure the value of each index. Keep indexes that support important query patterns and revisit redundant or unused indexes carefully."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A write-heavy events table has six indexes, but only two support frequent queries.",
+          "reasoning": [
+            "Each insert must add entries to relevant indexes; updates can also change index entries.",
+            "The extra indexes consume disk and cache space and add WAL and maintenance work.",
+            "Check actual index usage and workload before dropping an index, because rare administrative queries may still depend on it."
+          ],
+          "outcome": "Keep indexes that pay for themselves in the real workload; more indexes are not automatically better."
         }
       ]
     },
@@ -215,7 +277,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Selectivity describes how narrowly a predicate filters the rows. A predicate that matches very few rows is often more attractive for index access than one matching most rows. PostgreSQL's planner estimates costs and chooses a plan; the presence of an index does not force its use."
+          "text": "Selectivity is the share of rows that match a condition. PostgreSQL estimates that share and compares the likely cost of available plans."
+        },
+        {
+          "type": "paragraph",
+          "text": "Selectivity means how many rows match a condition. Searching for one rare email is selective; searching for a status shared by half the table is not. PostgreSQL estimates the cost of each route and may skip an index if reading many scattered rows would be slower."
         },
         {
           "type": "code",
@@ -226,6 +292,16 @@
         {
           "type": "paragraph",
           "text": "Plan interpretation\n\nLook for nodes such as Seq Scan, Index Scan, Index Only Scan, or Bitmap Index Scan. EXPLAIN shows the planned operations; EXPLAIN ANALYZE executes the query and reports actual timings and row counts, so use it thoughtfully."
+        },
+        {
+          "type": "worked_example",
+          "problem": "An email lookup returns one row, but a status filter returns 800,000 of one million rows.",
+          "reasoning": [
+            "The email lookup is highly selective, so an index is likely to avoid most table work.",
+            "The status filter matches most of the table, so a sequential scan may be cheaper.",
+            "Use EXPLAIN (ANALYZE, BUFFERS) to compare estimates with actual rows and inspect the work performed."
+          ],
+          "outcome": "The planner chooses based on estimated cost. An index can be useful for one predicate and unhelpful for another."
         }
       ]
     },
@@ -235,13 +311,115 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A sequential scan reads table pages and checks rows against the condition. An index scan navigates an index and fetches matching rows. An index-only scan may satisfy a query from index contents without fetching every corresponding table row, subject to the index contents and PostgreSQL visibility-map conditions."
+          "text": "The key idea is simple: an index scan uses an index to find matching rows; a sequential scan reads through the table's pages and checks which rows match. Neither is always better. PostgreSQL chooses based on how much data it expects to read and how expensive each approach will be."
+        },
+        {
+          "type": "paragraph",
+          "text": "## 1. Index scan\n\nSuppose a users table has one million rows and an index on email:"
         },
         {
           "type": "code",
           "language": "sql",
-          "title": "A query that may be covered by an index",
-          "source": "CREATE INDEX idx_users_email_name ON users (email) INCLUDE (name);\n\nSELECT name\nFROM users\nWHERE email = 'sam@example.com';"
+          "title": "Create an email index",
+          "source": "CREATE INDEX idx_users_email\nON users(email);"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Find one user",
+          "source": "SELECT *\nFROM users\nWHERE email = 'aman@example.com';"
+        },
+        {
+          "type": "steps",
+          "title": "What happens during an index scan",
+          "steps": [
+            {
+              "id": "search-index",
+              "title": "Search the index",
+              "description": "PostgreSQL navigates the index to find the email key instead of checking every user row."
+            },
+            {
+              "id": "locate-row",
+              "title": "Locate the table row",
+              "description": "The index entry identifies where the matching row can be found in the table."
+            },
+            {
+              "id": "fetch-row",
+              "title": "Fetch the requested data",
+              "description": "If the index does not contain every column the query needs, PostgreSQL visits the table to read the rest of the row."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "The advantage is that PostgreSQL may avoid reading most of the table. For a B-tree index, finding a key takes roughly logarithmic navigation through the index, followed by any necessary row fetches. Actual performance also depends on page reads, caching, and how many rows match."
+        },
+        {
+          "type": "paragraph",
+          "text": "## 2. Sequential scan\n\nNow consider a query that returns most of the users:"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Find active users",
+          "source": "SELECT *\nFROM users\nWHERE is_active = TRUE;"
+        },
+        {
+          "type": "paragraph",
+          "text": "Imagine 900,000 of the one million users are active. An index on is_active could identify those rows, but PostgreSQL might then need to fetch a very large number of table rows. Reading the table's pages in sequence can be cheaper than jumping between many separate row locations."
+        },
+        {
+          "type": "paragraph",
+          "text": "A sequential scan does not mean reading each row individually from disk. PostgreSQL reads table pages and checks the rows in those pages. Some pages may already be cached in memory."
+        },
+        {
+          "type": "table",
+          "title": "When each approach tends to make sense",
+          "columns": [
+            "Situation",
+            "Likely choice",
+            "Why"
+          ],
+          "rows": [
+            [
+              "Find one user by unique email",
+              "Index scan",
+              "Very few rows match."
+            ],
+            [
+              "Find 20 orders out of 2 million",
+              "Index scan",
+              "Only a small subset of the table is needed."
+            ],
+            [
+              "Return 90% of a table",
+              "Sequential scan may win",
+              "Reading pages in sequence can cost less than fetching most rows through an index."
+            ],
+            [
+              "Read every row for a report",
+              "Sequential scan may win",
+              "The query needs nearly all the data anyway."
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "These are common patterns, not guarantees. The planner also considers table size, statistics, available indexes, cache state, and the query itself."
+        },
+        {
+          "type": "paragraph",
+          "text": "## 3. Check the actual plan\n\nIn PostgreSQL, inspect a representative query with EXPLAIN ANALYZE:"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Inspect an email lookup",
+          "source": "EXPLAIN ANALYZE\nSELECT *\nFROM users\nWHERE email = 'aman@example.com';"
+        },
+        {
+          "type": "paragraph",
+          "text": "Look for these plan nodes:\n\n- `Index Scan` — uses an index and may fetch rows from the table.\n- `Seq Scan` — reads table pages sequentially and checks rows.\n- `Index Only Scan` — can return data from the index without fetching the table for every row, when the index contains the requested values and PostgreSQL's visibility information permits it.\n\n`EXPLAIN ANALYZE` actually executes the query. Be careful with expensive queries and statements that modify data; use a safe test environment or transaction when appropriate."
         }
       ]
     },
@@ -251,11 +429,122 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Start from a slow or important query, inspect its execution plan, understand its filtering and ordering, and measure before and after changes. Avoid adding indexes based only on a column name or intuition. Production decisions should consider both read latency and write/storage costs."
+          "text": "Use the plan and a representative workload to test whether an index solves the real bottleneck."
+        },
+        {
+          "type": "paragraph",
+          "text": "Start with a real query that is slow or important. Check its plan, identify what it filters and sorts, then test an index that fits. Compare read speed and write cost; never add an index just because a column looks important."
         },
         {
           "type": "paragraph",
           "text": "A practical workflow\n\n1. Capture the query and its parameters.\n2. Inspect EXPLAIN or EXPLAIN ANALYZE where safe.\n3. Check row estimates, actual rows, and scan type.\n4. Propose an index that matches the query pattern.\n5. Compare representative performance and write overhead."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A query is slow and someone suggests adding an index to every column in its WHERE clause.",
+          "reasoning": [
+            "Capture the exact query and representative parameter values.",
+            "Inspect the plan to see whether the cost comes from scanning too many rows, repeated joins, sorting, or fetching heap rows.",
+            "Test one index candidate, compare read latency and buffer activity, and measure the write overhead."
+          ],
+          "outcome": "A useful index is one that improves the workload enough to justify its ongoing cost."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Read EXPLAIN ANALYZE carefully",
+          "content": "EXPLAIN ANALYZE executes the statement. For a slow SELECT, it performs the read; for an INSERT, UPDATE, or DELETE, it can change data. Test write statements in a safe transaction or test environment, and remember that timing from a small or warm-cache test may not represent production."
+        }
+      ]
+    },
+    {
+      "id": "where-indexes-live",
+      "title": "Where indexes live: disk space and memory",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "An index is a persistent database structure, not just a setting and not something that exists only in RAM. In PostgreSQL, table rows and index entries are stored in database files on persistent storage. The index has its own pages and consumes disk space in addition to the table."
+        },
+        {
+          "type": "paragraph",
+          "text": "When PostgreSQL reads a table or index page, it can keep that page in shared_buffers. The operating system may also cache file pages in memory. A later lookup may reuse a cached page instead of waiting for storage. So an index consumes disk space whether or not it is cached, and its frequently used pages may also consume memory."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "-- Approximate on-disk size of one index\nSELECT pg_size_pretty(pg_relation_size('idx_users_email')) AS index_size;\n\n-- Table size including its indexes and other auxiliary storage\nSELECT pg_size_pretty(pg_total_relation_size('users')) AS total_size;"
+        },
+        {
+          "type": "worked_example",
+          "problem": "A users table is 2 GB, and its email index is 400 MB. The application repeatedly looks up users by email.",
+          "reasoning": [
+            "The table and index both occupy persistent storage; the index adds 400 MB rather than replacing the table.",
+            "Frequently used index pages may stay in memory, making later lookups faster than cold reads.",
+            "If the index is much larger than available cache, lookups may require more storage reads. Other workloads also compete for memory."
+          ],
+          "outcome": "Think of an index as an extra on-disk data structure whose hot pages may be cached. More indexes improve some reads but increase storage, memory pressure, and write work."
+        }
+      ]
+    },
+    {
+      "id": "interview-synthesis-six-layers",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — Understand what database indexes do, how they speed up reads, and what they cost.. Begin by explaining the practical failure, cost, or engineering need that makes this topic matter. An index is an extra lookup structure that helps PostgreSQL find rows without checking every row in the table."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — Imagine a contacts table with a million people. Without an index, finding one email may mean checking many rows. An index is like an ordered lookup list that helps the database jump toward matching rows. It can make reads faster, but the database must keep that list updated whenever the table changes. State the assumptions under which this design is a good fit."
+        },
+        {
+          "type": "steps",
+          "title": "3. Internal mechanism: explain the sequence",
+          "steps": [
+            {
+              "id": "mechanism-step-1",
+              "title": "What is a database index?",
+              "description": "An index is an extra lookup structure that helps PostgreSQL find rows without checking every row in the table."
+            },
+            {
+              "id": "mechanism-step-2",
+              "title": "Why indexes can speed up reads",
+              "description": "An index helps most when it avoids enough table work to repay the cost of looking up keys and fetching matching rows."
+            },
+            {
+              "id": "mechanism-step-3",
+              "title": "B-tree indexes",
+              "description": "A B-tree keeps keys sorted across balanced pages. The database narrows the possible key range at each level until it reaches the relevant leaf."
+            },
+            {
+              "id": "mechanism-step-4",
+              "title": "Match indexes to query patterns",
+              "description": "Build indexes around the queries the application actually runs, including their filters, joins, sort order, and limits."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "4. Trade-offs and scale — Apply Database Index Fundamentals to a realistic production workload. What changes as the data volume, request rate, concurrency, or failure rate grows?",
+          "reasoning": [
+            "An index makes some access patterns cheaper; it does not make every query faster.",
+            "Use measured workload data and explicit assumptions for any performance estimate; avoid presenting one latency, size, or threshold as universal.",
+            "Compare correctness, operational complexity, storage or compute cost, and the effect on adjacent components."
+          ],
+          "outcome": "Choose the design that best satisfies the actual workload and invariants, then validate the decision with representative measurements and failure cases."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "5. Anti-pattern to avoid",
+          "content": "An index makes some access patterns cheaper; it does not make every query faster."
+        },
+        {
+          "type": "checkpoint",
+          "prompt": "6. Interview probe — What is the primary purpose of a database index?",
+          "answer": "An index provides an additional access structure that can help the database find matching rows without examining the entire table. It does not replace the table or guarantee a particular runtime. Uniqueness is enforced only by a suitable unique constraint or unique index.",
+          "explanation": "A strong interview answer states the problem, walks through the mechanism, names assumptions and trade-offs, and describes how to verify the result rather than relying on a rule of thumb."
         }
       ]
     }
