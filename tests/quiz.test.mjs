@@ -31,3 +31,11 @@ test('every pilot content block type has a renderer', () => {
   const used=new Set(lesson.concepts.flatMap(c=>c.blocks.map(b=>b.type)));
   for(const type of used) assert.ok(renderer.includes("case '"+type+"'"),'missing renderer for '+type);
 });
+
+test('lesson renderers do not execute authored HTML or SVG strings', () => {
+  const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+  const renderer=fs.readFileSync(path.join(root,'src/components/ContentBlock.jsx'),'utf8');
+  const legacy=fs.readFileSync(path.join(root,'src/components/DiagramBlock.jsx'),'utf8');
+  assert.equal(renderer.includes('dangerouslySetInnerHTML'),false);
+  assert.equal(legacy.includes('dangerouslySetInnerHTML'),false);
+});
