@@ -1,36 +1,121 @@
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
-import DailyAssignmentCard from './components/DailyAssignmentCard';
+import BottomNav from './components/BottomNav';
+import HomeScreen from './components/HomeScreen';
 import TracksOverview from './components/TracksOverview';
+import ProgressScreen from './components/ProgressScreen';
 import TopicLearningPath from './components/TopicLearningPath';
 import LessonView from './components/LessonView';
 import QuizExperience from './components/QuizExperience';
 import CompletionSummary from './components/CompletionSummary';
 import InterviewScenarioView from './components/InterviewScenarioView';
-import HistoryModal from './components/HistoryModal';
 import SettingsModal from './components/SettingsModal';
 
-import { fetchManifest, fetchLesson, resolveActiveAssignment, getTodayKolkataString, computeStreak } from './services/api';
-import { 
-  getAllProgress, 
-  saveSectionProgress, 
+import {
+  fetchManifest,
+  fetchLesson,
+  getTodayKolkataString,
+  computeStreak,
+  computeRecentAccuracy,
+  getWeakSections,
+  getRecentActivityDays,
+  findSectionInManifest,
+  findTopicInManifest,
+} from './services/api';
+import {
+  getAllProgress,
+  saveSectionProgress,
   recordQuizAttempt,
   getAllQuizAttempts,
   getPreferences,
-  clearAllProgress 
+  clearAllProgress,
 } from './services/storage';
 import { sound } from './services/sound';
 
-// Remembers which lesson the learner is currently on so a refresh resumes there
+// Remembers which lesson the learner is currently on (highest continue priority)
 const LAST_SECTION_KEY = 'interview_prep_last_section';
+// Remembers the full navigation position (view + contexts) across refreshes
+const NAV_KEY = 'interview_prep_nav';
+// Last completed quiz result, so the summary screen survives a refresh
+const RESULT_KEY = 'interview_prep_last_result';
+// Prefixes for every local-only key produced by a section visit
+const CLEARABLE_KEY_PREFIXES = [
+  'interview_prep_quiz_',
+  'interview_prep_lesson_',
+];
 
-function findSectionInManifest(manifestData, sectionId) {
-  if (!manifestData?.topics || !sectionId) return null;
-  for (const topic of manifestData.topics) {
-    const match = (topic.sections || []).find((section) => section.id === sectionId);
-    if (match) return { ...match, topicId: topic.id, topicTitle: topic.title };
+const RESTORABLE_VIEWS = ['topic-path', 'lesson', 'scenario', 'quiz', 'summary', 'curriculum', 'progress'];
+// Views where the bottom navigation bar is visible (deep flows hide it)
+const NAV_VISIBLE_VIEWS = ['home', 'curriculum', 'progress'];
+
+function readNavState() {
+  try {
+    const nav = JSON.parse(localStorage.getItem(NAV_KEY) || 'null');
+    return nav && typeof nav === 'object' ? nav : null;
+  } catch {
+    return null;
   }
-  return null;
+}
+
+function saveNavState(nav) {
+  try {
+    localStorage.setItem(NAV_KEY, JSON.stringify(nav));
+  } catch {
+    // localStorage unavailable; the app still works within the session
+  }
+}
+
+function clearNavState() {
+  try {
+    localStorage.removeItem(NAV_KEY);
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+function clearSectionLocalKeys() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+      const key = localStorage.key(i);
+      if (key && CLEARABLE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // localStorage unavailable; nothing persisted to clear
+  }
+}
+
+/** Flattened list of published sections with topic context attached. */
+function getPublishedSections(manifestData) {
+  if (!manifestData?.topics) return [];
+  const rows = [];
+  for (const topic of manifestData.topics) {
+    for (const section of topic.sections || []) {
+      if (section.status === 'published') rows.push({ ...section, topicId: topic.id, topicTitle: topic.title });
+    }
+  }
+  return rows;
+}
+
+/**
+ * Deterministic "continue" resolution (priority order):
+ * 1. last-viewed section if still incomplete
+ * 2. next eligible (first incomplete published section in curriculum order)
+ * 3. null when everything published is complete (Home shows the mastered card)
+ */
+function resolveContinueSection(manifestData, progressMap) {
+  const published = getPublishedSections(manifestData);
+  try {
+    const lastSectionId = localStorage.getItem(LAST_SECTION_KEY);
+    if (lastSectionId) {
+      const lastSection = published.find((section) => section.id === lastSectionId);
+      if (lastSection && !progressMap[lastSection.id]?.completed) return lastSection;
+    }
+  } catch {
+    // localStorage unavailable; fall through to the curriculum-order pick
+  }
+  return published.find((section) => !progressMap[section.id]?.completed) || null;
 }
 
 export default function App() {
@@ -42,10 +127,8 @@ export default function App() {
   // Selected topic for dedicated topic learning path page
   const [selectedTopic, setSelectedTopic] = useState(null);
 
-  // Navigation states: 'home' | 'tracks' | 'topic-path' | 'lesson' | 'quiz' | 'summary' | 'scenario'
+  // Navigation states: 'home' | 'curriculum' | 'progress' | 'topic-path' | 'lesson' | 'quiz' | 'summary' | 'scenario'
   const [viewState, setViewState] = useState('home');
-  // Header tabs: 'assignment' | 'curriculum'
-  const [activeTab, setActiveTab] = useState('assignment');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -54,7 +137,6 @@ export default function App() {
   const [streak, setStreak] = useState(0);
 
   // Modals state (declared at top before any conditional return)
-  const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
   // Initialize data on mount
@@ -62,10 +144,19 @@ export default function App() {
     async function initApp() {
       try {
         setLoading(true);
-        const [manifestData, storedProgress, storedAttempts] = await Promise.all([
+        // Read the saved navigation position synchronously so the restore
+        // lesson fetch can start in parallel with the manifest fetch —
+        // the very first paint after loading is already the saved view
+        const nav = readNavState();
+        const navlessonRef = nav?.lessonId || null;
+        const canRestoreLessonView = nav && ['lesson', 'scenario', 'quiz'].includes(nav.view);
+        const [manifestData, storedProgress, storedAttempts, restoredLesson] = await Promise.all([
           fetchManifest(),
           getAllProgress(),
           getAllQuizAttempts(),
+          canRestoreLessonView
+            ? (navlessonRef ? fetchLesson(navlessonRef).catch(() => null) : Promise.resolve(null))
+            : Promise.resolve(null),
         ]);
 
         // Honor persisted sound preference before any interaction needs audio
@@ -74,33 +165,55 @@ export default function App() {
         setManifest(manifestData);
         setProgressMap(storedProgress || {});
         setQuizAttempts(storedAttempts || []);
-        setStreak(computeStreak(storedAttempts));
+        setStreak(computeStreak(storedAttempts || [], storedProgress || {}));
 
-        // Start at the first incomplete section, or resume the lesson the
-        // learner was last viewing if it is still incomplete
-        let startedSection = resolveActiveAssignment(manifestData, storedProgress || {});
-        try {
-          const lastSectionId = localStorage.getItem(LAST_SECTION_KEY);
-          const lastSection = findSectionInManifest(manifestData, lastSectionId);
-          if (lastSection && lastSection.status === 'published'
-            && !(storedProgress || {})[lastSection.id]?.completed
-            && startedSection?.id !== lastSection.id) {
-            startedSection = lastSection;
+        // Resume the saved navigation position (lesson/quiz/scenario/etc.)
+        // so a refresh reopens exactly where the learner was, not the home page
+        let startedSection = resolveContinueSection(manifestData, storedProgress || {});
+        let restorable = false;
+
+        if (nav && RESTORABLE_VIEWS.includes(nav.view)) {
+          if (nav.view === 'curriculum' || nav.view === 'progress') {
+            // Tab-level views restore without any section context
+            restorable = true;
+          } else if (nav.view === 'topic-path') {
+            const topic = findTopicInManifest(manifestData, nav.topicId);
+            if (topic) {
+              setSelectedTopic(topic);
+              restorable = true;
+            }
+          } else {
+            const section = findSectionInManifest(manifestData, nav.sectionId);
+            if (section && section.status === 'published') {
+              if (nav.view === 'summary') {
+                try {
+                  const storedResult = JSON.parse(localStorage.getItem(RESULT_KEY) || 'null');
+                  if (storedResult && typeof storedResult.score === 'number') {
+                    setLastQuizResult(storedResult);
+                    restorable = true;
+                  }
+                } catch {
+                  // no saved result; drop back to home
+                }
+              } else if (navlessonRef && restoredLesson && restoredLesson.id === navlessonRef) {
+                setCurrentLesson(restoredLesson);
+                restorable = true;
+              } else {
+                try {
+                  const lessonData = await fetchLesson(section.lessonId || section.id);
+                  setCurrentLesson(lessonData);
+                  restorable = true;
+                } catch (err) {
+                  console.error('Failed to restore lesson content', err);
+                }
+              }
+              if (restorable) startedSection = section;
+            }
           }
-        } catch {
-          // localStorage unavailable; fall back to the next incomplete section
         }
         setActiveSection(startedSection);
 
-        // Preload lesson for active section
-        if (startedSection?.lessonId || startedSection?.id) {
-          try {
-            const lessonData = await fetchLesson(startedSection.lessonId || startedSection.id);
-            setCurrentLesson(lessonData);
-          } catch (e) {
-            console.error('Failed to preload active lesson', e);
-          }
-        }
+        if (restorable) setViewState(nav.view);
       } catch (err) {
         console.error('Initialization error:', err);
         setError('Failed to load curriculum manifest. Please verify your connection.');
@@ -114,7 +227,7 @@ export default function App() {
 
   // Load lesson when user selects or changes active section
   const loadSectionContent = async (section) => {
-    if (!section?.lessonPath) {
+    if (!section?.lessonPath && !section?.lessonId && !section?.id) {
       setCurrentLesson(null);
       return null;
     }
@@ -136,6 +249,17 @@ export default function App() {
     }
   };
 
+  // Central navigation helper: persists the view so refresh resumes here
+  const go = (view, extra = {}) => {
+    saveNavState({
+      view,
+      topicId: extra.topicId ?? (view === 'topic-path' ? selectedTopic?.id : undefined),
+      sectionId: extra.sectionId ?? activeSection?.id,
+      lessonId: extra.lessonId ?? activeSection?.lessonId,
+    });
+    setViewState(view);
+  };
+
   // Opens a section, marks it as the learner's current lesson, and navigates
   const openSection = async (section, view) => {
     if (!section) return;
@@ -146,6 +270,12 @@ export default function App() {
     } catch {
       // localStorage unavailable; in-session state still works
     }
+    const targetTopicId = section.topicId ?? selectedTopic?.id;
+    if (view === 'lesson' && targetTopicId) setSelectedTopic((prev) => {
+      const topic = manifest?.topics?.find((t) => t.id === targetTopicId);
+      return topic || prev;
+    });
+    saveNavState({ view, topicId: targetTopicId, sectionId: section.id, lessonId: section.lessonId });
     await loadSectionContent(section);
     setViewState(view);
   };
@@ -153,16 +283,11 @@ export default function App() {
   const handleSelectTopic = (topic) => {
     sound.playTap();
     setSelectedTopic(topic);
+    saveNavState({ view: 'topic-path', topicId: topic.id });
     setViewState('topic-path');
   };
 
   const handleSelectSectionFromPath = (section) => openSection(section, 'lesson');
-
-  const handleStartLesson = () => openSection(homeSection, 'lesson');
-
-  const handleStartQuiz = () => openSection(homeSection, 'quiz');
-
-  const handleOpenScenario = () => openSection(homeSection, 'scenario');
 
   const handleFinishQuiz = async (results) => {
     const { score, total, records } = results;
@@ -174,7 +299,7 @@ export default function App() {
       const existingProg = progressMap[sectionId] || {};
       const bestScore = Math.max(existingProg.bestScore ?? 0, score);
       const isFirstPass = !existingProg.completed && isPassed;
-      
+
       const updatedProg = {
         sectionId,
         completed: existingProg.completed || isPassed,
@@ -183,7 +308,7 @@ export default function App() {
         totalQuestions: total,
         attemptsCount: (existingProg.attemptsCount || 0) + 1,
         lastAttemptDate: new Date().toISOString(),
-        ...(isFirstPass ? { completedDate: getTodayKolkataString() } : {})
+        ...(isFirstPass ? { completedDate: getTodayKolkataString() } : {}),
       };
 
       const saved = await saveSectionProgress(updatedProg);
@@ -194,41 +319,48 @@ export default function App() {
         sectionId,
         score,
         total,
-        records
+        records,
       });
 
-      // Include the just-recorded attempt so the streak reflects today's activity
+      // Include the just-recorded attempt (and today's progress entry) so
+      // the streak and dashboard reflect today's activity
       const updatedAttempts = [
         ...quizAttempts,
-        { sectionId, timestamp: new Date().toISOString() }
+        { sectionId, timestamp: new Date().toISOString() },
       ];
-      setQuizAttempts(updatedAttempts);
-      setStreak(computeStreak(updatedAttempts));
-
       const newMap = { ...progressMap, [sectionId]: updatedProg };
+      setQuizAttempts(updatedAttempts);
       setProgressMap(newMap);
+      setStreak(computeStreak(updatedAttempts, newMap));
 
       // Do NOT preemptively overwrite currentLesson or activeSection here!
       // This preserves the completed lesson and results throughout the CompletionSummary screen
       // so "Review Lesson" opens the lesson the user just completed.
     }
 
-    setViewState('summary');
+    try {
+      localStorage.setItem(RESULT_KEY, JSON.stringify(results));
+    } catch {
+      // localStorage unavailable; the result still shows within this session
+    }
+    go('summary');
   };
 
   const handleResetProgress = async () => {
     await clearAllProgress();
+    clearSectionLocalKeys();
     try {
       localStorage.removeItem(LAST_SECTION_KEY);
+      localStorage.removeItem(RESULT_KEY);
     } catch {
       // localStorage unavailable; nothing persisted to clear
     }
+    clearNavState();
     const emptied = {};
     setProgressMap(emptied);
-    setActiveSection(resolveActiveAssignment(manifest, emptied));
+    setActiveSection(resolveContinueSection(manifest, emptied));
     setSelectedTopic(null);
-    setViewState('home');
-    setActiveTab('assignment');
+    go('home');
     setLastQuizResult(null);
     // History is stored alongside progress attempts
     setQuizAttempts([]);
@@ -238,7 +370,7 @@ export default function App() {
   const handleDoneSummary = async () => {
     sound.playTap();
     // Resolve next active section only upon leaving the summary screen
-    const nextAssignment = resolveActiveAssignment(manifest, progressMap);
+    const nextAssignment = resolveContinueSection(manifest, progressMap);
     if (nextAssignment && nextAssignment.id !== activeSection?.id) {
       setActiveSection(nextAssignment);
       try {
@@ -247,22 +379,33 @@ export default function App() {
         // localStorage unavailable; in-session state still works
       }
       if (nextAssignment.lessonId || nextAssignment.id) {
-        await loadSectionContent(nextAssignment);
+        loadSectionContent(nextAssignment);
       }
     }
-    setViewState(selectedTopic ? 'topic-path' : 'home');
+    try {
+      localStorage.removeItem(RESULT_KEY);
+    } catch {
+      // localStorage unavailable
+    }
+    go('home');
   };
 
   const completedCount = Object.values(progressMap).filter((p) => p.completed).length;
 
-  // The home card always reflects live progress:
-  // - the lesson the learner is currently on (incomplete), or
-  // - the next incomplete section after one was just completed
-  const activeAssignment = manifest ? resolveActiveAssignment(manifest, progressMap) : null;
-  const homeSection = (activeSection && activeSection.status === 'published'
-    && !progressMap[activeSection.id]?.completed)
-    ? activeSection
-    : activeAssignment;
+  // Live dashboard stats (attempts + progress activity, no invented data)
+  // Continue priority: the learner's active section while it is still
+  // incomplete, else the deterministic resolver (last-viewed → next eligible)
+  const continueSection = manifest
+    ? ((activeSection && activeSection.status === 'published' && !progressMap[activeSection.id]?.completed)
+      ? activeSection
+      : resolveContinueSection(manifest, progressMap))
+    : null;
+  const recentAccuracy = computeRecentAccuracy(quizAttempts);
+  const weakTopics = getWeakSections(progressMap).map((weak) => ({
+    ...weak,
+    title: findSectionInManifest(manifest, weak.sectionId)?.title || weak.sectionId,
+  }));
+  const activityDays = getRecentActivityDays(quizAttempts, progressMap, 7);
 
   if (loading && !manifest) {
     return (
@@ -316,13 +459,13 @@ export default function App() {
     );
   }
 
+  const isTopLevel = NAV_VISIBLE_VIEWS.includes(viewState);
+
   return (
     <div className="app-container">
       {/* Top Header shown on Home views */}
-      {(viewState === 'home') && (
+      {isTopLevel && (
         <Header
-          activeTab={activeTab}
-          onTabChange={(tab) => { sound.playTap(); setActiveTab(tab); }}
           completedCount={completedCount}
           streak={streak}
           onOpenSettings={() => setShowSettings(true)}
@@ -331,38 +474,40 @@ export default function App() {
 
       {/* Main Content Router */}
       <main className="app-content">
-        {viewState === 'home' && activeTab === 'assignment' && (
-          <>
-            {homeSection ? (
-              <DailyAssignmentCard
-                section={homeSection}
-                progress={progressMap[homeSection.id]}
-                onStartLesson={handleStartLesson}
-                onStartQuiz={handleStartQuiz}
-                onOpenScenario={handleOpenScenario}
-                onOpenHistory={() => setShowHistory(true)}
-              />
-            ) : (
-              <div className="curriculum-completed-card animate-slide-up">
-                <div className="owl-trophy-badge">🏆</div>
-                <h2>Curriculum Completed!</h2>
-                <p>You have mastered all published technical interview sections in the curriculum.</p>
-                <button 
-                  className="btn btn-secondary mt-3"
-                  onClick={() => { sound.playTap(); setActiveTab('curriculum'); }}
-                >
-                  Explore Course Tracks
-                </button>
-              </div>
-            )}
-          </>
+        {viewState === 'home' && (
+          <HomeScreen
+            manifest={manifest}
+            progressMap={progressMap}
+            streak={streak}
+            activityDays={activityDays}
+            attempts={quizAttempts}
+            currentLesson={currentLesson}
+            continueSection={continueSection}
+            weakTopics={weakTopics}
+            recentAccuracy={recentAccuracy}
+            onOpenSection={(section) => openSection(section, 'lesson')}
+            onOpenProgress={() => go('progress')}
+            onOpenTracks={() => go('curriculum')}
+            onOpenTopic={handleSelectTopic}
+          />
         )}
 
-        {viewState === 'home' && activeTab === 'curriculum' && (
+        {viewState === 'curriculum' && (
           <TracksOverview
             manifest={manifest}
             progressMap={progressMap}
             onSelectTopic={handleSelectTopic}
+            onSelectSection={openSection}
+            activeSectionId={activeSection?.id}
+          />
+        )}
+
+        {viewState === 'progress' && (
+          <ProgressScreen
+            manifest={manifest}
+            progressMap={progressMap}
+            attempts={quizAttempts}
+            onOpenSection={(section) => openSection(section, 'lesson')}
           />
         )}
 
@@ -371,23 +516,25 @@ export default function App() {
             topic={selectedTopic}
             progressMap={progressMap}
             onSelectSection={handleSelectSectionFromPath}
-            onBackToTracks={() => setViewState('home')}
+            onBackToTracks={() => { sound.playTap(); go('curriculum'); }}
           />
         )}
 
         {viewState === 'lesson' && (
           <LessonView
             lesson={currentLesson}
-            onBack={() => { sound.playTap(); setViewState(selectedTopic ? 'topic-path' : 'home'); }}
-            onStartQuiz={() => { sound.playTap(); setViewState('quiz'); }}
+            sectionId={activeSection?.id || currentLesson?.sectionId}
+            onBack={() => { sound.playTap(); go(selectedTopic && selectedTopic.id === activeSection?.topicId ? 'topic-path' : 'curriculum'); }}
+            onStartQuiz={() => { sound.playTap(); go('quiz'); }}
           />
         )}
 
         {viewState === 'quiz' && (
           <QuizExperience
+            sectionId={activeSection?.id || currentLesson?.sectionId}
             questions={currentLesson?.questions || []}
             onFinishQuiz={handleFinishQuiz}
-            onExit={() => { sound.playTap(); setViewState(selectedTopic ? 'topic-path' : 'home'); }}
+            onExit={() => { sound.playTap(); go(selectedTopic && selectedTopic.id === activeSection?.topicId ? 'topic-path' : 'curriculum'); }}
           />
         )}
 
@@ -396,8 +543,8 @@ export default function App() {
             score={lastQuizResult?.score || 0}
             total={lastQuizResult?.total || (currentLesson?.questions?.length || 8)}
             records={lastQuizResult?.records || []}
-            onRetakeQuiz={() => { sound.playTap(); setViewState('quiz'); }}
-            onReviewLesson={() => { sound.playTap(); setViewState('lesson'); }}
+            onRetakeQuiz={() => { sound.playTap(); go('quiz'); }}
+            onReviewLesson={() => { sound.playTap(); go('lesson'); }}
             onDone={handleDoneSummary}
           />
         )}
@@ -405,20 +552,18 @@ export default function App() {
         {viewState === 'scenario' && (
           <InterviewScenarioView
             scenarios={currentLesson?.interviewScenarios || []}
-            onBack={() => { sound.playTap(); setViewState('lesson'); }}
+            onBack={() => { sound.playTap(); go('lesson'); }}
           />
         )}
       </main>
 
-      {/* Audit Trail History Modal */}
-      {showHistory && (
-        <HistoryModal
-          sectionId={homeSection?.id || activeSection?.id || 'index-fundamentals'}
-          sectionTitle={homeSection?.title || activeSection?.title || 'Section Quiz'}
-          onClose={() => setShowHistory(false)}
-          onRetakeQuiz={() => {
-            setShowHistory(false);
-            setViewState('quiz');
+      {/* Primary bottom navigation (hidden during deep flows) */}
+      {isTopLevel && (
+        <BottomNav
+          currentView={viewState}
+          onViewChange={(view) => {
+            setActiveSection((prev) => prev ?? resolveContinueSection(manifest, progressMap));
+            go(view);
           }}
         />
       )}
@@ -440,34 +585,6 @@ export default function App() {
 
         .app-content {
           flex: 1;
-        }
-
-        .curriculum-completed-card {
-          margin: 30px 16px;
-          padding: 40px 20px;
-          background: #ffffff;
-          border: 2px solid #a7f3d0;
-          border-radius: var(--radius-lg);
-          text-align: center;
-          box-shadow: 0 4px 0 #a7f3d0;
-        }
-
-        .owl-trophy-badge {
-          font-size: 3.5rem;
-          margin-bottom: 12px;
-        }
-
-        .curriculum-completed-card h2 {
-          font-size: 1.5rem;
-          font-weight: 900;
-          color: #065f46;
-          margin-bottom: 6px;
-        }
-
-        .curriculum-completed-card p {
-          font-size: 0.92rem;
-          color: #047857;
-          line-height: 1.5;
         }
       `}</style>
     </div>

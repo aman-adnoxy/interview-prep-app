@@ -1,11 +1,5 @@
 import React from 'react';
 import { 
-  Database, 
-  Server, 
-  Layers, 
-  Binary, 
-  Cpu, 
-  Bot, 
   ArrowLeft, 
   Check, 
   Lock, 
@@ -14,51 +8,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { sound } from '../services/sound';
-
-const TOPIC_CONFIGS = {
-  databases: {
-    icon: Database,
-    color: '#58cc02',
-    colorDark: '#46a302',
-    bannerBg: '#ecfdf5',
-    titleColor: '#166534'
-  },
-  backend: {
-    icon: Server,
-    color: '#1cb0f6',
-    colorDark: '#1899d6',
-    bannerBg: '#eff6ff',
-    titleColor: '#1e40af'
-  },
-  'oop-api-design': {
-    icon: Layers,
-    color: '#af67e9',
-    colorDark: '#9047cf',
-    bannerBg: '#f3e8ff',
-    titleColor: '#6b21a8'
-  },
-  dsa: {
-    icon: Binary,
-    color: '#ffc800',
-    colorDark: '#e5a400',
-    bannerBg: '#fefce8',
-    titleColor: '#854d0e'
-  },
-  'system-design': {
-    icon: Cpu,
-    color: '#06b6d4',
-    colorDark: '#0891b2',
-    bannerBg: '#ecfeff',
-    titleColor: '#155e75'
-  },
-  'ai-engineering': {
-    icon: Bot,
-    color: '#ff4b4b',
-    colorDark: '#ea2b2b',
-    bannerBg: '#fff1f2',
-    titleColor: '#9f1239'
-  }
-};
+import { getTopicTheme } from '../topicThemes';
 
 export default function TopicLearningPath({
   topic,
@@ -66,7 +16,7 @@ export default function TopicLearningPath({
   onSelectSection,
   onBackToTracks
 }) {
-  const config = TOPIC_CONFIGS[topic?.id] || TOPIC_CONFIGS.databases;
+  const config = getTopicTheme(topic?.id);
   const Icon = config.icon;
   const sections = topic?.sections || [];
 
@@ -79,7 +29,7 @@ export default function TopicLearningPath({
   return (
     <div className="duo-path-page animate-slide-up">
       {/* Unit Header Banner */}
-      <header className="unit-header-box" style={{ background: config.bannerBg, borderColor: config.color }}>
+      <header className="unit-header-box" style={{ background: config.bg, borderColor: config.color }}>
         <div className="unit-top-actions">
           <button 
             className="btn-back-tracks" 

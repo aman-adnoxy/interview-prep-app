@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -11,11 +11,43 @@ import ContentBlock from './ContentBlock';
 
 export default function LessonView({
   lesson,
+  sectionId,
   onBack,
   onStartQuiz
 }) {
-  const [conceptIndex, setConceptIndex] = useState(0);
-  const [viewMode, setViewMode] = useState('concept'); // 'concept' | 'tradeoffs' | 'revision'
+  // Lesson reading position is persisted per section so a refresh
+  // resumes on the same page/concept, not from the beginning
+  const lessonStorageKey = sectionId ? `interview_prep_lesson_${sectionId}` : null;
+  const [persisted] = useState(() => {
+    if (!lessonStorageKey) return null;
+    try {
+      const stored = JSON.parse(localStorage.getItem(lessonStorageKey) || 'null');
+      return stored && typeof stored === 'object' ? stored : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const concepts = lesson?.concepts || [];
+  const totalConcepts = concepts.length;
+
+  const clampConceptIndex = (index) => Math.max(0, Math.min(index, totalConcepts - 1));
+
+  const [conceptIndex, setConceptIndex] = useState(
+    () => (persisted && Number.isInteger(persisted.conceptIndex) ? clampConceptIndex(persisted.conceptIndex) : 0)
+  );
+  const [viewMode, setViewMode] = useState(() =>
+    ['concept', 'tradeoffs', 'revision'].includes(persisted?.viewMode) ? persisted.viewMode : 'concept'
+  );
+
+  useEffect(() => {
+    if (!lessonStorageKey) return;
+    try {
+      localStorage.setItem(lessonStorageKey, JSON.stringify({ conceptIndex, viewMode }));
+    } catch {
+      // localStorage unavailable; in-session state still works
+    }
+  }, [lessonStorageKey, conceptIndex, viewMode]);
 
   if (!lesson) {
     return (
@@ -26,9 +58,7 @@ export default function LessonView({
     );
   }
 
-  const concepts = lesson.concepts || [];
   const currentConcept = concepts[conceptIndex] || concepts[0];
-  const totalConcepts = concepts.length;
   const isFirst = conceptIndex === 0;
   const isLast = conceptIndex === totalConcepts - 1;
 
@@ -148,14 +178,36 @@ export default function LessonView({
               </div>
             </div>
 
-            <div className="tradeoff-cards-list">
-              {lesson.tradeoffsAndPitfalls?.map((item, idx) => (
-                <div key={idx} className="tradeoff-box">
-                  <span className="tradeoff-num">{idx + 1}</span>
-                  <ContentBlock block={item} />
+            {(lesson.tradeoffsAndPitfalls?.length || 0) > 0 ? (
+              <div className="tradeoff-cards-list">
+                {lesson.tradeoffsAndPitfalls.map((item, idx) => (
+                  <div key={idx} className="tradeoff-box">
+                    <div className="tradeoff-top-row">
+                      <div className="tradeoff-marker">
+                        <span className="tradeoff-num">{idx + 1}</span>
+                      </div>
+                      <span className="tradeoff-eyebrow">
+                        {idx === lesson.tradeoffsAndPitfalls.length - 1
+                          ? 'FINAL CONSIDERATION'
+                          : `PITFALL ${idx + 1}`}
+                      </span>
+                    </div>
+                    <div className="tradeoff-body">
+                      <ContentBlock block={item} />
+                    </div>
+                  </div>
+                ))}
+                <div className="tradeoff-footnote">
+                  <AlertTriangle size={15} />
+                  <span>Interviewers probe trade-offs hardest here — know both sides of each choice.</span>
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className="tradeoff-empty">
+                <AlertTriangle size={34} />
+                <p>No trade-off notes published for this section yet.</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -172,14 +224,38 @@ export default function LessonView({
               </div>
             </div>
 
-            <div className="revision-cards-list">
-              {lesson.revisionSheet?.map((note, idx) => (
-                <div key={idx} className="revision-box">
-                  <div className="rev-check">✓</div>
-                  <ContentBlock block={note} />
+            {(lesson.revisionSheet?.length || 0) > 0 ? (
+              <>
+                <div className="revision-progress-strip">
+                  <Bookmark size={13} />
+                  <span>{lesson.revisionSheet.length} high-yield notes · ~{lesson.estimatedMinutes || 5} min full review</span>
                 </div>
-              ))}
-            </div>
+                <div className="revision-cards-list">
+                  {lesson.revisionSheet.map((note, idx) => (
+                    <div key={idx} className="revision-box">
+                      <div className="rev-check-circle">
+                        <span className="rev-check">✓</span>
+                      </div>
+                      <div className="revision-body">
+                        <span className="revision-eyebrow">TAKEAWAY {idx + 1}</span>
+                        <ContentBlock block={note} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  className="revision-quiz-cta btn btn-primary"
+                  onClick={() => { sound.playTap(); onStartQuiz(); }}
+                >
+                  Ready? Test yourself
+                </button>
+              </>
+            ) : (
+              <div className="tradeoff-empty blue">
+                <Bookmark size={34} />
+                <p>No revision notes published for this section yet.</p>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -511,51 +587,200 @@ export default function LessonView({
           gap: 12px;
         }
 
+        .tradeoff-body {
+          min-width: 0;
+        }
+
+        /* Flatten content-block chrome inside tradeoff/revision cards —
+           the wrapper card already carries the border/shadow */
+        .tradeoff-body .content-callout,
+        .revision-body .content-callout {
+          background: transparent;
+          border: none;
+          border-left: none;
+          padding: 0 8px 0 12px;
+          margin: 0;
+          border-radius: 0;
+        }
+        .tradeoff-body .content-paragraph,
+        .tradeoff-body .content-callout p,
+        .revision-body .content-paragraph,
+        .revision-body .content-callout p {
+          margin: 0 0 8px 0;
+          font-size: 0.9rem;
+          line-height: 1.6;
+        }
+        .tradeoff-body .content-callout strong,
+        .revision-body .content-callout strong {
+          font-size: 0.92rem;
+          margin-bottom: 4px;
+        }
+        .tradeoff-body .content-paragraph:last-child,
+        .tradeoff-body .content-callout p:last-child,
+        .revision-body .content-paragraph:last-child,
+        .revision-body .content-callout p:last-child {
+          margin-bottom: 0;
+        }
+        /* Subheadings & rich blocks (code/table/steps) keep their look,
+           just with tightened spacing inside the wrapper card */
+        .tradeoff-body .content-subheading,
+        .revision-body .content-subheading {
+          margin: 12px 0 4px 0;
+          font-size: 0.95rem;
+        }
+        .tradeoff-body .content-callout,
+        .revision-body .content-callout {
+          border-left: none;
+        }
+        .tradeoff-body > .content-code,
+        .tradeoff-body > .content-table-wrap,
+        .tradeoff-body > .content-steps,
+        .revision-body > .content-code,
+        .revision-body > .content-table-wrap,
+        .revision-body > .content-steps {
+          margin: 10px 0 0 0;
+        }
+
         .tradeoff-box {
           background: #ffffff;
           border: 2px solid #fecaca;
-          border-left: 6px solid var(--duo-red);
           border-radius: var(--radius-md);
-          padding: 16px;
-          display: flex;
-          gap: 12px;
+          padding: 14px 16px 16px 16px;
           box-shadow: 0 4px 0 #fee2e2;
+          overflow: hidden;
+        }
+
+        .tradeoff-top-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 10px;
+        }
+
+        .tradeoff-marker {
+          width: 32px;
+          height: 32px;
+          border-radius: 10px;
+          background: var(--duo-red-light);
+          color: var(--duo-red);
+          border: 2px solid #fecaca;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
         }
 
         .tradeoff-num {
           font-weight: 900;
-          color: var(--duo-red);
           font-size: 0.95rem;
         }
 
-        .tradeoff-text {
-          font-size: 0.92rem;
-          color: #334155;
-          line-height: 1.55;
+        .tradeoff-eyebrow {
+          font-size: 0.66rem;
+          font-weight: 900;
+          letter-spacing: 0.08em;
+          color: var(--duo-red);
+          text-transform: uppercase;
         }
+
+        .tradeoff-footnote {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 4px;
+          padding: 12px 14px;
+          background: #fef2f2;
+          border: 1.5px dashed #fca5a5;
+          border-radius: var(--radius-md);
+          font-size: 0.78rem;
+          font-weight: 700;
+          color: #b91c1c;
+          line-height: 1.4;
+        }
+        .tradeoff-footnote svg { flex-shrink: 0; }
+
+        .tradeoff-empty {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+          padding: 44px 20px;
+          text-align: center;
+          color: #f87171;
+          background: #fff5f5;
+          border: 2px dashed #fecaca;
+          border-radius: var(--radius-lg);
+        }
+        .tradeoff-empty p { font-size: 0.88rem; color: #64748b; font-weight: 700; max-width: 260px; }
+        .tradeoff-empty.blue { color: #60a5fa; background: #eff6ff; border-color: #bfdbfe; }
+
+        .revision-progress-strip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          align-self: flex-start;
+          margin-bottom: 12px;
+          padding: 5px 11px;
+          background: var(--duo-blue-light);
+          border: 1.5px solid #bfdbfe;
+          border-radius: var(--radius-full);
+          font-size: 0.7rem;
+          font-weight: 800;
+          color: var(--duo-blue-dark);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .revision-progress-strip svg { flex-shrink: 0; }
 
         .revision-box {
           background: #ffffff;
           border: 2px solid #e2e8f0;
           border-radius: var(--radius-md);
-          padding: 16px;
+          padding: 14px 16px 16px 16px;
           display: flex;
           align-items: flex-start;
           gap: 12px;
           box-shadow: 0 4px 0 #e2e8f0;
         }
 
-        .rev-check {
+        .rev-check-circle {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: var(--duo-green-bg);
           color: var(--duo-green-dark);
-          font-weight: 900;
-          font-size: 1.1rem;
+          border: 2px solid #a7f3d0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           flex-shrink: 0;
+          margin-top: 2px;
         }
 
-        .revision-text {
-          font-size: 0.92rem;
-          color: #334155;
-          line-height: 1.55;
+        .rev-check {
+          font-weight: 900;
+          font-size: 0.95rem;
+        }
+
+        .revision-body {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .revision-eyebrow {
+          font-size: 0.66rem;
+          font-weight: 900;
+          letter-spacing: 0.08em;
+          color: var(--duo-green-dark);
+          text-transform: uppercase;
+        }
+
+        .revision-quiz-cta {
+          width: 100%;
+          margin-top: 16px;
         }
 
         /* Footer */

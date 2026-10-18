@@ -1,0 +1,27 @@
+.attempt-history-stack{display:flex;flex-direction:column;gap:12px}
+.attempt-history-empty{text-align:center;padding:50px 20px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.attempt-history-empty .empty-icon{color:#cbd5e1;margin-bottom:8px}
+.attempt-history-empty h3{font-size:1.2rem;font-weight:900;color:#1e293b}
+.attempt-history-empty p{font-size:.88rem;color:#64748b;line-height:1.45;max-width:300px}
+.attempt-card{background:#ffffff;border:2px solid #e2e8f0;border-radius:var(--radius-md);box-shadow:0 3px 0 #e2e8f0;overflow:hidden}
+.attempt-top-row{padding:14px 16px;display:flex;align-items:center;gap:14px;cursor:pointer}
+.score-circle{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.86rem}
+.score-circle.passed{background:var(--duo-green-bg);color:var(--duo-green-dark);border:2px solid #a7f3d0}
+.score-circle.failed{background:var(--duo-red-light);color:var(--duo-red-dark);border:2px solid #fecaca}
+.attempt-badge-col{flex-shrink:0}
+.attempt-info-col{flex:1;min-width:0}
+.attempt-number{font-size:.95rem;font-weight:800;color:#1e293b;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.attempt-section-chip{font-size:.68rem;font-weight:800;color:#475569;background:#f1f5f9;border:1px solid #e2e8f0;padding:2px 8px;border-radius:var(--radius-full);text-transform:uppercase;letter-spacing:.04em}
+.attempt-timestamp{display:flex;align-items:center;gap:5px;font-size:.74rem;color:#94a3b8;font-weight:700;margin-top:2px}
+.attempt-expand-icon{color:#94a3b8}
+.attempt-details-drawer{background:#f8fafc;border-top:2px solid #e2e8f0;padding:14px 16px}
+.details-header{font-size:.72rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
+.records-list{display:flex;flex-direction:column;gap:8px}
+.rec-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:var(--radius-sm);font-size:.84rem;line-height:1.4}
+.rec-correct{background:#ecfdf5;border:1px solid #a7f3d0}
+.rec-correct .rec-status-icon{color:var(--duo-green-dark)}
+.rec-wrong{background:#fff1f2;border:1px solid #fecaca}
+.rec-wrong .rec-status-icon{color:var(--duo-red-dark)}
+.rec-status-icon{margin-top:2px;flex-shrink:0}
+.rec-prompt{color:#1e293b;margin-bottom:4px}
+.rec-takeaway{font-size:.78rem;color:#b91c1c;line-height:1.4}

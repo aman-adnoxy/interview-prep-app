@@ -1,14 +1,12 @@
 import React from 'react';
-import { 
-  Flame, 
-  Trophy, 
-  BookOpen, 
-  CheckCircle, 
+import {
+  Flame,
+  Trophy,
   Settings
 } from 'lucide-react';
 import { sound } from '../services/sound';
 
-export default function Header({ activeTab, onTabChange, completedCount = 0, streak = 0, onOpenSettings }) {
+export default function Header({ completedCount = 0, streak = 0, onOpenSettings }) {
   return (
     <header className="app-header">
       <div className="header-top">
@@ -38,8 +36,8 @@ export default function Header({ activeTab, onTabChange, completedCount = 0, str
           </div>
 
           {/* Settings button */}
-          <button 
-            className="btn-header-settings" 
+          <button
+            className="btn-header-settings"
             title="Settings & Storage"
             onClick={() => { sound.playTap(); onOpenSettings(); }}
           >
@@ -48,23 +46,6 @@ export default function Header({ activeTab, onTabChange, completedCount = 0, str
         </div>
       </div>
 
-      <nav className="header-tabs">
-        <button
-          className={`tab-btn ${activeTab === 'assignment' ? 'active' : ''}`}
-          onClick={() => { sound.playTap(); onTabChange('assignment'); }}
-        >
-          <BookOpen size={18} />
-          <span>TODAY'S LESSON</span>
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'curriculum' ? 'active' : ''}`}
-          onClick={() => { sound.playTap(); onTabChange('curriculum'); }}
-        >
-          <CheckCircle size={18} />
-          <span>CURRICULUM</span>
-        </button>
-      </nav>
-
       <style>{`
         .app-header {
           position: sticky;
@@ -72,14 +53,13 @@ export default function Header({ activeTab, onTabChange, completedCount = 0, str
           z-index: 50;
           background: #ffffff;
           border-bottom: 2px solid #e2e8f0;
-          padding: 14px 20px 0 20px;
+          padding: 12px 20px;
         }
 
         .header-top {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-bottom: 12px;
         }
 
         .brand {
@@ -166,45 +146,6 @@ export default function Header({ activeTab, onTabChange, completedCount = 0, str
           color: #1e293b;
           border-color: #cbd5e1;
           transform: translateY(-1px);
-        }
-
-        .header-tabs {
-          display: flex;
-          gap: 12px;
-          border-top: 1px solid #f1f5f9;
-        }
-
-        .tab-btn {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          background: transparent;
-          border: none;
-          color: #94a3b8;
-          font-size: 0.85rem;
-          font-weight: 900;
-          letter-spacing: 0.05em;
-          padding: 12px 0 14px 0;
-          cursor: pointer;
-          position: relative;
-          transition: all var(--transition-fast);
-        }
-
-        .tab-btn.active {
-          color: var(--duo-green-dark);
-        }
-
-        .tab-btn.active::after {
-          content: '';
-          position: absolute;
-          bottom: -2px;
-          left: 10%;
-          right: 10%;
-          height: 3px;
-          background: var(--duo-green);
-          border-radius: 3px 3px 0 0;
         }
       `}</style>
     </header>

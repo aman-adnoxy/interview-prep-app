@@ -1,6 +1,62 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import '../content-blocks.css';
-function Paragraph({block}) { return <p className="content-paragraph" style={{whiteSpace:'pre-line'}}>{block.text}</p>; }
+
+// Markdown-lite support for lesson text: "### Heading" lines and **bold**
+// inline spans (titles arrive as paragraph text in the synced content).
+const HEADING_LINE_RE = /^(#{2,6})\s+(.+?)(\s*#+)?$/;
+const BOLD_SPLIT_RE = /\*\*([^*]+)\*\*/g;
+
+function renderInline(text, keyPrefix) {
+  const segments = text.split(BOLD_SPLIT_RE);
+  return segments.map((segment, index) => (
+    index % 2 === 1
+      ? <strong key={`${keyPrefix}-b${index}`}>{segment}</strong>
+      : segment
+  ));
+}
+
+function MarkdownText({ text }) {
+  const rendered = useMemo(() => {
+    const nodes = [];
+    const lines = String(text).split('\n');
+    let paragraphBuffer = [];
+    let headingCount = 0;
+    let paragraphCount = 0;
+
+    const flushParagraph = () => {
+      if (paragraphBuffer.length === 0) return;
+      const body = paragraphBuffer.join('\n');
+      paragraphCount += 1;
+      nodes.push(
+        <p key={`p-${paragraphCount}`} className="content-paragraph" style={{ whiteSpace: 'pre-line' }}>
+          {renderInline(body, `p${paragraphCount}`)}
+        </p>
+      );
+      paragraphBuffer = [];
+    };
+
+    for (const line of lines) {
+      const headingMatch = line.match(HEADING_LINE_RE);
+      if (headingMatch) {
+        flushParagraph();
+        headingCount += 1;
+        nodes.push(
+          <p key={`h-${headingCount}`} className="content-subheading">
+            {renderInline(headingMatch[2], `h${headingCount}`)}
+          </p>
+        );
+      } else {
+        paragraphBuffer.push(line);
+      }
+    }
+    flushParagraph();
+    return nodes;
+  }, [text]);
+
+  return <>{rendered}</>;
+}
+
+function Paragraph({block}) { return <MarkdownText text={block.text} />; }
 function Callout({block}) { return <aside className={'content-callout content-callout-'+block.kind} role="note"><strong>{block.title}</strong><p>{block.content}</p></aside>; }
 function Code({block}) { return <section className="content-code">{block.title&&<h4>{block.title}</h4>}<span className="content-code-language">{block.language}</span><pre tabIndex="0"><code>{block.source}</code></pre></section>; }
 function Table({block}) { return <section className="content-table-wrap">{block.title&&<h4>{block.title}</h4>}<div className="content-table-scroll" role="region" aria-label={block.title||'Lesson comparison table'} tabIndex="0"><table className="content-table"><thead><tr>{block.columns.map((c,i)=><th key={i} scope="col">{c}</th>)}</tr></thead><tbody>{block.rows.map((row,i)=><tr key={i}>{row.map((cell,j)=><td key={j}>{cell}</td>)}</tr>)}</tbody></table></div></section>; }
@@ -8,4 +64,5 @@ function Diagram({block}) { const root=block.nodes[0], children=block.nodes.slic
 function Steps({block}) { return <section className="content-steps"><h4>{block.title}</h4><ol>{block.steps.map(s=><li key={s.id}><strong>{s.title}</strong><p>{s.description}</p></li>)}</ol></section>; }
 function WorkedExample({block}) { return <section className="content-worked-example"><h4>Worked example</h4><p><strong>Problem:</strong> {block.problem}</p><ol>{block.reasoning.map((s,i)=><li key={i}>{s}</li>)}</ol><p><strong>Outcome:</strong> {block.outcome}</p></section>; }
 function Checkpoint({block}) { const [revealed,setRevealed]=useState(false); return <section className="content-checkpoint"><h4>Quick checkpoint</h4><p>{block.prompt}</p><button type="button" className="btn btn-secondary" onClick={()=>setRevealed(v=>!v)} aria-expanded={revealed}>{revealed?'Hide answer':'Reveal answer'}</button>{revealed&&<div className="content-checkpoint-answer"><strong>{block.answer}</strong><p>{block.explanation}</p></div>}</section>; }
+
 export default function ContentBlock({block}) { switch(block?.type) { case 'paragraph':return <Paragraph block={block}/>;case 'callout':return <Callout block={block}/>;case 'code':return <Code block={block}/>;case 'table':return <Table block={block}/>;case 'diagram':return <Diagram block={block}/>;case 'steps':return <Steps block={block}/>;case 'worked_example':return <WorkedExample block={block}/>;case 'checkpoint':return <Checkpoint block={block}/>;default:return <div className="content-block-error" role="alert">Unsupported lesson content block. Please report this lesson to the content maintainer.</div>; } }

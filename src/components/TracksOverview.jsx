@@ -1,66 +1,30 @@
-import React from 'react';
-import { 
-  Database, 
-  Server, 
-  Layers, 
-  Binary, 
-  Cpu, 
-  Bot, 
-  ChevronRight, 
-  Lock
+import React, { useState } from 'react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Lock,
+  CheckCircle2,
+  Circle,
+  PlayCircle,
+  Map
 } from 'lucide-react';
 import { sound } from '../services/sound';
+import { getTopicTheme } from '../topicThemes';
 
-const TOPIC_STYLES = {
-  databases: {
-    icon: Database,
-    color: '#58cc02',
-    colorDark: '#46a302',
-    bg: '#ecfdf5',
-    badge: 'Storage & Querying'
-  },
-  backend: {
-    icon: Server,
-    color: '#1cb0f6',
-    colorDark: '#1899d6',
-    bg: '#eff6ff',
-    badge: 'APIs & Microservices'
-  },
-  'oop-api-design': {
-    icon: Layers,
-    color: '#af67e9',
-    colorDark: '#9047cf',
-    bg: '#f3e8ff',
-    badge: 'OOP & Patterns'
-  },
-  dsa: {
-    icon: Binary,
-    color: '#ffc800',
-    colorDark: '#e5a400',
-    bg: '#fefce8',
-    badge: 'Algorithms & Structures'
-  },
-  'system-design': {
-    icon: Cpu,
-    color: '#06b6d4',
-    colorDark: '#0891b2',
-    bg: '#ecfeff',
-    badge: 'Distributed Architecture'
-  },
-  'ai-engineering': {
-    icon: Bot,
-    color: '#ff4b4b',
-    colorDark: '#ea2b2b',
-    bg: '#fff1f2',
-    badge: 'RAG & AI Agents'
-  }
-};
-
+/**
+ * Curriculum tab: one card per track. Tapping a card expands it inline to
+ * show that track's module (section) list; a "PATH" chip opens the classic
+ * topic learning path view.
+ */
 export default function TracksOverview({
   manifest,
   progressMap = {},
-  onSelectTopic
+  onSelectTopic,
+  onSelectSection,
+  activeSectionId
 }) {
+  const [expandedTopicId, setExpandedTopicId] = useState(null);
+
   if (!manifest || !manifest.topics) {
     return <div className="p-6 text-center">Loading curriculum topics...</div>;
   }
@@ -68,63 +32,116 @@ export default function TracksOverview({
   return (
     <div className="tracks-page-container animate-slide-up">
       <div className="tracks-hero">
-        <h2 className="hero-title">Choose a Course</h2>
+        <h2 className="hero-title">Curriculum</h2>
         <p className="hero-sub">
-          Select a domain to start its step-by-step interview curriculum.
+          Tap a track to see its modules. Complete a knowledge check to master a section.
         </p>
       </div>
 
       <div className="topics-cards-list">
         {manifest.topics.map((topic, index) => {
-          const style = TOPIC_STYLES[topic.id] || TOPIC_STYLES.databases;
+          const style = getTopicTheme(topic.id);
           const Icon = style.icon;
           const sections = topic.sections || [];
-          const hasContent = sections.length > 0;
+          const published = sections.filter((s) => s.status === 'published');
+          const hasContent = published.length > 0;
 
-          const completedCount = sections.filter((s) => progressMap[s.id]?.completed).length;
-          const totalCount = sections.length;
-          const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+          const completedCount = published.filter((s) => progressMap[s.id]?.completed).length;
+          const percent = hasContent
+            ? Math.round((completedCount / published.length) * 100)
+            : 0;
+          const isExpanded = expandedTopicId === topic.id;
+
+          const toggleExpand = () => {
+            sound.playTap();
+            setExpandedTopicId(isExpanded ? null : topic.id);
+          };
 
           return (
-            <div
-              key={topic.id}
-              className={`topic-card ${!hasContent ? 'locked' : ''}`}
-              onClick={() => {
-                sound.playTap();
-                onSelectTopic(topic);
-              }}
-              style={{ '--theme-c': style.color, '--theme-dark': style.colorDark }}
-            >
-              <div className="topic-icon-wrap" style={{ background: style.bg, color: style.colorDark }}>
-                <Icon size={26} />
-              </div>
-
-              <div className="topic-content">
-                <div className="topic-badge-row">
-                  <span className="topic-badge" style={{ color: style.colorDark }}>{style.badge}</span>
-                  <span className="topic-num">Track {index + 1}</span>
+            <div key={topic.id} className={`topic-card-outer ${!hasContent ? 'locked' : ''}`}>
+              <div
+                role="button"
+                tabIndex={0}
+                className={`topic-card ${isExpanded ? 'expanded' : ''}`}
+                onClick={toggleExpand}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(); } }}
+                aria-expanded={isExpanded}
+                style={{ '--theme-c': style.color, '--theme-dark': style.colorDark }}
+              >
+                <div className="topic-icon-wrap" style={{ background: style.bg, color: style.colorDark }}>
+                  <Icon size={26} />
                 </div>
-                <h3 className="topic-title">{topic.title}</h3>
-                <p className="topic-desc">{topic.description}</p>
 
-                {hasContent ? (
-                  <div className="progress-container">
-                    <div className="track-bar">
-                      <div className="track-fill" style={{ width: `${Math.max(percent, 8)}%`, background: style.color }}></div>
+                <div className="topic-content">
+                  <div className="topic-badge-row">
+                    <span className="topic-badge" style={{ color: style.colorDark }}>{style.badge}</span>
+                    <span className="topic-num">Track {index + 1}</span>
+                  </div>
+                  <h3 className="topic-title">{topic.title}</h3>
+
+                  {hasContent ? (
+                    <div className="progress-container">
+                      <div className="track-bar">
+                        <div className="track-fill" style={{ width: `${Math.max(percent, 8)}%`, background: style.color }}></div>
+                      </div>
+                      <span className="progress-text">{completedCount}/{published.length} Sections</span>
                     </div>
-                    <span className="progress-text">{completedCount}/{totalCount} Sections</span>
-                  </div>
-                ) : (
-                  <div className="locked-pill">
-                    <Lock size={13} />
-                    <span>Launching soon</span>
-                  </div>
-                )}
+                  ) : (
+                    <div className="locked-pill">
+                      <Lock size={13} />
+                      <span>Launching soon</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="topic-chevron">
+                  {hasContent
+                    ? (isExpanded ? <ChevronDown size={22} /> : <ChevronRight size={22} />)
+                    : <Lock size={18} />}
+                </div>
               </div>
 
-              <div className="topic-chevron">
-                {hasContent ? <ChevronRight size={22} /> : <Lock size={18} />}
-              </div>
+              {/* Inline expandable module list */}
+              {isExpanded && hasContent && (
+                <div className="topic-module-list">
+                  {published.map((section) => {
+                    const prog = progressMap[section.id];
+                    const isCompleted = Boolean(prog?.completed);
+                    const isActive = activeSectionId === section.id;
+                    // Published sections are always available (unlock scope is
+                    // enforced by the path view's in-circle affordances).
+
+                    return (
+                      <div key={section.id} className="module-row">
+                        <span className={`module-status ${isCompleted ? 'done' : isActive ? 'active' : ''}`}>
+                          {isCompleted ? <CheckCircle2 size={17} /> : isActive ? <PlayCircle size={17} /> : <Circle size={17} />}
+                        </span>
+                        <button
+                          className="module-body"
+                          onClick={() => {
+                            sound.playTap();
+                            onSelectSection({ ...section, topicId: topic.id, topicTitle: topic.title }, 'lesson');
+                          }}
+                        >
+                          <span className="module-title">{section.title}</span>
+                          <span className="module-meta">
+                            {section.questionCount ? `${section.questionCount} knowledge checks` : 'Knowledge check'}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  <button
+                    className="path-cta"
+                    onClick={() => { sound.playTap(); onSelectTopic(topic); }}
+                  >
+                    <Map size={15} />
+                    <span>Open {topic.title} path</span>
+                    <ChevronRight size={15} />
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -132,15 +149,13 @@ export default function TracksOverview({
 
       <style>{`
         .tracks-page-container {
-          padding: 20px 16px 60px 16px;
+          padding: 20px 16px 110px 16px;
           display: flex;
           flex-direction: column;
           gap: 18px;
         }
 
-        .tracks-hero {
-          margin-bottom: 4px;
-        }
+        .tracks-hero { margin-bottom: 4px; }
 
         .hero-title {
           font-size: 1.45rem;
@@ -160,6 +175,12 @@ export default function TracksOverview({
           gap: 14px;
         }
 
+        .topic-card-outer {
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+        }
+
         .topic-card {
           background: #ffffff;
           border: 2px solid #e2e8f0;
@@ -171,22 +192,14 @@ export default function TracksOverview({
           box-shadow: 0 4px 0 #e2e8f0;
           cursor: pointer;
           transition: all 0.12s ease;
+          position: relative;
         }
 
         .topic-card:hover {
           border-color: var(--theme-c);
-          transform: translateY(-2px);
-          box-shadow: 0 6px 0 #e2e8f0;
         }
 
-        .topic-card:active {
-          transform: translateY(4px);
-          box-shadow: 0 0 0 #e2e8f0;
-        }
-
-        .topic-card.locked {
-          opacity: 0.8;
-        }
+        .topic-card.locked { opacity: 0.8; }
 
         .topic-icon-wrap {
           width: 52px;
@@ -199,9 +212,7 @@ export default function TracksOverview({
           border: 2px solid rgba(0, 0, 0, 0.05);
         }
 
-        .topic-content {
-          flex: 1;
-        }
+        .topic-content { flex: 1; }
 
         .topic-badge-row {
           display: flex;
@@ -229,13 +240,6 @@ export default function TracksOverview({
           color: #1e293b;
           line-height: 1.25;
           margin-bottom: 4px;
-        }
-
-        .topic-desc {
-          font-size: 0.84rem;
-          color: #64748b;
-          line-height: 1.4;
-          margin-bottom: 8px;
         }
 
         .progress-container {
@@ -275,9 +279,80 @@ export default function TracksOverview({
           border: 1px solid #e2e8f0;
         }
 
-        .topic-chevron {
+        .topic-chevron { color: #94a3b8; }
+
+        .topic-module-list {
+          margin: 6px 10px 10px 10px;
+          background: #f8fafc;
+          border: 2px solid #e2e8f0;
+          border-top: none;
+          border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+          padding: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          margin-top: -14px;
+          padding-top: 18px;
+        }
+
+        .module-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          background: #ffffff;
+          border: 1.5px solid #e2e8f0;
+          border-radius: var(--radius-md);
+          padding: 8px 12px;
+        }
+
+        .module-status { flex-shrink: 0; color: #cbd5e1; display: flex; }
+        .module-status.done { color: var(--duo-green-dark); }
+        .module-status.active { color: var(--duo-blue-dark); }
+
+        .module-body {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+          background: transparent;
+          border: none;
+          padding: 0;
+          text-align: left;
+          cursor: pointer;
+          font-family: inherit;
+          min-width: 0;
+        }
+
+        .module-title {
+          font-size: 0.88rem;
+          font-weight: 800;
+          color: #1e293b;
+        }
+
+        .module-meta {
+          font-size: 0.7rem;
+          font-weight: 700;
           color: #94a3b8;
         }
+
+        .path-cta {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 4px;
+          background: transparent;
+          border: none;
+          font-family: inherit;
+          font-size: 0.78rem;
+          font-weight: 900;
+          color: #64748b;
+          cursor: pointer;
+          padding: 6px 2px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .path-cta:hover { color: #1e293b; }
+        .path-cta span:last-child { margin-left: auto; }
       `}</style>
     </div>
   );

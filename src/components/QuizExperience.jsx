@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, 
   Check, 
@@ -11,26 +11,70 @@ import { sound } from '../services/sound';
 import { evaluateAnswer } from '../services/quiz';
 
 export default function QuizExperience({
+  sectionId,
   questions = [],
   onFinishQuiz,
   onExit
 }) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState({});
-  const [submittedStates, setSubmittedStates] = useState({});
-  const [showHint, setShowHint] = useState(false);
-  const [userAnswersRecord, setUserAnswersRecord] = useState([]);
-  const [lives, setLives] = useState(5);
+  // Mid-quiz progress is persisted per section so a refresh resumes here
+  const quizStorageKey = sectionId ? `interview_prep_quiz_${sectionId}` : null;
+  const [persisted] = useState(() => {
+    if (!quizStorageKey) return null;
+    try {
+      const stored = JSON.parse(localStorage.getItem(quizStorageKey) || 'null');
+      return stored && typeof stored === 'object' ? stored : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const totalQuestions = questions.length;
+  const clampIndex = (index) => Math.max(0, Math.min(index, Math.max(0, totalQuestions - 1)));
+
+  const [currentIndex, setCurrentIndex] = useState(
+    () => clampIndex(persisted && Number.isInteger(persisted.currentIndex) ? persisted.currentIndex : 0)
+  );
+  const [selectedAnswers, setSelectedAnswers] = useState(() => persisted?.selectedAnswers || {});
+  const [submittedStates, setSubmittedStates] = useState(() => persisted?.submittedStates || {});
+  const [showHint, setShowHint] = useState(persisted?.showHint ?? false);
+  const [userAnswersRecord, setUserAnswersRecord] = useState(() => persisted?.userAnswersRecord || []);
+  const [lives, setLives] = useState(
+    () => (persisted && Number.isInteger(persisted.lives) ? Math.max(1, persisted.lives) : 5)
+  );
+
+  useEffect(() => {
+    if (!quizStorageKey) return;
+    try {
+      localStorage.setItem(quizStorageKey, JSON.stringify({
+        currentIndex,
+        selectedAnswers,
+        submittedStates,
+        showHint,
+        userAnswersRecord,
+        lives,
+      }));
+    } catch {
+      // localStorage unavailable; the quiz still works within this session
+    }
+  }, [quizStorageKey, currentIndex, selectedAnswers, submittedStates, showHint, userAnswersRecord, lives]);
+
+  const clearPersistedQuizState = useCallback(() => {
+    if (!quizStorageKey) return;
+    try {
+      localStorage.removeItem(quizStorageKey);
+    } catch {
+      // localStorage unavailable
+    }
+  }, [quizStorageKey]);
 
   const currentQ = questions[currentIndex];
-  const totalQuestions = questions.length;
   const isLastQuestion = currentIndex === totalQuestions - 1;
 
   if (!currentQ) {
     return (
       <div className="p-6 text-center">
         <p>No questions in this section.</p>
-        <button className="btn btn-secondary mt-4" onClick={onExit}>Exit</button>
+        <button className="btn btn-secondary mt-4" onClick={handleExit}>Exit</button>
       </div>
     );
   }
@@ -107,6 +151,7 @@ export default function QuizExperience({
       setShowHint(false);
     } else {
       sound.playComplete();
+      clearPersistedQuizState();
       const finalRecord = userAnswersRecord;
       const score = finalRecord.filter((r) => r.correct).length;
       onFinishQuiz({
@@ -117,6 +162,12 @@ export default function QuizExperience({
     }
   };
 
+  const handleExit = () => {
+    clearPersistedQuizState();
+    sound.playTap();
+    onExit();
+  };
+
   const progressPercent = ((currentIndex + (isSubmitted ? 1 : 0)) / totalQuestions) * 100;
 
   return (
@@ -125,7 +176,7 @@ export default function QuizExperience({
       <header className="quiz-top-bar">
         <button 
           className="quiz-exit-btn" 
-          onClick={() => { sound.playTap(); onExit(); }}
+          onClick={handleExit}
           aria-label="Exit Quiz"
         >
           <X size={24} />
