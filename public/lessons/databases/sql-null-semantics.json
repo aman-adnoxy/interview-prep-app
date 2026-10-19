@@ -9,8 +9,7 @@
     "Predict TRUE, FALSE, and UNKNOWN for common SQL predicates.",
     "Use IS NULL, IS DISTINCT FROM, and NULL-safe join logic appropriately.",
     "Recognize NOT IN and outer-join filtering pitfalls.",
-    "Reason about nullable columns in constraints, aggregates, uniqueness and application code.",
-    "Explain null semantics, three-valued logic, and common sql pitfalls using the six-layer interview framework."
+    "Reason about nullable columns in constraints, aggregates, uniqueness and application code."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -280,11 +279,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — Real data is often incomplete: a delivery date may not be known yet, or a user may not have supplied a phone number. SQL needs a way to represent missing or unknown values without pretending they are ordinary values."
+          "text": "1. Problem and motivation — A query searches for users whose cancellation date is not yesterday, but users with no cancellation date disappear. The correct predicate depends on what NULL means for this business rule."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — NULL represents missing/unknown/not-applicable information; it is not the same as zero, an empty string, or FALSE. SQL predicates can evaluate to TRUE, FALSE, or UNKNOWN, so use IS NULL and explicit NULL-aware logic."
+          "text": "2. Definition and design choice — NULL represents missing, unknown, or not-applicable information, not an ordinary value. Predicates involving NULL can return UNKNOWN; WHERE retains only TRUE. Make the intended meaning explicit with NULL-aware logic."
         },
         {
           "type": "steps",
@@ -314,12 +313,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "`WHERE cancelled_at <> ...` does not include rows where cancelled_at is NULL. If the intended rule is 'not cancelled or not yet known to be cancelled', state that explicitly with `cancelled_at IS NULL OR cancelled_at <> ...`.",
+          "problem": "A subquery returns IDs 2, 5, and NULL. The predicate `9 NOT IN (2, 5, NULL)` evaluates to UNKNOWN, so WHERE removes the row even though ID 9 is not 2 or 5.",
           "reasoning": [
-            "Decide what NULL means in the business domain, then encode the intended behavior. COALESCE can provide a fallback for display or calculations, but a fallback should not erase meaningful uncertainty.",
-            "Check the actual query shape, data distribution, concurrency, and database-engine behavior before generalizing the result."
+            "One NULL in a NOT IN result can make expected non-matching rows disappear because the comparison cannot prove the result is TRUE.",
+            "NOT EXISTS is often safer for an anti-join, but decide what should happen if the outer key itself is NULL.",
+            "In PostgreSQL, CHECK constraints accept UNKNOWN; use NOT NULL separately when a value is required."
           ],
-          "outcome": "Decide what NULL means in the business domain, then encode the intended behavior. COALESCE can provide a fallback for display or calculations, but a fallback should not erase meaningful uncertainty."
+          "outcome": "Test predicates for TRUE, FALSE, and UNKNOWN, decide what missing values mean in the domain, and use NULL-safe predicates deliberately."
         },
         {
           "type": "callout",

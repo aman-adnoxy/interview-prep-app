@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import BottomNav from './components/BottomNav';
 import HomeScreen from './components/HomeScreen';
@@ -214,6 +214,17 @@ export default function App() {
         setActiveSection(startedSection);
 
         if (restorable) setViewState(nav.view);
+
+        // Seed the browser history entry for the initial view so the very
+        // first back press pops an in-app snapshot instead of exiting
+        const initialSnapshot = restorable && nav
+          ? { view: nav.view, topicId: nav.topicId, sectionId: nav.sectionId, lessonId: nav.lessonId }
+          : { view: 'home', sectionId: startedSection?.id, lessonId: startedSection?.lessonId };
+        try {
+          window.history.replaceState(initialSnapshot, '');
+        } catch {
+          // history unavailable; back button then simply exits as before
+        }
       } catch (err) {
         console.error('Initialization error:', err);
         setError('Failed to load curriculum manifest. Please verify your connection.');
@@ -249,16 +260,99 @@ export default function App() {
     }
   };
 
-  // Central navigation helper: persists the view so refresh resumes here
+  // Build a restorable snapshot of a navigation target (also used by popstate)
+  const buildSnapshot = (view, extra = {}) => ({
+    view,
+    topicId: extra.topicId ?? (view === 'topic-path' ? selectedTopic?.id : undefined),
+    sectionId: extra.sectionId ?? activeSection?.id,
+    lessonId: extra.lessonId ?? activeSection?.lessonId,
+  });
+
+  // Central navigation helper: persists the view AND pushes a browser history
+  // entry so the hardware/browser back button navigates in-app instead of
+  // minimizing/leaving the app
   const go = (view, extra = {}) => {
-    saveNavState({
-      view,
-      topicId: extra.topicId ?? (view === 'topic-path' ? selectedTopic?.id : undefined),
-      sectionId: extra.sectionId ?? activeSection?.id,
-      lessonId: extra.lessonId ?? activeSection?.lessonId,
-    });
+    const snapshot = buildSnapshot(view, extra);
+    saveNavState(snapshot);
+    try {
+      window.history.pushState(snapshot, '');
+    } catch {
+      // history unavailable in some embeds; in-session navigation still works
+    }
     setViewState(view);
   };
+
+  // Explicit back affordances pop the history stack (popstate restores the
+  // previous in-app view). Falls back to home when there is nothing to pop.
+  const goBack = () => {
+    sound.playTap();
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      go('home');
+    }
+  };
+
+  // popstate restore: the hardware/browser back button lands on the previous
+  // in-app history entry. Kept in a ref so it always reads fresh state without
+  // re-subscribing the listener.
+  const popRestoreRef = useRef(() => {});
+  popRestoreRef.current = async (event) => {
+    const snapshot = event?.state;
+    if (!snapshot?.view) {
+      // Entry before any of ours (e.g. browser start page): treat as home
+      setViewState('home');
+      return;
+    }
+    saveNavState(snapshot);
+    const { view, topicId, sectionId, lessonId } = snapshot;
+
+    if (manifest && view === 'topic-path') {
+      const topic = findTopicInManifest(manifest, topicId);
+      if (topic) setSelectedTopic(topic);
+      setViewState('topic-path');
+      return;
+    }
+
+    if (manifest && ['lesson', 'quiz', 'scenario', 'summary'].includes(view) && sectionId) {
+      const section = findSectionInManifest(manifest, sectionId);
+      if (section) {
+        setActiveSection(section);
+        const wantLessonId = section.lessonId || section.id || lessonId;
+        if (!currentLesson || (currentLesson.id !== lessonId && currentLesson.id !== wantLessonId)) {
+          try {
+            setCurrentLesson(await fetchLesson(wantLessonId));
+          } catch (err) {
+            console.error('Failed to restore lesson content on back navigation', err);
+          }
+        }
+        if (view === 'summary') {
+          try {
+            const storedResult = JSON.parse(localStorage.getItem(RESULT_KEY) || 'null');
+            if (storedResult && typeof storedResult.score === 'number') {
+              setLastQuizResult(storedResult);
+            } else {
+              setViewState('home');
+              return;
+            }
+          } catch {
+            setViewState('home');
+            return;
+          }
+        }
+        setViewState(view);
+        return;
+      }
+    }
+
+    setViewState(view);
+  };
+
+  useEffect(() => {
+    const handlePop = (event) => { popRestoreRef.current(event); };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
 
   // Opens a section, marks it as the learner's current lesson, and navigates
   const openSection = async (section, view) => {
@@ -275,7 +369,13 @@ export default function App() {
       const topic = manifest?.topics?.find((t) => t.id === targetTopicId);
       return topic || prev;
     });
-    saveNavState({ view, topicId: targetTopicId, sectionId: section.id, lessonId: section.lessonId });
+    const snapshot = { view, topicId: targetTopicId, sectionId: section.id, lessonId: section.lessonId };
+    saveNavState(snapshot);
+    try {
+      window.history.pushState(snapshot, '');
+    } catch {
+      // history unavailable; in-session navigation still works
+    }
     await loadSectionContent(section);
     setViewState(view);
   };
@@ -283,7 +383,13 @@ export default function App() {
   const handleSelectTopic = (topic) => {
     sound.playTap();
     setSelectedTopic(topic);
-    saveNavState({ view: 'topic-path', topicId: topic.id });
+    const snapshot = { view: 'topic-path', topicId: topic.id };
+    saveNavState(snapshot);
+    try {
+      window.history.pushState(snapshot, '');
+    } catch {
+      // history unavailable; in-session navigation still works
+    }
     setViewState('topic-path');
   };
 
@@ -516,7 +622,7 @@ export default function App() {
             topic={selectedTopic}
             progressMap={progressMap}
             onSelectSection={handleSelectSectionFromPath}
-            onBackToTracks={() => { sound.playTap(); go('curriculum'); }}
+            onBackToTracks={() => goBack()}
           />
         )}
 
@@ -524,7 +630,7 @@ export default function App() {
           <LessonView
             lesson={currentLesson}
             sectionId={activeSection?.id || currentLesson?.sectionId}
-            onBack={() => { sound.playTap(); go(selectedTopic && selectedTopic.id === activeSection?.topicId ? 'topic-path' : 'curriculum'); }}
+            onBack={() => goBack()}
             onStartQuiz={() => { sound.playTap(); go('quiz'); }}
           />
         )}
@@ -534,7 +640,7 @@ export default function App() {
             sectionId={activeSection?.id || currentLesson?.sectionId}
             questions={currentLesson?.questions || []}
             onFinishQuiz={handleFinishQuiz}
-            onExit={() => { sound.playTap(); go(selectedTopic && selectedTopic.id === activeSection?.topicId ? 'topic-path' : 'curriculum'); }}
+            onExit={() => goBack()}
           />
         )}
 
@@ -552,7 +658,7 @@ export default function App() {
         {viewState === 'scenario' && (
           <InterviewScenarioView
             scenarios={currentLesson?.interviewScenarios || []}
-            onBack={() => { sound.playTap(); go('lesson'); }}
+            onBack={() => goBack()}
           />
         )}
       </main>

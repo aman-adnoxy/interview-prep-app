@@ -9,8 +9,7 @@
     "Explain update, insert and delete anomalies caused by redundant facts.",
     "Apply 1NF, 2NF and 3NF as practical dependency checks.",
     "Choose between normalization and deliberate denormalization.",
-    "Design constraints and indexes that support the intended access patterns.",
-    "Explain database schema design, normalization (1nf–3nf), and denormalization using the six-layer interview framework."
+    "Design constraints and indexes that support the intended access patterns."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -322,11 +321,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — When the same fact is copied into multiple rows, one update can change only some copies. These update, insert, and delete anomalies are data-modeling problems, not merely messy code."
+          "text": "1. Problem and motivation — Copying the same customer address into many rows makes updates inconsistent. But an order may need to preserve the address or product name that was true when the purchase happened."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — Normalization separates facts according to their dependencies so each fact has an appropriate home. Denormalization deliberately duplicates or precomputes data when measured read patterns justify the added consistency work."
+          "text": "2. Definition and design choice — Normalization gives each current fact an authoritative home according to its dependencies. Denormalization deliberately duplicates or precomputes data for a measured access benefit; historical snapshots are separate facts when they represent the past."
         },
         {
           "type": "steps",
@@ -356,12 +355,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "If every order row stores the product name, renaming a product requires updating many historical orders and can leave inconsistent copies. A normalized product table avoids that anomaly; a reporting snapshot may still intentionally store a product-name-at-purchase value because historical meaning differs from the current product name.",
+          "problem": "A product's current name changes from 'Basic Plan' to 'Starter Plan', but an old order must still show the name the customer agreed to at purchase time.",
           "reasoning": [
-            "Normalize facts that must stay consistent, but distinguish current attributes from historical snapshots. The right schema follows business meaning and invariants, not a rule to minimize joins at all costs.",
-            "Check the actual query shape, data distribution, concurrency, and database-engine behavior before generalizing the result."
+            "Store the current product name once in the product table so current updates do not need to touch every order.",
+            "Store a product-name-at-purchase snapshot on the order line when historical meaning requires it. It records a different fact at a different time.",
+            "For repeated values, ask whether two copies claim to be the same current fact or whether one intentionally records historical or precomputed information."
           ],
-          "outcome": "Normalize facts that must stay consistent, but distinguish current attributes from historical snapshots. The right schema follows business meaning and invariants, not a rule to minimize joins at all costs."
+          "outcome": "Normalize shared current attributes, preserve meaningful snapshots, and document how derived or duplicated values stay consistent."
         },
         {
           "type": "callout",

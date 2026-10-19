@@ -9,8 +9,7 @@
     "Explain how join predicates and NULL extension affect results.",
     "Distinguish filtering rows in ON from filtering rows in WHERE.",
     "Recognize one-to-many row multiplication and accidental duplicates.",
-    "Choose a join shape that answers a concrete business question.",
-    "Explain sql joins: inner, left, right, and full outer join using the six-layer interview framework."
+    "Choose a join shape that answers a concrete business question."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -392,6 +391,135 @@
           "text": "Suppose one customer has 3 orders and 2 addresses. Joining both child tables can produce 3 × 2 = 6 rows. Summing order totals after this join may count each order twice. Aggregate each child table first, or use EXISTS when you only need to know whether a match exists."
         },
         {
+          "type": "table",
+          "title": "Orders for customer 1",
+          "columns": [
+            "order_id",
+            "customer_id",
+            "total_amount"
+          ],
+          "rows": [
+            [
+              "101",
+              "1",
+              "₹100"
+            ],
+            [
+              "102",
+              "1",
+              "₹200"
+            ],
+            [
+              "103",
+              "1",
+              "₹300"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "title": "Addresses for customer 1",
+          "columns": [
+            "address_id",
+            "customer_id",
+            "city"
+          ],
+          "rows": [
+            [
+              "11",
+              "1",
+              "Jaipur"
+            ],
+            [
+              "12",
+              "1",
+              "Delhi"
+            ]
+          ]
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "The raw join",
+          "source": "SELECT o.order_id, o.total_amount, a.city\nFROM orders o\nJOIN addresses a ON a.customer_id = o.customer_id\nWHERE o.customer_id = 1;"
+        },
+        {
+          "type": "table",
+          "title": "The six rows produced by the join",
+          "columns": [
+            "order_id",
+            "total_amount",
+            "city"
+          ],
+          "rows": [
+            [
+              "101",
+              "₹100",
+              "Jaipur"
+            ],
+            [
+              "101",
+              "₹100",
+              "Delhi"
+            ],
+            [
+              "102",
+              "₹200",
+              "Jaipur"
+            ],
+            [
+              "102",
+              "₹200",
+              "Delhi"
+            ],
+            [
+              "103",
+              "₹300",
+              "Jaipur"
+            ],
+            [
+              "103",
+              "₹300",
+              "Delhi"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "title": "Correct totals versus totals after the join",
+          "columns": [
+            "Metric",
+            "Orders table only",
+            "After joining addresses"
+          ],
+          "rows": [
+            [
+              "COUNT(*)",
+              "3",
+              "6"
+            ],
+            [
+              "SUM(total_amount)",
+              "₹600",
+              "₹1,200"
+            ],
+            [
+              "AVG(total_amount)",
+              "₹200",
+              "₹200 in this example"
+            ],
+            [
+              "COUNT(address_id)",
+              "Not applicable",
+              "6 (but there are only 2 addresses)"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "The average still looks correct here only because every order is duplicated exactly twice. If different orders match different numbers of child rows, AVG can also be wrong. COUNT(DISTINCT order_id) fixes the order count in this example, but it does not fix the doubled SUM."
+        },
+        {
           "type": "code",
           "language": "sql",
           "title": "Avoid summing an order total after joining multiple child collections",
@@ -513,12 +641,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "For customers and orders, a LEFT JOIN keeps customers who have never ordered. Moving `orders.status = 'paid'` from the ON clause into WHERE rejects the NULL-extended rows, making the result behave like an inner join for that condition.",
+          "problem": "Customer Priya (id 1) has orders of ₹100, ₹200, and ₹300 and two addresses: Jaipur and Delhi. A report joins orders to addresses and sums order totals.",
           "reasoning": [
-            "Reason about the desired row set first, then place predicates deliberately. A join can multiply rows when the relationship is one-to-many, so count the expected grain before trusting aggregates.",
-            "Check the actual query shape, data distribution, concurrency, and database-engine behavior before generalizing the result."
+            "Each order pairs with each address, producing six rows. Each order total appears twice, so COUNT(*) becomes 6 and SUM becomes ₹1,200 instead of 3 and ₹600.",
+            "Aggregate orders and addresses separately to one summary row per customer before joining: order count 3, order total ₹600, average ₹200, address count 2.",
+            "COUNT(DISTINCT order_id) can fix the order count in this example, but it does not fix SUM(total_amount); do not use DISTINCT as a blanket repair for the wrong grain."
           ],
-          "outcome": "Reason about the desired row set first, then place predicates deliberately. A join can multiply rows when the relationship is one-to-many, so count the expected grain before trusting aggregates."
+          "outcome": "Define the intended output grain, inspect join cardinality, and aggregate independent child collections before joining when the report needs one row per parent."
         },
         {
           "type": "callout",

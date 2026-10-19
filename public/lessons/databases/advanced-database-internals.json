@@ -11,8 +11,7 @@
     "Explain MVCC snapshots and why updates create new row versions in PostgreSQL.",
     "Diagnose vacuum pressure, dead tuples, bloat, and transaction-ID wraparound risk.",
     "Trace how WAL, checkpoints, and crash recovery support durability.",
-    "Reason about locks, blocking, deadlocks, and transaction isolation.",
-    "Explain advanced database internals using the six-layer interview framework."
+    "Reason about locks, blocking, deadlocks, and transaction isolation."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -291,11 +290,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — Advanced Database Internals. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. PostgreSQL uses multi-version concurrency control (MVCC): when a transaction updates a row, it usually creates a new version rather than overwriting the old one immediately. A query sees the version allowed by its snapshot. This lets readers and writers work at the same time, but old versions cannot be cleaned up while an active transaction might still need them."
+          "text": "1. Problem and motivation — A service gets slower after a large update even though request volume is steady. Old row versions, a long transaction, lock waits, or WAL pressure may explain the change; each needs different evidence."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — A database has to let many people read and change data at once, recover after a crash, and clean up old data safely. PostgreSQL tracks row versions, records changes for recovery, and uses locks to coordinate conflicting work. Many production problems happen when a long transaction or busy workload stops these systems from keeping up. Make assumptions explicit."
+          "text": "2. Definition and design choice — PostgreSQL uses MVCC so transactions can see a consistent version of rows while other transactions write. Updates create new row versions; VACUUM cleans up versions no active snapshot needs, and WAL records changes for recovery."
         },
         {
           "type": "steps",
@@ -325,13 +324,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "A production PostgreSQL service slows down after data volume and concurrency grow. Explain how to investigate database internals before changing configuration.",
+          "problem": "A transaction has been open for 45 minutes while another job updates 300,000 rows. Dead tuples rise and VACUUM cannot reclaim some versions.",
           "reasoning": [
-            "Start with the observed symptom and query plans; use EXPLAIN (ANALYZE, BUFFERS) where safe to compare estimated and actual rows, buffer hits, and reads.",
-            "Check whether the bottleneck is CPU, storage I/O, memory pressure, lock contention, vacuum debt, or an unsuitable query plan instead of assuming one cause.",
-            "Compare correctness, performance, resource cost, operational complexity, and failure behavior. Use measurements with units and workload context; avoid universal thresholds."
+            "Check pg_stat_activity for long-running and idle-in-transaction sessions, then compare dead-tuple and vacuum statistics. An old snapshot can prevent cleanup.",
+            "Ordinary VACUUM usually makes space reusable inside the table; it does not promise to shrink the file on disk. VACUUM FULL rewrites the table and takes a stronger lock.",
+            "Check WAL volume, checkpoint activity, lock waits, and the earliest plan-estimate mismatch before changing memory or vacuum settings."
           ],
-          "outcome": "Change one evidence-backed factor at a time, then validate the result against a representative workload and correctness requirements."
+          "outcome": "Remove the cause of the old snapshot or blocking, then verify dead-tuple trends, query latency, and disk growth over time."
         },
         {
           "type": "callout",

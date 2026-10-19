@@ -12,8 +12,7 @@
     "Explain fan-out and page-oriented storage.",
     "Describe page splits and their maintenance effects.",
     "Separate index navigation from end-to-end query latency.",
-    "Trace a B-tree lookup from root to leaf and explain cache hits, storage reads, heap fetches, and latency variability.",
-    "Explain b-trees: structure, traversal, splits, and balanced search using the six-layer interview framework."
+    "Trace a B-tree lookup from root to leaf and explain cache hits, storage reads, heap fetches, and latency variability."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -93,19 +92,19 @@
           "title": "Reasoning sequence",
           "steps": [
             {
-              "id": "identify",
-              "title": "Identify query shape",
-              "description": "Write down predicates, joins, ordering, limit, and selected columns."
+              "id": "root",
+              "title": "Compare separators at the root",
+              "description": "Compare the target key with separator keys and follow the child range that could contain it."
             },
             {
-              "id": "predict",
-              "title": "Predict the mechanism",
-              "description": "Explain which pages, entries, or operators the database is likely to visit."
+              "id": "internal",
+              "title": "Follow one child at each level",
+              "description": "Repeat the comparison in each internal page. The lookup follows one root-to-leaf path rather than scanning every key."
             },
             {
-              "id": "measure",
-              "title": "Validate the plan",
-              "description": "Use actual rows and buffers to compare prediction with observed work."
+              "id": "leaf",
+              "title": "Find the key in the leaf",
+              "description": "Search the selected leaf page for the key or its insertion position. A normal index scan may then fetch the matching heap row if the query needs columns not available from the index."
             }
           ]
         },
@@ -201,7 +200,7 @@
         },
         {
           "type": "paragraph",
-          "text": "A balanced B-tree usually finds a key in about log₂(n) levels rather than checking all n keys. Real query time also depends on whether pages are in memory, how many rows match, and how much table data must be fetched."
+          "text": "A B-tree lookup follows a number of page levels that grows roughly as O(log_f N), where f is the tree's fan-out. Because a page can point to many child pages, the height is usually only a few levels even for a large index."
         },
         {
           "type": "code",
@@ -318,11 +317,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — B-Trees: Structure, Traversal, Splits, and Balanced Search. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. A B-tree keeps keys in order and keeps leaf pages at the same depth, so a lookup does not turn into a long chain as the index grows."
+          "text": "1. Problem and motivation — A lookup should not scan every key in a large table. A B-tree keeps keys sorted across pages and balanced levels, but index navigation is only one part of query cost."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — A B-tree is a sorted map built from pages. Each page points you toward a range of keys, like choosing a branch on a road sign. The tree stays balanced, so finding a key takes a small number of page visits even as the table grows. Adding data can split a full page, but it does not normally rebuild the whole index. Make the assumptions explicit."
+          "text": "2. Definition and design choice — Each internal B-tree page has separator keys that direct a search to a child page. The search follows one root-to-leaf path; a normal index scan may then fetch the table's heap tuple. High fan-out keeps the tree shallow."
         },
         {
           "type": "steps",
@@ -352,13 +351,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "4. Trade-offs and scale — Apply B-Trees: Structure, Traversal, Splits, and Balanced Search to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "problem": "An index contains about one million email keys. Trace a lookup for one email, assuming a root page, two lower index pages, and one heap page are needed.",
           "reasoning": [
-            "Navigation is not the whole query: fetching rows or returning a large result remains expensive.",
-            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
-            "Compare correctness, performance, storage or compute cost, operational complexity, and failure behavior."
+            "Compare the key with separators at the root and follow the child range that can contain it; repeat until reaching the leaf page.",
+            "Height is roughly O(log_f N), where f is fan-out. Because a page points to many children, the tree needs only a few levels; log₂(N) is not the number of page reads.",
+            "Cached pages avoid storage reads but still require CPU. A cold page read or thousands of heap fetches can dominate end-to-end time."
           ],
-          "outcome": "Choose based on the actual workload and invariants, then validate with representative measurements and edge cases."
+          "outcome": "Explain index navigation, cache state, heap access, and result size separately. Use EXPLAIN (ANALYZE, BUFFERS) to measure the actual path."
         },
         {
           "type": "callout",

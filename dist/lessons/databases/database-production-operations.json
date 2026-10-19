@@ -1,0 +1,446 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "database-production-operations",
+  "topicId": "databases",
+  "sectionId": "database-production-operations",
+  "title": "Database Production Operations: Backups, Migrations, and Monitoring",
+  "difficulty": "advanced",
+  "estimatedMinutes": 34,
+  "learningObjectives": [
+    "Distinguish a backup from a proven recovery process.",
+    "Explain RPO, RTO, WAL, and point-in-time recovery.",
+    "Plan backward-compatible schema migrations.",
+    "Diagnose pool saturation, lock waits, query regressions, and storage growth."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Production database work means proving the system can change, fail, and recover without losing more data or availability than the business accepts. A backup is useful only if it can be restored, a migration is safe only if old and new application versions can coexist, and monitoring is useful only when it helps find the bottleneck."
+  },
+  "concepts": [
+    {
+      "id": "backup-restore",
+      "title": "Backups, restore drills, RPO, and RTO",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A backup job proves a copy was created; a restore drill proves the copy can recover a usable database. Recovery planning starts with two business targets."
+        },
+        {
+          "type": "table",
+          "title": "Recovery terms",
+          "columns": [
+            "Term",
+            "Meaning",
+            "Example"
+          ],
+          "rows": [
+            [
+              "RPO",
+              "Acceptable data-loss window",
+              "Five minutes means at most about five minutes of recent data loss."
+            ],
+            [
+              "RTO",
+              "Target time to restore service",
+              "Thirty minutes means recovery should finish within thirty minutes."
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "A team has nightly backups but has never restored one. A backup from 02:00 may be too old or unusable if production fails at 21:00.",
+          "reasoning": [
+            "Choose RPO/RTO from business impact, not the current schedule.",
+            "Restore to an isolated environment and verify integrity, credentials, keys, and application queries.",
+            "Keep recovery copies separate from the primary failure domain."
+          ],
+          "outcome": "A recovery plan needs tested backups, measured restore time, and an explicit acceptable data-loss window."
+        }
+      ]
+    },
+    {
+      "id": "pitr-wal",
+      "title": "Point-in-time recovery and WAL",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A base backup captures a starting state. PostgreSQL write-ahead log (WAL) records changes that can be replayed after that point. With the required base backup and continuous WAL archive, point-in-time recovery can restore to a time before an accidental change."
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "source": "Base backup + archived WAL\n→ restore base backup\n→ replay WAL to target time\n→ validate recovered database",
+          "title": "PITR sequence"
+        },
+        {
+          "type": "callout",
+          "kind": "warning",
+          "title": "WAL is not a backup by itself",
+          "content": "WAL alone does not replace a base backup and tested restore procedure. Archive gaps, retention, encryption keys, and configuration affect whether recovery is possible."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A table is accidentally deleted at 14:05. Restore to an isolated target just before 14:05, replay available WAL, verify the table, then follow an approved cutover procedure.",
+          "reasoning": [
+            "Do not overwrite production during investigation; restore separately first.",
+            "The target time must fall within available backup and WAL coverage.",
+            "Measure validation and cutover time, not only replay time."
+          ],
+          "outcome": "PITR is a tested sequence of backup, WAL retention, restore, replay, validation, and controlled cutover."
+        }
+      ]
+    },
+    {
+      "id": "safe-migrations",
+      "title": "Expand-and-contract migrations",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A rolling deployment can run old and new application versions at once. Dropping or renaming a column immediately can break old instances still using it."
+        },
+        {
+          "type": "table",
+          "title": "Phase",
+          "columns": [
+            "Phase",
+            "Change"
+          ],
+          "rows": [
+            [
+              "Expand",
+              "Add the new nullable column or compatible structure."
+            ],
+            [
+              "Compatible release",
+              "Deploy code that understands old and new shapes."
+            ],
+            [
+              "Backfill",
+              "Copy old values in bounded, restartable batches."
+            ],
+            [
+              "Switch reads",
+              "Use the new shape after validation."
+            ],
+            [
+              "Contract",
+              "Remove the old field only after every old consumer is gone."
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "To split full_name into first_name and last_name, add the new columns, deploy compatible code, backfill in batches, verify, switch reads, and remove the old column in a later release.",
+          "reasoning": [
+            "Backfills should be restartable and idempotent.",
+            "Large updates can create WAL, locks, and replica lag; monitor production impact.",
+            "Application rollback does not automatically undo a destructive data migration."
+          ],
+          "outcome": "Use expand-and-contract so schema and application changes do not require every instance to switch simultaneously."
+        }
+      ]
+    },
+    {
+      "id": "pools-monitoring",
+      "title": "Connection pools and incident diagnosis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Connections consume resources. Too many concurrent queries can increase memory use, lock contention, and tail latency. A pool limits concurrency; timeouts and backpressure stop queues from growing without bound."
+        },
+        {
+          "type": "table",
+          "title": "Symptom",
+          "columns": [
+            "Symptom",
+            "Inspect first"
+          ],
+          "rows": [
+            [
+              "High CPU",
+              "Top queries, plans, CPU profile"
+            ],
+            [
+              "Low CPU, many waiting sessions",
+              "Lock graph, pool waits, wait events"
+            ],
+            [
+              "Growing table/WAL",
+              "Vacuum, table/index size, WAL rate"
+            ],
+            [
+              "Replica falling behind",
+              "WAL generation, replay lag, network"
+            ],
+            [
+              "Sudden query regression",
+              "EXPLAIN ANALYZE, BUFFERS, estimates vs actual rows"
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "A service opens 500 connections although the database handles about 40 active queries efficiently. Increasing the pool may move the queue into the database and worsen latency.",
+          "reasoning": [
+            "Size pools from measured database capacity and query duration, not web-request count alone.",
+            "Use connection/statement timeouts and bounded queues.",
+            "Retries should be bounded with backoff; retry storms can amplify overload."
+          ],
+          "outcome": "Diagnose the wait or expensive plan node before tuning; monitor pool waits and p95/p99 latency together."
+        }
+      ]
+    },
+    {
+      "id": "six-layer-interview-synthesis",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — A deployment removes a column while old application instances still use it, causing production errors."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — Expand-and-contract adds the new shape first, keeps code compatible, backfills and verifies data, switches reads, then removes the old shape later."
+        },
+        {
+          "type": "worked_example",
+          "problem": "The old application reads full_name; the new app reads first_name and last_name.",
+          "reasoning": [
+            "Add new columns without removing full_name, then deploy code that supports both forms.",
+            "Backfill in bounded, restartable batches and monitor WAL, locks, and replica lag.",
+            "Switch reads after verification, then remove the old column after all old consumers are gone."
+          ],
+          "outcome": "Compatibility across rollout stages avoids requiring every application instance to change at the same instant."
+        },
+        {
+          "type": "paragraph",
+          "text": "4. Trade-offs and scale — Bounded batches reduce lock and WAL pressure but take longer. Aggressive migrations can shorten the window but raise production risk."
+        },
+        {
+          "type": "paragraph",
+          "text": "5. Anti-patterns — Dropping the old column in the first deploy, one giant backfill at peak traffic, and assuming code rollback reverses a data migration."
+        },
+        {
+          "type": "paragraph",
+          "text": "6. Interview probes — What if backfill stops halfway? How do old and new versions coexist? How would you recover an accidental delete? What do RPO and RTO measure?"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "A green backup job is not proof of recoverability",
+      "content": "Recovery depends on backup integrity, WAL coverage, permissions, keys, configuration, restore time, and application-level validation."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "RPO = acceptable data-loss window. RTO = acceptable time to restore service."
+    },
+    {
+      "type": "paragraph",
+      "text": "PITR needs a base backup plus the required WAL history and a tested restore procedure."
+    },
+    {
+      "type": "paragraph",
+      "text": "Expand-and-contract: expand schema → compatible code → backfill → switch reads → contract later."
+    },
+    {
+      "type": "paragraph",
+      "text": "Pool limits, timeouts, backpressure, and bounded retries protect the database from overload."
+    },
+    {
+      "type": "paragraph",
+      "text": "Diagnose from metrics, waits, plans, and recent changes; do not tune blindly."
+    }
+  ],
+  "questions": [
+    {
+      "id": "rpo",
+      "type": "single_select",
+      "prompt": "What does RPO describe?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Target time to restore service"
+        },
+        {
+          "id": "b",
+          "text": "Acceptable data-loss window"
+        },
+        {
+          "id": "c",
+          "text": "Number of indexes"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "RPO describes how much recent data loss is acceptable."
+    },
+    {
+      "id": "rto",
+      "type": "single_select",
+      "prompt": "What does RTO describe?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Target time to restore service"
+        },
+        {
+          "id": "b",
+          "text": "Acceptable data-loss window"
+        },
+        {
+          "id": "c",
+          "text": "Sort duration"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "RTO describes the target duration to restore service."
+    },
+    {
+      "id": "restore-drill",
+      "type": "single_select",
+      "prompt": "Why run restore drills if backups report success?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Prove the backup can be restored and data is usable"
+        },
+        {
+          "id": "b",
+          "text": "Increase production traffic"
+        },
+        {
+          "id": "c",
+          "text": "Remove need for monitoring"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "A backup can be incomplete, inaccessible, or too slow to restore."
+    },
+    {
+      "id": "wal-pitr",
+      "type": "single_select",
+      "prompt": "What does WAL do in a PITR workflow?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Replay changes after a base backup to a target time"
+        },
+        {
+          "id": "b",
+          "text": "Replace every base backup"
+        },
+        {
+          "id": "c",
+          "text": "Guarantee no data loss ever"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "PITR combines a base backup with the required WAL history."
+    },
+    {
+      "id": "migration-order",
+      "type": "single_select",
+      "prompt": "When should the old column be removed?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Before deploying new code"
+        },
+        {
+          "id": "b",
+          "text": "After all old consumers are gone"
+        },
+        {
+          "id": "c",
+          "text": "When adding new columns"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Expand-and-contract delays removal until old code no longer depends on the old shape."
+    },
+    {
+      "id": "pool-size",
+      "type": "single_select",
+      "prompt": "Why can increasing a connection pool worsen latency?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It makes SQL invalid"
+        },
+        {
+          "id": "b",
+          "text": "It can overload the database with concurrent work"
+        },
+        {
+          "id": "c",
+          "text": "It disables indexes"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Too much concurrency can increase contention rather than throughput."
+    },
+    {
+      "id": "backup-proof",
+      "type": "true_false",
+      "prompt": "A successful backup job alone proves the team can meet its recovery time objective.",
+      "correctAnswer": false,
+      "explanation": "A restore drill measures the full recovery process and validates the restored data."
+    },
+    {
+      "id": "migration-batches",
+      "type": "true_false",
+      "prompt": "Large backfills should be planned for WAL, locks, replication lag, restartability, and production load.",
+      "correctAnswer": true,
+      "explanation": "Backfills affect storage, replicas, locks, and latency; bounded batches and monitoring reduce risk."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "restore-plan",
+      "prompt": "A team has nightly backups but needs an RPO of five minutes and an RTO of thirty minutes. What should you test?",
+      "skillsTested": [
+        "recovery design",
+        "RPO/RTO",
+        "operational validation"
+      ],
+      "strongAnswerPoints": [
+        "Nightly backups alone likely do not meet a five-minute RPO.",
+        "Evaluate WAL archiving or another recovery mechanism.",
+        "Restore to an isolated target and measure replay, validation, and cutover.",
+        "Verify permissions, keys, integrity, and failure-domain separation."
+      ],
+      "pitfalls": [
+        "Assuming nightly backups meet a five-minute RPO",
+        "Measuring only restore command duration",
+        "Never testing application-level correctness"
+      ],
+      "referenceAnswer": "Nightly backups alone likely cannot meet a five-minute data-loss window. I would evaluate continuous WAL archiving, then perform restore drills and measure replay, validation, and cutover against the thirty-minute RTO. The runbook must include keys, permissions, integrity checks, and a safe target."
+    },
+    {
+      "id": "zero-downtime-migration",
+      "prompt": "Split full_name into first_name and last_name while the application stays online. Outline a safe migration.",
+      "skillsTested": [
+        "schema evolution",
+        "rolling deploys",
+        "backfill operations"
+      ],
+      "strongAnswerPoints": [
+        "Add new columns without dropping the old field.",
+        "Deploy code compatible with both shapes.",
+        "Backfill in bounded batches and verify completeness.",
+        "Switch reads, then drop the old field in a later release."
+      ],
+      "pitfalls": [
+        "Dropping the old column before old instances are gone",
+        "One giant update without measuring WAL or locks",
+        "Assuming code rollback undoes data migration"
+      ],
+      "referenceAnswer": "Use expand-and-contract: add the new columns, deploy code compatible with both shapes, backfill in bounded batches, verify values, switch reads, and remove the old column only after all old instances and consumers are gone. Monitor locks, WAL, replica lag, and errors."
+    }
+  ]
+}

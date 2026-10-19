@@ -11,8 +11,7 @@
     "Choose storage based on access patterns, invariants, and change frequency.",
     "Model embedded and referenced relationships in MongoDB.",
     "Explain relational constraints, joins, transactions, and indexing trade-offs.",
-    "Plan a migration or polyglot boundary with clear data ownership and consistency rules.",
-    "Explain postgresql vs. mongodb trade-offs using the six-layer interview framework."
+    "Plan a migration or polyglot boundary with clear data ownership and consistency rules."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -268,11 +267,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — PostgreSQL vs. MongoDB Trade-offs. Interview-first coverage of modeling, invariants, transactions, indexing, and migration trade-offs.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. Start with the rules the application must never break. For example, an order must belong to a customer and payment totals must reconcile. PostgreSQL makes relationships, joins, and constraints explicit. MongoDB can fit data that is usually read and updated together as one document. Compare actual queries and rules rather than picking by popularity."
+          "text": "1. Problem and motivation — An order contains line items, and payment attempts must be reconciled independently. The database choice should preserve business invariants while making common reads and updates practical."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — Choose a database by asking what the application needs to store and how it will read and change that data. Orders, payments, and shared relationships often fit a relational model. A self-contained document that is usually read and updated as one unit may fit MongoDB well. Neither choice is automatically faster; the data model and queries decide. Make assumptions explicit."
+          "text": "2. Definition and design choice — PostgreSQL models relationships in tables and supports relational constraints and transactions. MongoDB groups related fields into documents, which can simplify aggregate reads; embedding, references, and transaction boundaries must follow consistency needs."
         },
         {
           "type": "steps",
@@ -302,13 +301,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "4. Trade-offs and scale — Apply PostgreSQL vs. MongoDB Trade-offs to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "problem": "An order has four line items and two payment attempts. The API often reads the order and items together, but payment attempts must remain auditable and duplicate capture must be prevented.",
           "reasoning": [
-            "A document database is not automatically faster, and a relational database is not automatically rigid. Choose based on access patterns and invariants.",
-            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
-            "Compare correctness, performance, resource cost, operational complexity, and failure behavior."
+            "Embedding line items can fit when they share the order's lifecycle; payment attempts may deserve separate records with explicit idempotency rules.",
+            "PostgreSQL constraints and transactions are natural for relational invariants. MongoDB also supports transactions and validation, but the chosen model determines which rules are easy to enforce.",
+            "Compare query patterns, consistency boundaries, indexing, growth, operational skills, migrations, and recovery rather than assuming either database is inherently faster."
           ],
-          "outcome": "Choose based on the workload and invariants, then validate with representative measurements and edge cases."
+          "outcome": "Choose the model that makes critical invariants explicit and document which guarantees are enforced by the database versus application code."
         },
         {
           "type": "callout",

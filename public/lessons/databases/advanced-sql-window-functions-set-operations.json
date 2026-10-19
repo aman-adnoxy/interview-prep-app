@@ -9,8 +9,7 @@
     "Use ROW_NUMBER, RANK, DENSE_RANK, LAG and running aggregates correctly.",
     "Choose UNION versus UNION ALL and understand set-operation column compatibility.",
     "Select the latest row per group deterministically.",
-    "Explain tie-breaking, NULL ordering, and filtering window results with a subquery or CTE.",
-    "Explain advanced sql: window functions, ranking, set operations, and latest-row-per-group queries using the six-layer interview framework."
+    "Explain tie-breaking, NULL ordering, and filtering window results with a subquery or CTE."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -363,11 +362,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — Advanced SQL: Window Functions, Ranking, Set Operations, and Latest-Row-per-Group Queries. Interview-focused explanations, worked examples, trade-offs, and practice.. Begin by explaining the practical failure, cost, or engineering need that makes this topic matter. GROUP BY reduces many input rows to one row per group. A window function calculates across related rows while keeping each input row in the output."
+          "text": "1. Problem and motivation — A report needs one row per order plus each customer's running spend and rank. GROUP BY alone collapses the order rows, while choosing the latest order can be ambiguous when timestamps tie."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — GROUP BY summarizes a group into one row. A window function calculates something about a group while keeping each original row visible. That makes it useful for ranking employees, comparing this month's sales with last month's, or finding the latest order for every customer. State the assumptions under which this design is a good fit."
+          "text": "2. Definition and design choice — GROUP BY reduces rows to one per group. A window function calculates across related rows while keeping each input row. Ordering and tie-breaking are part of the query's meaning, not optional decoration."
         },
         {
           "type": "steps",
@@ -397,13 +396,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "4. Trade-offs and scale — Apply Advanced SQL: Window Functions, Ranking, Set Operations, and Latest-Row-per-Group Queries to a realistic production workload. What changes as the data volume, request rate, concurrency, or failure rate grows?",
+          "problem": "Customer 7 has orders (id 11, 10:00, ₹100), (id 12, 10:00, ₹250), and (id 13, 11:00, ₹300). Return each order, a running total, and exactly one latest order.",
           "reasoning": [
-            "Trade-off: GROUP BY returns one row per group; windows retain row-level detail while adding group/sequence metrics.\n\nFailure mode: A query loses order-level columns because it aggregates too early, or duplicates a group total because it joins afterward.\n\nDecision rule: Use GROUP BY when the desired output grain is the group; use a window when each original row must remain visible.",
-            "Use measured workload data and explicit assumptions for any performance estimate; avoid presenting one latency, size, or threshold as universal.",
-            "Compare correctness, operational complexity, storage or compute cost, and the effect on adjacent components."
+            "SUM(amount) OVER (PARTITION BY customer_id ORDER BY created_at, order_id ROWS UNBOUNDED PRECEDING) returns running totals ₹100, ₹350, and ₹650.",
+            "ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY created_at DESC, order_id DESC) picks id 13 as latest. Without a unique tie-breaker, tied rows can be ordered unpredictably.",
+            "RANK and DENSE_RANK intentionally preserve ties; UNION removes duplicate complete rows, while UNION ALL preserves them."
           ],
-          "outcome": "Choose the design that best satisfies the actual workload and invariants, then validate the decision with representative measurements and failure cases."
+          "outcome": "State the output grain, window partition, ordering, frame, tie policy, and duplicate policy before writing the query."
         },
         {
           "type": "callout",

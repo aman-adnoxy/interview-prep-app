@@ -12,8 +12,7 @@
     "Explain replication lag, failover, consistency, RPO, and RTO.",
     "Design connection pooling, backpressure, timeouts, and retries to protect a database.",
     "Choose partition and shard keys that avoid hotspots and preserve queryability.",
-    "Plan safe schema migrations and validate recovery with SLOs.",
-    "Explain database scaling and reliability using the six-layer interview framework."
+    "Plan safe schema migrations and validate recovery with SLOs."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -284,11 +283,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — Database Scaling and Reliability. Interview-first coverage of bottleneck diagnosis, replication, partitioning, backpressure, and recovery.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. Before adding servers, find the bottleneck. If a query does too much work, improving it may be cheaper than buying more hardware. Read replicas can serve suitable read traffic, but writes still go to the primary and a replica may be a little behind."
+          "text": "1. Problem and motivation — Latency rises while CPU stays low and requests wait on one inventory row. Adding servers or read replicas will not remove a hot-row write bottleneck."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — When a database slows down, first find what it is waiting on. More CPU helps CPU pressure, a better query helps unnecessary work, and a read replica helps only reads that can tolerate its lag. Reliability also means knowing how much data could be lost, how quickly service must return, and proving those targets with recovery drills. Make assumptions explicit."
+          "text": "2. Definition and design choice — Scale the measured bottleneck. Improve query work for CPU/I/O pressure, reduce contention for hot rows, use replicas for suitable reads, and choose partitioning or sharding only when their trade-offs help."
         },
         {
           "type": "steps",
@@ -318,13 +317,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "4. Trade-offs and scale — Apply Database Scaling and Reliability to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "problem": "A service opens 500 database connections although only about 40 queries can run efficiently at once; writes also serialize on one hot inventory row.",
           "reasoning": [
-            "More replicas or connections do not fix every bottleneck; first distinguish CPU, I/O, locks, pool waits, and query work.",
-            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
-            "Compare correctness, performance, resource cost, operational complexity, and failure behavior."
+            "An oversized pool can increase memory use and contention rather than throughput. Size it from measured database capacity and request concurrency.",
+            "A read replica may offload reads but introduces lag and does not accelerate a hot write row. Retries need backoff and limits or they can amplify overload.",
+            "Partitioning can help pruning and maintenance for suitable layouts; it does not automatically distribute writes across machines as sharding would. Recovery targets should be tested with drills."
           ],
-          "outcome": "Choose based on the workload and invariants, then validate with representative measurements and edge cases."
+          "outcome": "Use wait events, pool metrics, query plans, and p95/p99 latency to identify the bottleneck. Change one factor at a time and test failure behavior."
         },
         {
           "type": "callout",

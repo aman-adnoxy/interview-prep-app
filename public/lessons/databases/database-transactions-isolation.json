@@ -1,0 +1,458 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "database-transactions-isolation",
+  "topicId": "databases",
+  "sectionId": "database-transactions-isolation",
+  "title": "Database Transactions and Isolation: ACID, Locks, and Concurrency",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 42,
+  "learningObjectives": [
+    "Explain ACID using concrete failures and database guarantees.",
+    "Distinguish a transaction from a single SQL statement and reason about commit and rollback.",
+    "Recognize lost updates, non-repeatable reads, and serialization conflicts.",
+    "Use constraints, atomic updates, row locks, and retries to protect invariants.",
+    "Explain why concurrency bugs can occur even when each request validates its input."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "A transaction is a group of database operations treated as one unit. It protects the rules that must remain true when something fails or when two requests run at the same time. The tricky part is that each request can look correct on its own while their combined execution breaks the business rule."
+  },
+  "concepts": [
+    {
+      "id": "acid",
+      "title": "ACID through a bank transfer",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "ACID describes guarantees for a transaction: atomicity (all or none), consistency (valid rules remain true), isolation (concurrent work is controlled), and durability (committed changes survive the failures covered by the system)."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "BEGIN;\nUPDATE accounts SET balance = balance - 100 WHERE id = 1;\nUPDATE accounts SET balance = balance + 100 WHERE id = 2;\nCOMMIT;",
+          "title": "Transfer 100 between accounts"
+        },
+        {
+          "type": "worked_example",
+          "problem": "If the debit succeeds but the credit fails, the application should not leave money missing. The transaction lets it roll back both changes instead of committing half the transfer.",
+          "reasoning": [
+            "Atomicity prevents only one half from being committed.",
+            "Consistency depends on constraints and correct transaction logic; ACID does not magically make a wrong business rule correct.",
+            "Durability depends on the database's commit and recovery configuration; backups are still needed for accidental deletion."
+          ],
+          "outcome": "Group related writes in one transaction when they must succeed or fail together."
+        }
+      ]
+    },
+    {
+      "id": "concurrency-race",
+      "title": "Two requests can race",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Application-side check-then-write logic is vulnerable when two requests interleave. Both may observe the same old state and make a decision that was valid only before the other request changed it."
+        },
+        {
+          "type": "table",
+          "title": "Possible interleaving",
+          "columns": [
+            "Step",
+            "Request A",
+            "Request B"
+          ],
+          "rows": [
+            [
+              "1",
+              "Read stock = 1",
+              ""
+            ],
+            [
+              "2",
+              "",
+              "Read stock = 1"
+            ],
+            [
+              "3",
+              "Decide stock is available",
+              ""
+            ],
+            [
+              "4",
+              "",
+              "Decide stock is available"
+            ],
+            [
+              "5",
+              "Insert order",
+              ""
+            ],
+            [
+              "6",
+              "",
+              "Insert order"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Both requests can sell the last item if the database does not protect the invariant. Fix the invariant at the database boundary or make the state change atomic."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "UPDATE inventory\nSET stock = stock - 1\nWHERE product_id = 99 AND stock > 0;",
+          "title": "Atomic conditional update"
+        },
+        {
+          "type": "paragraph",
+          "text": "Check the affected-row count. One request updates the row and gets one affected row; the other gets zero and should report that stock is no longer available."
+        }
+      ]
+    },
+    {
+      "id": "isolation-and-locks",
+      "title": "Isolation, locks, and conflicts",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Isolation controls what concurrent transactions can observe. The exact anomalies prevented depend on the database engine and isolation level. PostgreSQL's default READ COMMITTED gives each statement a fresh snapshot; REPEATABLE READ keeps a transaction snapshot but may still require retries for conflicting updates; SERIALIZABLE can abort transactions that cannot be safely serialized."
+        },
+        {
+          "type": "table",
+          "title": "Concurrency problem",
+          "columns": [
+            "Problem",
+            "Plain-language meaning"
+          ],
+          "rows": [
+            [
+              "Lost update",
+              "Two writers overwrite each other's change based on stale reads."
+            ],
+            [
+              "Non-repeatable read",
+              "A row read twice changes between the reads in one transaction."
+            ],
+            [
+              "Phantom / predicate change",
+              "A repeated search matches a different set of rows."
+            ],
+            [
+              "Deadlock",
+              "Transactions wait on each other in a cycle; the database aborts one."
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "warning",
+          "title": "Retries are part of correctness",
+          "content": "Serialization failures and deadlock victims are expected outcomes in concurrent systems. Retry the whole transaction when it is safe, with a bounded retry policy; do not blindly retry only the final statement."
+        },
+        {
+          "type": "worked_example",
+          "problem": "Two workers read a counter value of 10 and each writes 11. A naive read-modify-write can lose one increment. `UPDATE counters SET value = value + 1 WHERE id = 1` makes the increment atomic at the row level.",
+          "reasoning": [
+            "Use atomic updates for simple increments.",
+            "Use row locks such as SELECT ... FOR UPDATE when logic must inspect a row and then make a dependent change.",
+            "Use uniqueness constraints for uniqueness, and consider transaction isolation for rules involving multiple rows."
+          ],
+          "outcome": "Pick the smallest database mechanism that actually protects the invariant, then handle conflict errors explicitly."
+        }
+      ]
+    },
+    {
+      "id": "transaction-boundaries",
+      "title": "Choose the transaction boundary",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Keep the transaction around the database changes that must be atomic. Do not hold locks while waiting for a user, a slow external API, or a long computation."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "BEGIN;\nSELECT stock FROM inventory WHERE product_id = 99 FOR UPDATE;\n-- validate and update inventory and order rows\nCOMMIT;",
+          "title": "Lock a row while checking and changing it"
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Do not confuse atomicity with external side effects",
+          "content": "A database rollback cannot undo an email or payment API call already made. For workflows spanning a database and external service, use idempotency keys and patterns such as an outbox or a compensating action."
+        },
+        {
+          "type": "worked_example",
+          "problem": "If an order insert and inventory decrement must agree, keep both in one database transaction. Call the payment provider outside a long-held transaction, using an idempotency key and a durable workflow state to handle retries.",
+          "reasoning": [
+            "Shorter transactions reduce lock duration and reduce the chance of blocking.",
+            "A row lock coordinates competing writers to that row; it does not automatically protect every business rule across unrelated rows.",
+            "A retry must be safe: repeated payment or order requests should not create duplicate effects."
+          ],
+          "outcome": "Choose a boundary that preserves database invariants without holding locks across slow external work."
+        }
+      ]
+    },
+    {
+      "id": "six-layer-interview-synthesis",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — Two shoppers try to buy the final item at the same time. Each request sees stock = 1, so application validation alone can allow both to proceed."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — A transaction groups database writes; atomic updates, constraints, row locks, and isolation levels protect different kinds of invariants."
+        },
+        {
+          "type": "worked_example",
+          "problem": "Use `UPDATE inventory SET stock = stock - 1 WHERE product_id = 99 AND stock > 0` and inspect the affected-row count.",
+          "reasoning": [
+            "The database evaluates the predicate as part of the update, so competing requests do not both successfully decrement the same last unit.",
+            "One request changes stock from 1 to 0 and affects one row; the other no longer matches stock > 0 and affects zero rows.",
+            "If an order row must be created only when the decrement succeeds, put the update and order insert in one transaction and roll back if the update affects zero rows."
+          ],
+          "outcome": "One successful decrement corresponds to one accepted order. The application must treat zero affected rows as sold out, not as success."
+        },
+        {
+          "type": "paragraph",
+          "text": "4. Trade-offs and scale — Locks can serialize conflicting writes and reduce throughput on hot rows. Use atomic updates for simple invariants; reserve broader serializable transactions for rules that need them, and handle aborts with bounded retries."
+        },
+        {
+          "type": "paragraph",
+          "text": "5. Anti-patterns — Check-then-write without a constraint or atomic update; holding a transaction open during network calls; retrying only part of a failed transaction; assuming rollback undoes external side effects."
+        },
+        {
+          "type": "paragraph",
+          "text": "6. Interview probes — What happens if two transactions update the same row? Why can SERIALIZABLE abort? What must be retried after a deadlock? Which invariant belongs in a UNIQUE constraint?"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Do not memorize slogans",
+      "content": "Start with the rows and operations involved, state what must remain true, then predict the result. Similar-looking SQL can behave differently under concurrency or when NULLs and errors are involved."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "A transaction is all-or-none; a correct business rule still must be encoded."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use constraints for durable uniqueness and relationships."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use atomic conditional updates for simple counters and inventory invariants."
+    },
+    {
+      "type": "paragraph",
+      "text": "Choose isolation based on the anomalies the application must prevent."
+    },
+    {
+      "type": "paragraph",
+      "text": "Handle deadlocks and serialization failures; retries must be bounded and safe."
+    },
+    {
+      "type": "paragraph",
+      "text": "Keep transactions short and do not expect rollback to undo external API calls."
+    }
+  ],
+  "questions": [
+    {
+      "id": "acid-atomicity",
+      "type": "single_select",
+      "prompt": "A transfer debits account A and credits account B. What should happen if the credit fails before commit?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Keep the debit because it already ran"
+        },
+        {
+          "id": "b",
+          "text": "Roll back both changes"
+        },
+        {
+          "id": "c",
+          "text": "Commit the debit and retry the credit later without a record"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Both changes belong to one atomic transaction; failure before commit should not leave half a transfer.",
+      "hint": "Think all-or-none."
+    },
+    {
+      "id": "race-unique",
+      "type": "single_select",
+      "prompt": "Two requests both see that an email is unused. What reliably prevents duplicate emails?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A SELECT check in each request"
+        },
+        {
+          "id": "b",
+          "text": "A UNIQUE constraint in the database"
+        },
+        {
+          "id": "c",
+          "text": "A one-second delay between requests"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The database constraint arbitrates concurrent inserts; application checks can race.",
+      "hint": "Which mechanism enforces the rule at the data boundary?"
+    },
+    {
+      "id": "atomic-stock",
+      "type": "single_select",
+      "prompt": "A conditional stock UPDATE affects zero rows. What should the application infer?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The item was reserved successfully"
+        },
+        {
+          "id": "b",
+          "text": "The condition did not match; treat as unavailable or re-check according to the rule"
+        },
+        {
+          "id": "c",
+          "text": "The database is necessarily broken"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Affected-row count communicates whether the atomic condition succeeded.",
+      "hint": "Check the UPDATE result."
+    },
+    {
+      "id": "isolation-retry",
+      "type": "single_select",
+      "prompt": "A PostgreSQL SERIALIZABLE transaction is aborted due to a serialization failure. What is usually the correct retry unit?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The whole transaction, if the operation is safe to retry"
+        },
+        {
+          "id": "b",
+          "text": "Only the last SQL statement"
+        },
+        {
+          "id": "c",
+          "text": "Never retry any database transaction"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The transaction's decisions may depend on reads that are no longer valid, so retry the whole transaction with bounded policy.",
+      "hint": "The earlier reads and decisions may need to be repeated."
+    },
+    {
+      "id": "deadlock",
+      "type": "single_select",
+      "prompt": "What does PostgreSQL commonly do when it detects a deadlock?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Wait forever for both transactions"
+        },
+        {
+          "id": "b",
+          "text": "Abort one transaction to break the cycle"
+        },
+        {
+          "id": "c",
+          "text": "Disable all locks"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The database chooses a victim transaction; the application must handle the error and may retry safely.",
+      "hint": "A wait cycle cannot resolve itself."
+    },
+    {
+      "id": "acid-durability",
+      "type": "single_select",
+      "prompt": "Does ACID consistency mean the database automatically knows every business rule?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Yes"
+        },
+        {
+          "id": "b",
+          "text": "No; constraints and correct transaction logic define the rules"
+        },
+        {
+          "id": "c",
+          "text": "Only when there is one connection"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "ACID consistency means transactions preserve defined invariants; the schema and application still need to encode those invariants.",
+      "hint": "Who defines valid business states?"
+    },
+    {
+      "id": "locks-protect-rows",
+      "type": "true_false",
+      "prompt": "A row-level lock on one inventory row automatically protects a business rule involving every row in the table.",
+      "correctAnswer": false,
+      "explanation": "A row lock coordinates access to the locked row. Rules spanning multiple rows may require constraints, a broader locking strategy, or an appropriate isolation level."
+    },
+    {
+      "id": "rollback-email",
+      "type": "true_false",
+      "prompt": "Rolling back a database transaction can undo an email already sent to a customer.",
+      "correctAnswer": false,
+      "explanation": "A database rollback cannot reverse an external side effect. Use idempotency and durable workflow patterns to coordinate external work."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "last-item-race",
+      "prompt": "Two requests attempt to buy the last unit of a product. Both read stock = 1 before either writes. Explain the race and propose a safe database operation.",
+      "skillsTested": [
+        "concurrency reasoning",
+        "atomic updates",
+        "transaction boundaries"
+      ],
+      "strongAnswerPoints": [
+        "Explain the check-then-write race and why both requests can pass application validation.",
+        "Use a conditional UPDATE with stock > 0 and check affected-row count.",
+        "Put the inventory decrement and order insert in one transaction so they succeed or fail together.",
+        "Consider idempotency for retried client requests."
+      ],
+      "pitfalls": [
+        "Relying only on a prior SELECT",
+        "Ignoring affected-row count",
+        "Creating the order even when stock decrement fails"
+      ],
+      "referenceAnswer": "The reads can interleave, so both requests may believe stock is available. I would atomically decrement with `WHERE stock > 0`, check that exactly one row changed, and insert the order in the same transaction. If no row changed, return sold out. For client retries, use an idempotency key so the same request does not create duplicate orders."
+    },
+    {
+      "id": "serializable-retry",
+      "prompt": "A transaction fails with a serialization error in production. What does that mean, and how should the application respond?",
+      "skillsTested": [
+        "isolation levels",
+        "retry semantics",
+        "operational resilience"
+      ],
+      "strongAnswerPoints": [
+        "Explain that the database could not safely commit the concurrent execution under the chosen isolation level.",
+        "Retry the whole transaction, not only the final statement, because earlier reads influenced decisions.",
+        "Use bounded retries with backoff and ensure side effects are idempotent or outside the transaction boundary."
+      ],
+      "pitfalls": [
+        "Treating serialization errors as impossible bugs",
+        "Retrying only the last write",
+        "Repeating external side effects without idempotency"
+      ],
+      "referenceAnswer": "The database aborted the transaction because the concurrent schedule could not be committed safely under SERIALIZABLE. I would retry the complete transaction with a bounded policy, because earlier reads may need to be repeated. Any external side effects need idempotency or a durable outbox/workflow so retries do not double-charge or send duplicate messages."
+    }
+  ]
+}

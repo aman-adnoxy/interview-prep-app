@@ -12,8 +12,7 @@
     "Use EXPLAIN (ANALYZE, BUFFERS) to localize work.",
     "Compare nested-loop, hash, and merge joins by input shape.",
     "Recognize sort/hash spills and temporary I/O.",
-    "Investigate plans using repeatable evidence.",
-    "Explain query plan analysis: explain analyze, join algorithms, sorts, and memory spills using the six-layer interview framework."
+    "Investigate plans using repeatable evidence."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -119,7 +118,7 @@
           "type": "code",
           "language": "text",
           "title": "Worked EXPLAIN ANALYZE excerpt",
-          "source": "Sort  (cost=... rows=900) (actual time=... rows=120000 loops=1)\\n  Sort Key: total_amount DESC\\n  Sort Method: external merge  Disk: 24576kB\\n  Buffers: shared hit=..., read=..., temp read=..., written=...\\n  ->  Seq Scan on orders  (cost=... rows=900) (actual time=... rows=120000 loops=1)\\n        Filter: (tenant_id = 7)\\n        Rows Removed by Filter: ...\\nPlanning Time: ...\\nExecution Time: ..."
+          "source": "Sort  (cost=... rows=900) (actual time=... rows=120000 loops=1)\n  Sort Key: total_amount DESC\n  Sort Method: external merge  Disk: 24576kB\n  Buffers: shared hit=..., read=..., temp read=..., written=...\n  ->  Seq Scan on orders  (cost=... rows=900) (actual time=... rows=120000 loops=1)\n        Filter: (tenant_id = 7)\n        Rows Removed by Filter: ...\nPlanning Time: ...\nExecution Time: ..."
         },
         {
           "type": "worked_example",
@@ -253,11 +252,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — Query Plan Analysis: EXPLAIN ANALYZE, Join Algorithms, Sorts, and Memory Spills. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. EXPLAIN shows the plan PostgreSQL expects to use. EXPLAIN ANALYZE runs the statement and reports what actually happened."
+          "text": "1. Problem and motivation — A query slows after data growth. The planner estimates 900 rows, but execution produces 120,000 and the following sort spills to temporary disk. The first bad estimate may explain the later work."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — A query plan is the database's step-by-step recipe for answering a query. Each step reads rows or combines results from steps below it. EXPLAIN shows the planned recipe and estimates; EXPLAIN ANALYZE runs the query and reports what actually happened. Compare the estimate with reality and find where the work or surprise begins. Make assumptions explicit."
+          "text": "2. Definition and design choice — EXPLAIN shows the chosen plan and estimates; EXPLAIN ANALYZE runs the statement and reports actual rows and timing. Read plan nodes from their inputs upward, comparing estimates with actuals to find where reality first diverges."
         },
         {
           "type": "steps",
@@ -287,13 +286,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "4. Trade-offs and scale — Apply Query Plan Analysis: EXPLAIN ANALYZE, Join Algorithms, Sorts, and Memory Spills to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "problem": "A tenant filter is estimated to return 900 rows but actually returns 120,000. The next sort uses an external merge and writes about 24 MB of temporary data.",
           "reasoning": [
-            "Planner costs are not milliseconds; parent timings include child work.",
-            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
-            "Compare correctness, performance, resource cost, operational complexity, and failure behavior."
+            "Inspect the earliest row-estimate mismatch, then check statistics, skew, correlated predicates, and whether ANALYZE or extended statistics can improve the estimate.",
+            "The sort spill may be downstream of too many rows reaching the sort. Increasing work_mem may help but the setting can multiply across operations and concurrent sessions.",
+            "Planner cost units are not milliseconds, and parent-node time includes child work. Read actual rows, loops, buffers, and temporary I/O together."
           ],
-          "outcome": "Choose based on the workload and invariants, then validate with representative measurements and edge cases."
+          "outcome": "Fix the underlying estimate or query shape, then compare plans on representative parameters. Run EXPLAIN ANALYZE on writes only in a safe test or transaction."
         },
         {
           "type": "callout",

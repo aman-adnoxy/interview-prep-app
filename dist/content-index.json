@@ -37,10 +37,20 @@
       "contentVersion": "2.0.0",
       "questionCount": 12
     },
+    "database-production-operations": {
+      "path": "/lessons/databases/database-production-operations.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 8
+    },
     "database-query-plan-analysis-explain-analyze-joins-sorts-spills": {
       "path": "/lessons/databases/database-query-plan-analysis-explain-analyze-joins-sorts-spills.json",
       "contentVersion": "2.0.0",
       "questionCount": 12
+    },
+    "database-transactions-isolation": {
+      "path": "/lessons/databases/database-transactions-isolation.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 8
     },
     "database-index-fundamentals": {
       "path": "/lessons/databases/index-fundamentals.json",
@@ -51,6 +61,11 @@
       "path": "/lessons/databases/postgresql-vs-mongodb.json",
       "contentVersion": "2.0.0",
       "questionCount": 12
+    },
+    "redis-and-caching": {
+      "path": "/lessons/databases/redis-and-caching.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 8
     },
     "relational-databases-keys-constraints": {
       "path": "/lessons/databases/relational-databases-keys-constraints.json",
@@ -81,6 +96,11 @@
       "path": "/lessons/databases/sql-null-semantics.json",
       "contentVersion": "2.0.0",
       "questionCount": 12
+    },
+    "sql-query-fundamentals": {
+      "path": "/lessons/databases/sql-query-fundamentals.json",
+      "contentVersion": "2.0.0",
+      "questionCount": 8
     }
   }
 }

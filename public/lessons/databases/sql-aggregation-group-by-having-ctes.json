@@ -9,8 +9,7 @@
     "Use COUNT, SUM, AVG, MIN, MAX and understand NULL behavior.",
     "Distinguish WHERE from HAVING.",
     "Choose between a subquery, CTE, and join based on clarity and semantics.",
-    "Avoid common aggregate errors caused by joins and ambiguous grouping.",
-    "Explain aggregations, group by, having, subqueries, and ctes using the six-layer interview framework."
+    "Avoid common aggregate errors caused by joins and ambiguous grouping."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -219,11 +218,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — Raw rows answer individual-event questions, but interviews and dashboards often ask for totals per customer, daily revenue, or groups that cross a threshold. Aggregation changes the grain of the result."
+          "text": "1. Problem and motivation — A report needs paid revenue per customer and only customers whose total exceeds ₹10,000. Filtering individual orders and filtering the final customer total are different operations."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — GROUP BY forms one output group per distinct grouping-key combination; aggregate functions summarize each group. WHERE filters input rows before grouping, while HAVING filters groups after aggregation. Subqueries and CTEs can make multi-stage logic readable, but do not automatically make it faster."
+          "text": "2. Definition and design choice — GROUP BY creates one output row per group; aggregate functions summarize each group. WHERE filters input rows before grouping, while HAVING filters completed groups. CTEs and subqueries name stages but do not automatically make a query faster."
         },
         {
           "type": "steps",
@@ -253,12 +252,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "To find customers with more than five paid orders, filter paid orders in WHERE, group by customer_id, and use HAVING COUNT(*) > 5. Applying the count condition in WHERE cannot work because the group aggregate does not exist yet.",
+          "problem": "Customer 7 has paid orders of ₹4,000, ₹3,000, and ₹5,000; customer 9 has ₹2,000. Return customers with paid revenue above ₹10,000.",
           "reasoning": [
-            "State the result grain explicitly: one row per what? This catches accidental over-grouping, under-grouping, and joins that inflate counts.",
-            "Check the actual query shape, data distribution, concurrency, and database-engine behavior before generalizing the result."
+            "WHERE status = 'paid' decides which orders contribute. GROUP BY customer_id creates one result row per customer.",
+            "SUM(total_amount) gives customer 7 ₹12,000 and customer 9 ₹2,000; HAVING SUM(total_amount) > 10000 keeps only customer 7.",
+            "If another one-to-many table is joined before summing, repeated order rows can inflate revenue. Aggregate at the intended grain before combining independent child summaries."
           ],
-          "outcome": "State the result grain explicitly: one row per what? This catches accidental over-grouping, under-grouping, and joins that inflate counts."
+          "outcome": "Decide the output grain first, filter source rows with WHERE, and use HAVING for conditions on the aggregate result."
         },
         {
           "type": "callout",

@@ -13,8 +13,7 @@
     "Recognize query patterns that can benefit from an index.",
     "Explain the read-performance, storage, and write-performance trade-offs of indexes.",
     "Use a PostgreSQL EXPLAIN plan at a basic level to investigate query access.",
-    "Explain where PostgreSQL stores index data, how caching works, and what indexes cost in disk and memory.",
-    "Explain database index fundamentals using the six-layer interview framework."
+    "Explain where PostgreSQL stores index data, how caching works, and what indexes cost in disk and memory."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -492,11 +491,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — Understand what database indexes do, how they speed up reads, and what they cost.. Begin by explaining the practical failure, cost, or engineering need that makes this topic matter. An index is an extra lookup structure that helps PostgreSQL find rows without checking every row in the table."
+          "text": "1. Problem and motivation — A service looks up one user by email in a million-row table. Reading every row is unnecessary, but the lookup structure takes disk space and must be maintained when data changes."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — Imagine a contacts table with a million people. Without an index, finding one email may mean checking many rows. An index is like an ordered lookup list that helps the database jump toward matching rows. It can make reads faster, but the database must keep that list updated whenever the table changes. State the assumptions under which this design is a good fit."
+          "text": "2. Definition and design choice — An index is a persistent lookup structure stored separately from table rows. Its pages use disk space and may also be cached in PostgreSQL shared buffers or the operating system page cache. An index does not mean all data is in RAM."
         },
         {
           "type": "steps",
@@ -526,13 +525,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "4. Trade-offs and scale — Apply Database Index Fundamentals to a realistic production workload. What changes as the data volume, request rate, concurrency, or failure rate grows?",
+          "problem": "A unique email lookup returns one row from a million, while a report returns 700,000 rows.",
           "reasoning": [
-            "An index makes some access patterns cheaper; it does not make every query faster.",
-            "Use measured workload data and explicit assumptions for any performance estimate; avoid presenting one latency, size, or threshold as universal.",
-            "Compare correctness, operational complexity, storage or compute cost, and the effect on adjacent components."
+            "The B-tree lookup visits a few index pages and may fetch a heap page; a broad report may be cheaper with a sequential scan because many scattered rows cost more to fetch.",
+            "Cached page work can be on microsecond scales, while a cold random SSD read is often tens to hundreds of microseconds. These are rough hardware-dependent scales, not latency guarantees.",
+            "Every index occupies persistent storage and adds work to inserts and relevant updates. Indexes can also compete for memory cache."
           ],
-          "outcome": "Choose the design that best satisfies the actual workload and invariants, then validate the decision with representative measurements and failure cases."
+          "outcome": "Explain the lookup path and disk/cache distinction, then validate with EXPLAIN (ANALYZE, BUFFERS) and measure read latency plus write overhead."
         },
         {
           "type": "callout",

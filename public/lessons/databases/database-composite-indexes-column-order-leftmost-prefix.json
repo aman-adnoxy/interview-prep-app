@@ -11,8 +11,7 @@
     "Choose composite index order from predicates and ordering.",
     "Explain leading-column behavior without overstating it.",
     "Distinguish key columns from INCLUDE payload.",
-    "Diagnose why an index does not fit a query.",
-    "Explain composite indexes: column order, leftmost prefix, and covering indexes using the six-layer interview framework."
+    "Diagnose why an index does not fit a query."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -238,11 +237,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — Composite Indexes: Column Order, Leftmost Prefix, and Covering Indexes. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. A composite index sorts by its first column, then by its second column within equal first-column values, and so on."
+          "text": "1. Problem and motivation — A feed filters by tenant, sorts newest-first, and returns 20 rows. Both candidate indexes contain the right columns, but their leading keys determine how much work the database may need to do."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — A composite index is a lookup list sorted by several columns in order. For an index on (tenant_id, status, created_at), rows are grouped by tenant first, then by status within each tenant, and then by time. That order determines which queries can jump to a narrow range and which must scan much more of the index. Make assumptions explicit."
+          "text": "2. Definition and design choice — A composite B-tree is ordered by the first key, then by the next key within equal first-key values. Equality predicates, range predicates, ordering, and LIMIT determine which column order is useful."
         },
         {
           "type": "steps",
@@ -272,13 +271,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "4. Trade-offs and scale — Apply Composite Indexes: Column Order, Leftmost Prefix, and Covering Indexes to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "problem": "For `WHERE tenant_id = 7 ORDER BY created_at DESC LIMIT 20`, compare `(created_at, tenant_id)` and `(tenant_id, created_at DESC)`.",
           "reasoning": [
-            "Column order is a workload decision: consider equality/range predicates, ordering, joins, LIMIT, overlapping indexes, and write cost.",
-            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
-            "Compare correctness, performance, resource cost, operational complexity, and failure behavior."
+            "The tenant-first index can seek to tenant 7 and read its rows in timestamp order, often stopping after 20 rows.",
+            "The timestamp-first index is ordered globally by time, not by tenant. It may inspect many rows belonging to other tenants before finding 20 matches.",
+            "INCLUDE can store projected columns in the index, but increases index size and write work and does not guarantee an index-only scan."
           ],
-          "outcome": "Choose based on the workload and invariants, then validate with representative measurements and edge cases."
+          "outcome": "Design around actual predicates, ordering, LIMIT, and projected columns, then check actual rows and buffers in the plan."
         },
         {
           "type": "callout",

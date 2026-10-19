@@ -1,0 +1,518 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "redis-and-caching",
+  "topicId": "databases",
+  "sectionId": "redis-and-caching",
+  "title": "Redis and Caching Architecture: TTLs, Invalidation, and Stampedes",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 40,
+  "learningObjectives": [
+    "Explain why a cache helps and why it cannot replace the source of truth by default.",
+    "Trace a cache-aside read and write, including misses and stale values.",
+    "Choose TTL and invalidation behavior based on freshness requirements.",
+    "Explain cache stampedes, hot keys, and safe mitigation strategies.",
+    "Describe Redis memory, eviction, persistence, and replication trade-offs."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "A cache is a faster, usually temporary copy of data that saves repeated work. It improves latency and reduces load when many requests reuse the same values, but it creates a second copy that can become stale. Design the miss path, update path, expiry policy, and failure behavior—not just the cache hit."
+  },
+  "concepts": [
+    {
+      "id": "cache-purpose",
+      "title": "What a cache saves—and what it costs",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A database query may need network time, query planning, disk access, joins, and row decoding. If many requests ask for the same result, a cache can avoid repeating some of that work."
+        },
+        {
+          "type": "table",
+          "title": "Example request path",
+          "columns": [
+            "Path",
+            "Illustrative latency",
+            "What happened"
+          ],
+          "rows": [
+            [
+              "Warm cache hit",
+              "sub-millisecond to a few milliseconds",
+              "Read a cached value and return it"
+            ],
+            [
+              "Database query",
+              "a few to tens of milliseconds",
+              "Query the database and build the result"
+            ],
+            [
+              "Cold storage-heavy query",
+              "can be much slower",
+              "Read uncached pages or perform expensive work"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "info",
+          "title": "These are examples, not guarantees",
+          "content": "Actual latency depends on network distance, payload size, database plan, cache locality, load, and hardware. Measure p50/p95/p99 for your workload."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A product detail page is requested 2,000 times per minute but the product changes only a few times per hour. Caching the product payload can avoid many repeated database reads.",
+          "reasoning": [
+            "Cache the data that is expensive to recompute and likely to be reused.",
+            "Keep the database or another durable store as the source of truth unless the product explicitly accepts cache-only durability.",
+            "A cache adds memory cost, invalidation work, and another failure mode."
+          ],
+          "outcome": "Use caching to reduce repeated work, not as a reflex for every query."
+        }
+      ]
+    },
+    {
+      "id": "cache-aside",
+      "title": "Cache-aside: read, miss, fill",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "In cache-aside, the application checks the cache first. On a miss it reads the source of truth, puts the result in cache, and returns it. The application owns this logic."
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "source": "value = cache.get(key)\nif value is missing:\n    value = database.load(key)\n    if value exists:\n        cache.set(key, value, ttl=60 seconds)\nreturn value",
+          "title": "Cache-aside read"
+        },
+        {
+          "type": "table",
+          "title": "Request sequence",
+          "columns": [
+            "Step",
+            "Cache",
+            "Database"
+          ],
+          "rows": [
+            [
+              "1",
+              "GET product:42 → miss",
+              "—"
+            ],
+            [
+              "2",
+              "—",
+              "SELECT product WHERE id=42"
+            ],
+            [
+              "3",
+              "SET product:42 with TTL",
+              "—"
+            ],
+            [
+              "4",
+              "GET product:42 → hit on next request",
+              "No query needed"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Cache negative results carefully",
+          "content": "If a product does not exist, repeated misses can hammer the database. A short negative-cache TTL can help, but be sure a newly created product becomes visible quickly enough."
+        },
+        {
+          "type": "worked_example",
+          "problem": "The first request misses and takes 12 ms to query the database. It caches the product. The next request hits the cache in 1 ms under this illustrative workload; the latency improvement disappears if the key expires or is evicted.",
+          "reasoning": [
+            "A cache miss must have a correct fallback path.",
+            "Set a TTL or a deliberate invalidation rule so entries do not remain stale forever by accident.",
+            "Decide how database errors behave: do not turn a failed database read into a cached 'not found' response."
+          ],
+          "outcome": "Cache-aside is simple and common, but cache misses, expiry, and source failures are part of the design."
+        }
+      ]
+    },
+    {
+      "id": "freshness-invalidation",
+      "title": "TTL, invalidation, and stale data",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A TTL limits how long an entry may remain in cache without refresh. It is a safety net, not a guarantee that data is always fresh. Invalidation removes or refreshes entries when the source changes."
+        },
+        {
+          "type": "table",
+          "title": "Strategy",
+          "columns": [
+            "Strategy",
+            "Benefit",
+            "Trade-off"
+          ],
+          "rows": [
+            [
+              "TTL only",
+              "Simple; bounds stale duration roughly",
+              "Changes may remain stale until expiry"
+            ],
+            [
+              "Write-through / update cache after DB write",
+              "Can make changes visible sooner",
+              "Must handle partial failure between DB and cache"
+            ],
+            [
+              "Delete cache key after DB commit",
+              "Simple invalidation path",
+              "A race can refill stale data unless ordering is handled"
+            ],
+            [
+              "Versioned key / event-driven invalidation",
+              "Can support explicit update propagation",
+              "More moving parts and operational failure modes"
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "A price is cached for 60 seconds. The database price changes one second after the cache entry is set. With TTL-only caching, readers may see the old price for roughly 59 more seconds.",
+          "reasoning": [
+            "Choose freshness based on product rules: stale product descriptions may be acceptable; account balances or available inventory often need stronger controls.",
+            "If the database write succeeds but cache invalidation fails, stale data can remain. Record, retry, or otherwise design for that failure.",
+            "Cache invalidation after commit reduces one race but does not eliminate every concurrent refill race."
+          ],
+          "outcome": "Pick a freshness target and document the maximum acceptable staleness and how invalidation failures recover."
+        }
+      ]
+    },
+    {
+      "id": "stampede-and-hot-keys",
+      "title": "Cache stampedes, hot keys, and overload",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "When a popular key expires, many requests may miss at once and all query the database. This is a cache stampede. A hot key can also overload one cache shard or become a single point of contention."
+        },
+        {
+          "type": "callout",
+          "kind": "tip",
+          "title": "Common mitigations",
+          "content": "Use per-key single-flight/request coalescing, a short lock where justified, TTL jitter, stale-while-revalidate, and bounded database concurrency. Each changes freshness or failure behavior, so pick based on the data."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A product key expires while 800 requests per second arrive. Without coordination, a large fraction can all query the database before any request refills the cache.",
+          "reasoning": [
+            "Single-flight lets one request refresh the value while others wait or use a permitted stale value.",
+            "TTL jitter spreads expirations so many keys do not all expire at the same instant.",
+            "A lock needs a timeout and safe release; never let a failed lock holder block refresh forever."
+          ],
+          "outcome": "Protect the source of truth against synchronized misses, and measure miss rate, refresh concurrency, and database load."
+        }
+      ]
+    },
+    {
+      "id": "redis-memory-durability",
+      "title": "Redis memory, eviction, persistence, and replication",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Redis primarily serves data from memory, so capacity is a first-class limit. When memory reaches its configured limit, an eviction policy may remove keys. Redis persistence and replication can improve recovery or availability, but they do not automatically make every cache value durable or strongly consistent."
+        },
+        {
+          "type": "table",
+          "title": "Concern",
+          "columns": [
+            "Mechanism",
+            "What it does not guarantee"
+          ],
+          "rows": [
+            [
+              "maxmemory + eviction policy",
+              "Does not promise a key will remain cached"
+            ],
+            [
+              "RDB snapshots",
+              "Can lose writes since the last snapshot"
+            ],
+            [
+              "AOF persistence",
+              "Durability depends on fsync policy and failure mode"
+            ],
+            [
+              "Replication",
+              "Replica lag can expose stale reads; failover needs operational design"
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "If Redis is configured with a 4 GB maxmemory and a cache workload exceeds it, an eviction policy may remove keys to make room. The application must treat an evicted key as a cache miss and reload from the source.",
+          "reasoning": [
+            "A cache should be safe to rebuild unless the system deliberately uses Redis as a durable data store.",
+            "Monitor memory, evictions, hit ratio, replication lag, persistence errors, and latency.",
+            "Persistence settings trade write latency and I/O for a smaller data-loss window; state the required recovery objective."
+          ],
+          "outcome": "Plan for eviction, restarts, replica lag, and cache loss as normal operating conditions."
+        }
+      ]
+    },
+    {
+      "id": "six-layer-interview-synthesis",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — A product endpoint repeatedly queries the database for the same product, but the cached price can become stale after an update."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — Cache-aside checks Redis first, loads the source of truth on a miss, and stores the result with a TTL. The write path must define how stale entries are invalidated or refreshed."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A product price is cached for 60 seconds. A price update commits to the database, but deleting the cache key fails.",
+          "reasoning": [
+            "Until expiry or successful invalidation, readers may see the old price; TTL bounds the stale period only if the entry is not refreshed with stale data again.",
+            "Retry invalidation or publish a durable invalidation event after commit. Make consumers idempotent because events can be delivered more than once.",
+            "If the business cannot tolerate stale prices at checkout, revalidate against the source of truth at the decision point rather than trusting the cache."
+          ],
+          "outcome": "A cache design is incomplete until it explains both hit behavior and the failure path when data changes."
+        },
+        {
+          "type": "paragraph",
+          "text": "4. Trade-offs and scale — A high hit ratio can reduce database load, but large payloads, evictions, hot keys, and stampedes can erase the benefit. Measure hit ratio, miss latency, p95/p99, evictions, and source load."
+        },
+        {
+          "type": "paragraph",
+          "text": "5. Anti-patterns — Treating cached data as authoritative by accident, caching database errors as empty results, using one synchronized TTL for every key, and assuming Redis persistence eliminates every data-loss scenario."
+        },
+        {
+          "type": "paragraph",
+          "text": "6. Interview probes — What happens on a miss? How stale can the value become? What if invalidation fails? What if 800 requests miss the same key? What does the app do when Redis is unavailable?"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "A cache outage can become a database outage",
+      "content": "If every request falls back to the database at full concurrency, a Redis outage can overwhelm the source. Use timeouts, bounded fallback concurrency, load shedding, and recovery plans."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Cache-aside: cache read → on miss read source → cache value with TTL → return result."
+    },
+    {
+      "type": "paragraph",
+      "text": "TTL limits entry lifetime; invalidation tries to make changes visible sooner. Neither eliminates every race."
+    },
+    {
+      "type": "paragraph",
+      "text": "A stampede is many concurrent misses for the same key. Use single-flight, TTL jitter, stale-while-revalidate, or bounded refresh work."
+    },
+    {
+      "type": "paragraph",
+      "text": "Redis memory limits and eviction mean keys can disappear. Treat cache loss as a normal path."
+    },
+    {
+      "type": "paragraph",
+      "text": "Monitor hit ratio, miss rate, evictions, hot keys, latency, memory, source load, and replica lag."
+    }
+  ],
+  "questions": [
+    {
+      "id": "cache-aside-miss",
+      "type": "single_select",
+      "prompt": "In cache-aside, what normally happens on a cache miss?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Return the missing value as null without checking the source"
+        },
+        {
+          "id": "b",
+          "text": "Read the source of truth, cache the result if appropriate, then return it"
+        },
+        {
+          "id": "c",
+          "text": "Restart Redis"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The miss path reads the authoritative source and may populate the cache for later requests.",
+      "hint": "Think of the cache as a shortcut, not the source."
+    },
+    {
+      "id": "ttl-freshness",
+      "type": "single_select",
+      "prompt": "A value has a 60-second TTL. What does this tell you?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The value is always perfectly fresh"
+        },
+        {
+          "id": "b",
+          "text": "The entry is eligible to expire after its TTL, but stale reads can occur before then"
+        },
+        {
+          "id": "c",
+          "text": "The database value cannot change for 60 seconds"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "TTL limits how long an entry lives; it does not guarantee immediate propagation of updates.",
+      "hint": "TTL is not the same as invalidation."
+    },
+    {
+      "id": "stampede",
+      "type": "single_select",
+      "prompt": "What is a cache stampede?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Many requests miss the same expired key and overload the source"
+        },
+        {
+          "id": "b",
+          "text": "A database backup"
+        },
+        {
+          "id": "c",
+          "text": "A Redis key that is always fresh"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Synchronized misses can trigger a burst of identical source queries.",
+      "hint": "Think about what happens when a popular key expires."
+    },
+    {
+      "id": "cache-source",
+      "type": "single_select",
+      "prompt": "Which data should generally remain the source of truth in a cache-aside design?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The durable database or authoritative store"
+        },
+        {
+          "id": "b",
+          "text": "Whichever copy was read most recently"
+        },
+        {
+          "id": "c",
+          "text": "The cache because it is faster"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The cache is a performance layer and can be evicted or lost.",
+      "hint": "Which copy can be rebuilt from the other?"
+    },
+    {
+      "id": "redis-memory",
+      "type": "single_select",
+      "prompt": "What can happen when Redis reaches maxmemory under an eviction policy?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The application can assume all keys remain forever"
+        },
+        {
+          "id": "b",
+          "text": "Keys may be evicted and must be reloadable if they are cache entries"
+        },
+        {
+          "id": "c",
+          "text": "The database stops accepting writes"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Memory limits and eviction mean a cache key can disappear at any time under pressure.",
+      "hint": "Treat cache miss as normal."
+    },
+    {
+      "id": "invalidation-failure",
+      "type": "single_select",
+      "prompt": "The database update succeeds but deleting the cache key fails. What is the risk?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Readers may see stale cached data"
+        },
+        {
+          "id": "b",
+          "text": "The database automatically rolls back"
+        },
+        {
+          "id": "c",
+          "text": "All cache keys become valid"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The source changed but the cached copy remains until expiry or successful refresh/invalidation.",
+      "hint": "Two systems were updated separately."
+    },
+    {
+      "id": "redis-replica-lag",
+      "type": "true_false",
+      "prompt": "Reading from a Redis replica always returns the latest write made to the primary.",
+      "correctAnswer": false,
+      "explanation": "Replication can be asynchronous, so replica reads may lag behind the primary."
+    },
+    {
+      "id": "cache-durable",
+      "type": "true_false",
+      "prompt": "A Redis cache should normally tolerate losing or evicting cache entries by reloading them from the authoritative source.",
+      "correctAnswer": true,
+      "explanation": "A cache is generally a rebuildable performance layer; if Redis is the durable source of truth, that is a different architecture and needs explicit durability guarantees."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "price-cache-stale",
+      "prompt": "A product price changes in the database, but users still see the old price from Redis. Explain the likely cause and design a robust update path.",
+      "skillsTested": [
+        "cache invalidation",
+        "consistency",
+        "failure handling"
+      ],
+      "strongAnswerPoints": [
+        "Explain TTL versus explicit invalidation.",
+        "Consider the database-write/cache-delete partial-failure window.",
+        "Use durable retry/event delivery or a reconciliation path, with idempotent consumers.",
+        "Revalidate critical prices at checkout if stale data is unacceptable."
+      ],
+      "pitfalls": [
+        "Assuming a successful database commit also updates Redis",
+        "Relying on TTL without stating the staleness budget",
+        "Treating cache values as authoritative for payment decisions"
+      ],
+      "referenceAnswer": "The database and Redis are separate systems, so the database write can succeed while cache invalidation fails. I would commit the database update, arrange reliable invalidation or an outbox event with retries, and use a TTL as a fallback bound. For checkout, I would validate the price against the authoritative store if stale prices could cause a financial error."
+    },
+    {
+      "id": "popular-key-expiry",
+      "prompt": "A popular key expires while hundreds of requests arrive per second. The database CPU spikes. How do you prevent a cache stampede?",
+      "skillsTested": [
+        "load protection",
+        "cache concurrency",
+        "operational metrics"
+      ],
+      "strongAnswerPoints": [
+        "Explain synchronized misses and duplicate source queries.",
+        "Use request coalescing/single-flight, TTL jitter, or stale-while-revalidate where acceptable.",
+        "Bound refresh concurrency and source fallback during cache outages.",
+        "Monitor miss rate, refresh concurrency, database load, and tail latency."
+      ],
+      "pitfalls": [
+        "Increasing database connections without controlling concurrent misses",
+        "Using a lock with no timeout or safe release",
+        "Serving stale values without checking whether the product allows it"
+      ],
+      "referenceAnswer": "Many requests miss the same key before the first refill completes, so each may query the database. I would coalesce refreshes per key, add TTL jitter, and consider stale-while-revalidate if the freshness requirements allow it. I would also bound database fallback concurrency and monitor miss rate and p95/p99 latency."
+    }
+  ]
+}

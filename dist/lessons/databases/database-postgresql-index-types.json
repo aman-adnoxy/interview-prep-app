@@ -11,8 +11,7 @@
     "Match PostgreSQL index families to operators and data shape.",
     "Explain GIN, GiST, and BRIN trade-offs.",
     "Use partial and expression indexes when predicates match.",
-    "Recognize operator-class requirements.",
-    "Explain postgresql index types: b-tree, gin, gist, brin, partial, and expression indexes using the six-layer interview framework."
+    "Recognize operator-class requirements."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -253,11 +252,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — PostgreSQL Index Types: B-tree, GIN, GiST, BRIN, Partial, and Expression Indexes. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. B-tree is the general-purpose starting point because it supports equality, range conditions, and ordered results. Hash is narrower: it supports equality lookups."
+          "text": "1. Problem and motivation — A service filters scalar IDs, searches inside JSONB tags, and scans date ranges in a large append-oriented table. One index family will not serve every operator equally well."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — Different indexes are like different lookup tools. A B-tree is a good everyday choice for exact values, ranges, and sorting. GIN is useful when searching inside arrays or JSON documents. BRIN summarizes large runs of nearby table pages. Pick the tool that supports the question your query is asking. Make assumptions explicit."
+          "text": "2. Definition and design choice — Index families support different operators and data layouts: B-tree handles common equality, range, and ordering work; GIN supports membership in composite values; GiST supports operator families such as spatial and range searches; BRIN summarizes nearby heap-page ranges."
         },
         {
           "type": "steps",
@@ -287,13 +286,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "4. Trade-offs and scale — Apply PostgreSQL Index Types: B-tree, GIN, GiST, BRIN, Partial, and Expression Indexes to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "problem": "An API queries `customer_id = 42`, searches JSONB with `metadata @> '{\"urgent\": true}'`, and analytics filters a date range on a table inserted mostly in timestamp order.",
           "reasoning": [
-            "Index type follows operators and data shape, not column labels.",
-            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
-            "Compare correctness, performance, resource cost, operational complexity, and failure behavior."
+            "A B-tree on customer_id suits scalar equality; a GIN index may support JSONB containment; a BRIN index can be compact when timestamps correlate with physical page order.",
+            "A partial index can omit rows outside a stable predicate, and an expression index can index a frequently used expression. Query operators and predicates must match index semantics.",
+            "Specialized indexes differ in size, build time, and update cost. Even a suitable index can lose to a sequential scan when most rows match."
           ],
-          "outcome": "Choose based on the workload and invariants, then validate with representative measurements and edge cases."
+          "outcome": "Choose from actual operators, data distribution, and physical layout; verify operator-class support and compare read benefits with index maintenance."
         },
         {
           "type": "callout",

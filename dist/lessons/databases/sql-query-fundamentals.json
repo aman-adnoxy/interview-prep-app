@@ -1,0 +1,542 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "sql-query-fundamentals",
+  "topicId": "databases",
+  "sectionId": "sql-query-fundamentals",
+  "title": "SQL Query Fundamentals: Filtering, Sorting, NULLs, and Query Shape",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 32,
+  "learningObjectives": [
+    "Write basic SELECT queries with WHERE, ORDER BY, LIMIT, DISTINCT, CASE, and expressions.",
+    "Predict which rows survive filters and how sorting and limiting affect the output.",
+    "Explain why SQL query evaluation order differs from the order clauses are written.",
+    "Use small input tables to reason about duplicates and NULLs."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Think of a SQL query as a set of stages: choose rows, group or calculate values if needed, sort the result, then return the requested slice. The exact stage order matters: LIMIT without ORDER BY does not promise which rows you get, and WHERE cannot filter a value that only exists after aggregation."
+  },
+  "concepts": [
+    {
+      "id": "query-shape",
+      "title": "Start with the output you need",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Before writing SQL, say what one result row should represent and which columns you need. This prevents accidental duplicates and unnecessary columns."
+        },
+        {
+          "type": "table",
+          "title": "Orders sample",
+          "columns": [
+            "order_id",
+            "customer_id",
+            "status",
+            "amount"
+          ],
+          "rows": [
+            [
+              "101",
+              "7",
+              "paid",
+              "4000"
+            ],
+            [
+              "102",
+              "7",
+              "pending",
+              "3000"
+            ],
+            [
+              "103",
+              "7",
+              "paid",
+              "5000"
+            ],
+            [
+              "104",
+              "9",
+              "paid",
+              "2000"
+            ]
+          ]
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "SELECT order_id, amount\nFROM orders\nWHERE status = 'paid'\nORDER BY amount DESC\nLIMIT 2;",
+          "title": "Filter, sort, then limit"
+        },
+        {
+          "type": "table",
+          "title": "Expected result",
+          "columns": [
+            "order_id",
+            "amount"
+          ],
+          "rows": [
+            [
+              "103",
+              "5000"
+            ],
+            [
+              "101",
+              "4000"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "WHERE removes pending order 102. ORDER BY puts the largest paid orders first. LIMIT 2 returns only the first two rows of that sorted result."
+        }
+      ]
+    },
+    {
+      "id": "filters-expressions",
+      "title": "WHERE, expressions, and CASE",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "WHERE keeps rows for which its condition is TRUE. A condition that is FALSE or UNKNOWN does not pass. Expressions can calculate a value without changing the stored row."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "SELECT order_id,\n       amount,\n       amount * 0.18 AS tax,\n       CASE WHEN amount >= 4000 THEN 'large'\n            ELSE 'small'\n       END AS order_size\nFROM orders\nWHERE status = 'paid';",
+          "title": "Calculate values in the result"
+        },
+        {
+          "type": "table",
+          "title": "Example output",
+          "columns": [
+            "order_id",
+            "amount",
+            "tax",
+            "order_size"
+          ],
+          "rows": [
+            [
+              "101",
+              "4000",
+              "720",
+              "large"
+            ],
+            [
+              "103",
+              "5000",
+              "900",
+              "large"
+            ],
+            [
+              "104",
+              "2000",
+              "360",
+              "small"
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "For order 103, amount is 5000. The tax expression returns 5000 × 0.18 = 900, and CASE labels it large because 5000 is at least 4000.",
+          "reasoning": [
+            "An alias names the output expression; it does not create a stored column.",
+            "CASE evaluates its conditions in order and returns the first matching branch.",
+            "A WHERE predicate filters source rows before the SELECT expressions are used for the final output."
+          ],
+          "outcome": "Use expressions to calculate output values, and use CASE when the result depends on a condition."
+        }
+      ]
+    },
+    {
+      "id": "distinct-and-ordering",
+      "title": "DISTINCT, ORDER BY, and LIMIT",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "DISTINCT removes duplicate complete output rows. It does not mean 'pick one arbitrary row per customer.' ORDER BY defines the requested order; LIMIT without an order does not define which rows are selected."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "SELECT DISTINCT customer_id\nFROM orders\nORDER BY customer_id;",
+          "title": "Unique customer IDs"
+        },
+        {
+          "type": "table",
+          "title": "Expected result",
+          "columns": [
+            "customer_id"
+          ],
+          "rows": [
+            [
+              "7"
+            ],
+            [
+              "9"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "LIMIT without ORDER BY",
+          "content": "`SELECT * FROM orders LIMIT 10` can return different rows after plan changes or data changes. If you need the newest 10 orders, use `ORDER BY created_at DESC, order_id DESC LIMIT 10` so ties have a stable order."
+        },
+        {
+          "type": "worked_example",
+          "problem": "There are four orders but only two customer IDs. DISTINCT customer_id returns 7 and 9, not four rows.",
+          "reasoning": [
+            "DISTINCT compares the selected row values; if you also select order_id, each order will likely be distinct.",
+            "A stable sort needs a tie-breaker when the primary sort column can repeat.",
+            "LIMIT controls result size; it does not make the choice deterministic by itself."
+          ],
+          "outcome": "Use DISTINCT only when duplicate result rows are unwanted, and use a complete ORDER BY for deterministic top-N results."
+        }
+      ]
+    },
+    {
+      "id": "sql-null-basics",
+      "title": "NULL in everyday filters",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A missing value is not the same as zero or an empty string. Comparisons with NULL usually evaluate to UNKNOWN, so `column = NULL` does not find missing values."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "SELECT order_id\nFROM orders\nWHERE shipped_at IS NULL;",
+          "title": "Find rows without a ship date"
+        },
+        {
+          "type": "callout",
+          "kind": "tip",
+          "title": "Read the predicate in plain English",
+          "content": "`IS NULL` means the value is missing. `= NULL` asks whether a value equals an unknown value, which SQL cannot prove true."
+        },
+        {
+          "type": "worked_example",
+          "problem": "If shipped_at is NULL, `shipped_at <> DATE '2026-10-01'` is UNKNOWN, so the row does not pass WHERE. If the rule is 'not shipped on that date, including not shipped yet', write `shipped_at IS NULL OR shipped_at <> DATE '2026-10-01'`.",
+          "reasoning": [
+            "WHERE keeps TRUE and removes FALSE or UNKNOWN.",
+            "Use IS NULL / IS NOT NULL to test missingness.",
+            "Use COALESCE only when the fallback value matches the business meaning; it should not hide uncertainty accidentally."
+          ],
+          "outcome": "When a result surprises you, test the NULL case explicitly rather than treating NULL like an ordinary value."
+        }
+      ]
+    },
+    {
+      "id": "query-evaluation-order",
+      "title": "How to reason through a query",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A useful simplified mental order is FROM/JOIN, WHERE, GROUP BY and aggregates, HAVING, SELECT, DISTINCT, ORDER BY, then LIMIT. This is a reasoning model, not a promise about the database's physical execution order; the optimizer may reorder work while preserving SQL semantics."
+        },
+        {
+          "type": "table",
+          "title": "Clause",
+          "columns": [
+            "Clause",
+            "Question it answers"
+          ],
+          "rows": [
+            [
+              "FROM / JOIN",
+              "Which source rows are combined?"
+            ],
+            [
+              "WHERE",
+              "Which input rows survive?"
+            ],
+            [
+              "GROUP BY",
+              "Which rows belong to the same group?"
+            ],
+            [
+              "HAVING",
+              "Which completed groups survive?"
+            ],
+            [
+              "SELECT",
+              "Which values or expressions appear?"
+            ],
+            [
+              "DISTINCT",
+              "Which duplicate output rows are removed?"
+            ],
+            [
+              "ORDER BY / LIMIT",
+              "How are results ordered, and how many are returned?"
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "You cannot write `WHERE COUNT(*) > 5` to filter customer groups because the group count is not available at the WHERE stage. Use `GROUP BY customer_id HAVING COUNT(*) > 5`.",
+          "reasoning": [
+            "WHERE filters rows before aggregation.",
+            "HAVING filters groups after aggregates are computed.",
+            "The optimizer can change the physical plan, so clause order should be used to reason about meaning—not to infer every execution step."
+          ],
+          "outcome": "Use the logical order to predict query meaning; use EXPLAIN when you need to understand the physical plan."
+        }
+      ]
+    },
+    {
+      "id": "six-layer-interview-synthesis",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem and motivation — A dashboard asks for the newest 20 paid orders, but the query uses LIMIT without ORDER BY and sometimes shows different orders."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Definition and design choice — SELECT chooses output expressions; WHERE filters source rows; ORDER BY defines order; LIMIT truncates the ordered result. DISTINCT removes duplicate selected rows, not arbitrary duplicates by a key."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A table contains four orders: 101 paid ₹4,000; 102 pending ₹3,000; 103 paid ₹5,000; 104 paid ₹2,000. Return the two highest-value paid orders.",
+          "reasoning": [
+            "Filter to paid rows: 101, 103, and 104.",
+            "Sort amount descending: 103 (₹5,000), 101 (₹4,000), 104 (₹2,000).",
+            "LIMIT 2 returns 103 and 101. Add a unique tie-breaker if amounts can tie."
+          ],
+          "outcome": "Expected output is order 103 then order 101. The row filter, ordering, and limit each change the result in a different way."
+        },
+        {
+          "type": "paragraph",
+          "text": "4. Trade-offs and scale — A selective filter can reduce the rows sorted, and a matching index may let the database stop early for ORDER BY plus LIMIT. Verify with EXPLAIN; do not assume the index is always cheaper."
+        },
+        {
+          "type": "paragraph",
+          "text": "5. Anti-patterns — LIMIT without a deterministic order, using DISTINCT to hide a faulty join, comparing a column to NULL with `=`, and selecting every column when only two are needed."
+        },
+        {
+          "type": "paragraph",
+          "text": "6. Interview probes — Why might LIMIT return different rows? What happens when the sort key ties? Why does `column = NULL` return no true matches? Explain the result before running the query."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "pitfall",
+      "title": "Do not memorize slogans",
+      "content": "Start with the rows and operations involved, state what must remain true, then predict the result. Similar-looking SQL can behave differently under concurrency or when NULLs and errors are involved."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "ORDER BY defines the requested order; LIMIT alone does not."
+    },
+    {
+      "type": "paragraph",
+      "text": "DISTINCT removes duplicate selected rows, not arbitrary duplicate business entities."
+    },
+    {
+      "type": "paragraph",
+      "text": "WHERE filters rows; HAVING filters grouped results."
+    },
+    {
+      "type": "paragraph",
+      "text": "NULL tests use IS NULL, not = NULL."
+    },
+    {
+      "type": "paragraph",
+      "text": "The logical query order helps reason about meaning; EXPLAIN shows the physical plan."
+    }
+  ],
+  "questions": [
+    {
+      "id": "limit-order",
+      "type": "single_select",
+      "prompt": "What does `SELECT * FROM orders LIMIT 5` guarantee?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The five newest rows"
+        },
+        {
+          "id": "b",
+          "text": "Any five rows; no order is guaranteed"
+        },
+        {
+          "id": "c",
+          "text": "The five smallest order IDs"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Without ORDER BY, SQL does not promise which five rows are returned.",
+      "hint": "Look for an ORDER BY clause."
+    },
+    {
+      "id": "distinct-row",
+      "type": "single_select",
+      "prompt": "What does `SELECT DISTINCT customer_id FROM orders` remove?",
+      "options": [
+        {
+          "id": "a",
+          "text": "All but the newest order per customer"
+        },
+        {
+          "id": "b",
+          "text": "Duplicate customer_id values in the result"
+        },
+        {
+          "id": "c",
+          "text": "Duplicate stored orders from the table"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "DISTINCT removes duplicate selected output rows; it does not delete source data or choose a newest row.",
+      "hint": "Think about which columns are selected."
+    },
+    {
+      "id": "null-where",
+      "type": "single_select",
+      "prompt": "Why does `WHERE shipped_at = NULL` not find missing dates?",
+      "options": [
+        {
+          "id": "a",
+          "text": "NULL comparisons evaluate to UNKNOWN"
+        },
+        {
+          "id": "b",
+          "text": "NULL is equal only to empty strings"
+        },
+        {
+          "id": "c",
+          "text": "WHERE ignores all date columns"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Use IS NULL to test missing values. Ordinary equality with NULL does not evaluate to TRUE.",
+      "hint": "Which predicate tests missingness?"
+    },
+    {
+      "id": "where-having",
+      "type": "single_select",
+      "prompt": "Which clause filters groups using COUNT(*)?",
+      "options": [
+        {
+          "id": "a",
+          "text": "WHERE"
+        },
+        {
+          "id": "b",
+          "text": "HAVING"
+        },
+        {
+          "id": "c",
+          "text": "ORDER BY"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "HAVING filters groups after GROUP BY and aggregate calculation.",
+      "hint": "The count belongs to a group."
+    },
+    {
+      "id": "case-result",
+      "type": "single_select",
+      "prompt": "For amount = 5000, what does `CASE WHEN amount >= 4000 THEN 'large' ELSE 'small' END` return?",
+      "options": [
+        {
+          "id": "a",
+          "text": "large"
+        },
+        {
+          "id": "b",
+          "text": "small"
+        },
+        {
+          "id": "c",
+          "text": "NULL"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "5000 meets the condition amount >= 4000, so CASE returns large.",
+      "hint": "Evaluate the condition directly."
+    },
+    {
+      "id": "distinct-composite",
+      "type": "single_select",
+      "prompt": "If two orders have the same customer_id but different order_id, does `SELECT DISTINCT customer_id, order_id` collapse them?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Yes, because customer_id repeats"
+        },
+        {
+          "id": "b",
+          "text": "No, the selected pairs differ"
+        },
+        {
+          "id": "c",
+          "text": "Only if amounts match"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "DISTINCT compares the complete selected row. Different order IDs make the output rows distinct.",
+      "hint": "DISTINCT applies to the whole selected tuple."
+    },
+    {
+      "id": "filter-unknown",
+      "type": "true_false",
+      "prompt": "A row whose WHERE predicate evaluates to UNKNOWN is returned by a normal SELECT.",
+      "correctAnswer": false,
+      "explanation": "WHERE retains only rows where the predicate is TRUE; FALSE and UNKNOWN are filtered out."
+    },
+    {
+      "id": "order-ties",
+      "type": "true_false",
+      "prompt": "Adding a unique tie-breaker to ORDER BY can make a LIMIT query deterministic when the main sort key ties.",
+      "correctAnswer": true,
+      "explanation": "A unique secondary key defines the order among rows tied on the primary sort key."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "latest-orders-endpoint",
+      "prompt": "An endpoint returns the newest 20 orders but occasionally repeats or omits rows between calls. Diagnose the SQL and propose a deterministic query.",
+      "skillsTested": [
+        "SQL semantics",
+        "ordering and pagination",
+        "reasoning about duplicates"
+      ],
+      "strongAnswerPoints": [
+        "Add ORDER BY created_at DESC, order_id DESC before LIMIT 20.",
+        "Use a unique tie-breaker so equal timestamps have a deterministic order.",
+        "If paging through changing data, discuss keyset pagination and a stable cursor when appropriate."
+      ],
+      "pitfalls": [
+        "Assuming LIMIT implies order",
+        "Sorting only by a non-unique timestamp",
+        "Using DISTINCT to mask duplicates from an incorrect join"
+      ],
+      "referenceAnswer": "LIMIT restricts row count but does not define which rows are first. I would order by created_at descending and order_id descending, then limit to 20. If the dataset changes between pages, keyset pagination using the last seen timestamp and ID can be more stable than large offsets."
+    },
+    {
+      "id": "missing-date-filter",
+      "prompt": "A report should include orders that were not shipped on 1 October, including orders that have not shipped yet. Why does `WHERE shipped_at <> DATE '2026-10-01'` miss some rows?",
+      "skillsTested": [
+        "NULL semantics",
+        "translating business rules to SQL"
+      ],
+      "strongAnswerPoints": [
+        "A NULL comparison returns UNKNOWN, and WHERE excludes UNKNOWN.",
+        "Write `shipped_at IS NULL OR shipped_at <> DATE '2026-10-01'`.",
+        "Explain the intended business meaning of missing values."
+      ],
+      "pitfalls": [
+        "Treating NULL as an ordinary value",
+        "Replacing NULL with an arbitrary date without checking business meaning"
+      ],
+      "referenceAnswer": "For rows with shipped_at NULL, the inequality is UNKNOWN rather than TRUE, so WHERE removes them. The business rule explicitly includes missing dates, so I would add `shipped_at IS NULL OR shipped_at <> DATE '2026-10-01'`."
+    }
+  ]
+}

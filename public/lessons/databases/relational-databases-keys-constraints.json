@@ -9,8 +9,7 @@
     "Choose primary and candidate keys based on identity and business rules.",
     "Distinguish primary, foreign, unique, check, and not-null constraints.",
     "Explain how constraints protect invariants under concurrent writes.",
-    "Diagnose when a constraint should be immediate, deferred, or represented differently.",
-    "Explain relational databases, primary keys, foreign keys, and constraints using the six-layer interview framework."
+    "Diagnose when a constraint should be immediate, deferred, or represented differently."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -451,11 +450,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — An application needs to store customers, orders, and payments without contradictory copies of the same fact. Without a clear relational model, updates can leave orphaned orders, duplicate identities, or totals that disagree."
+          "text": "1. Problem and motivation — Two requests try to register the same email at nearly the same time. A SELECT-before-INSERT check can let both through because neither request reserves the missing email."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — A relational database represents entities as rows, relationships as keys, and business invariants as constraints. Compared with validating only in application code, database constraints protect the data even when several services, scripts, or concurrent requests write to it."
+          "text": "2. Definition and design choice — Primary and foreign keys express identity and relationships; UNIQUE, NOT NULL, and CHECK constraints protect business rules at the database boundary. Application validation improves messages but cannot replace concurrency-safe constraints."
         },
         {
           "type": "steps",
@@ -485,12 +484,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "Suppose two requests try to register the same email at the same time. A pre-insert SELECT in application code can race: both requests see no row. A UNIQUE constraint arbitrates the conflict at the database boundary; one insert succeeds and the other receives a uniqueness violation.",
+          "problem": "Two requests both check for `sam@example.com`, see no row, and then attempt to insert it.",
           "reasoning": [
-            "Use database constraints for durable invariants and application validation for friendly error messages and rules that need external context. The two complement rather than replace each other.",
-            "Check the actual query shape, data distribution, concurrency, and database-engine behavior before generalizing the result."
+            "Without a unique constraint, both inserts can succeed even though each request checked first; the checks raced.",
+            "A UNIQUE constraint makes the database arbitrate the conflict: one insert succeeds and the other gets a uniqueness violation.",
+            "Translate that error into a friendly response and decide whether retries are safe. Do not catch and ignore every constraint error."
           ],
-          "outcome": "Use database constraints for durable invariants and application validation for friendly error messages and rules that need external context. The two complement rather than replace each other."
+          "outcome": "Enforce durable invariants in the database, keep application validation for user experience, and test concurrent requests—not just sequential examples."
         },
         {
           "type": "callout",

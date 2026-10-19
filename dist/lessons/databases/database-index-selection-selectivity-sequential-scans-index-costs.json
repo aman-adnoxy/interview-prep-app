@@ -12,8 +12,7 @@
     "Explain why PostgreSQL may choose sequential scan despite an index.",
     "Compare index, bitmap heap, and sequential scans.",
     "Identify index write, storage, cache, vacuum, and operational costs.",
-    "Use workload evidence to justify adding or removing indexes.",
-    "Explain index selection, selectivity, sequential scans, and when indexes hurt using the six-layer interview framework."
+    "Use workload evidence to justify adding or removing indexes."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -243,11 +242,11 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "1. Problem and motivation — Index Selection, Selectivity, Sequential Scans, and When Indexes Hurt. Interview-first coverage of mechanisms, prediction, diagnosis, and trade-offs.. Explain the practical problem, failure mode, or engineering cost that makes the topic important. Selectivity describes the fraction of rows that match a condition. Cardinality is the number of matching rows, estimated by the planner or observed during execution."
+          "text": "1. Problem and motivation — An email lookup returns one row from ten million, while a status filter returns eight million. An index is not automatically the cheapest plan for both queries."
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — An index is an option, not an instruction. If a query needs five rows from a million, an index can save a lot of work. If it needs half the table, finding rows through an index and then jumping around the table may cost more than reading the table in order. PostgreSQL estimates those costs and chooses the path it expects to be cheapest. Make assumptions explicit."
+          "text": "2. Definition and design choice — Selectivity is the fraction of rows matching a predicate; cardinality is a row count. PostgreSQL estimates sequential, index, and bitmap paths using statistics, page costs, and expected rows."
         },
         {
           "type": "steps",
@@ -277,13 +276,13 @@
         },
         {
           "type": "worked_example",
-          "problem": "4. Trade-offs and scale — Apply Index Selection, Selectivity, Sequential Scans, and When Indexes Hurt to a realistic workload. What changes as data volume, concurrency, or failure rate grows?",
+          "problem": "A 10-million-row table has an email index and a status index. Email matches one row; `status = 'active'` matches eight million rows scattered across the table.",
           "reasoning": [
-            "More indexes is not automatically better: an index may speed one query while slowing writes and consuming cache.",
-            "Use quantitative estimates only with units, assumptions, and caveats; avoid universal thresholds.",
-            "Compare correctness, performance, resource cost, operational complexity, and failure behavior."
+            "For the email lookup, the index can avoid reading most table pages. For the broad status query, millions of scattered heap fetches can cost more than a sequential scan.",
+            "A bitmap heap scan can group matching tuple locations by heap page for intermediate result sizes; it is not universally best either.",
+            "Each index uses disk and cache space and adds write maintenance. An index can improve one endpoint while making inserts and updates slower."
           ],
-          "outcome": "Choose based on the workload and invariants, then validate with representative measurements and edge cases."
+          "outcome": "Compare representative plans, actual rows, buffers, and write throughput. Do not force an index because it exists or use one selectivity percentage as a universal cutoff."
         },
         {
           "type": "callout",
