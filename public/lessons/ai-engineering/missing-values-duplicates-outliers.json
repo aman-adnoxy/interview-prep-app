@@ -1,0 +1,354 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "missing-values-duplicates-outliers",
+  "topicId": "ai-engineering-python-data-backend",
+  "sectionId": "missing-values-duplicates-outliers",
+  "title": "Missing Values, Duplicates, and Outliers: Clean Without Hiding Errors",
+  "description": "Choose data-quality handling based on meaning, downstream use, and the risk of changing the target distribution.",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 38,
+  "learningObjectives": [
+    "Distinguish missing, duplicated, invalid, and extreme-but-valid values.",
+    "Choose deletion or imputation rules based on data meaning and missingness patterns.",
+    "Detect duplicates using the correct business key and explain outlier methods and limitations.",
+    "Prevent preprocessing leakage by fitting learned transformations only on training data."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Cleaning is a modeling decision. Every row you drop and every value you replace changes what the dataset says about the real world. A clean-looking table is not necessarily a truthful one."
+  },
+  "concepts": [
+    {
+      "id": "missingness-is-information",
+      "title": "Missing values have different causes",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A missing age, a missing payment amount, and a blank optional description are not the same problem. Missingness can mean not collected, not applicable, hidden by policy, a failed upstream integration, or a parsing error. Replacing every missing number with zero invents a real value."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Measure missingness before choosing a rule",
+          "source": "import pandas as pd\n\ndf = pd.DataFrame({\n    \"age\": [25, None, 40, 30, 35],\n    \"amount\": [100, 200, None, 300, None],\n    \"note\": [None, \"paid\", \"paid\", \"paid\", \"paid\"],\n})\nmissing_rate = df.isna().mean().sort_values(ascending=False)\nprint(missing_rate.to_dict())"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected values in the dictionary are `amount: 0.4`, `age: 0.2`, and `note: 0.2` (the ordering of tied values may vary). There are five rows: `amount` is missing twice, while `age` and `note` are each missing once. `isna()` marks missing cells, `mean()` treats True as 1 and False as 0, so the column mean is the missing fraction. This is a small, reproducible example; for real data, group missingness by source, date, tenant, and target label."
+        },
+        {
+          "type": "paragraph",
+          "text": "This computes the fraction of missing values per column. Also compare missingness by date, source, tenant, label, and other important groups; a recent upstream break can be hidden by an overall average."
+        },
+        {
+          "type": "table",
+          "title": "Handling options",
+          "columns": [
+            "Approach",
+            "Can fit when",
+            "Main risk"
+          ],
+          "rows": [
+            [
+              "Drop rows",
+              "Only a small, non-systematic share is missing and the row is not essential",
+              "Can bias the sample or remove a rare class"
+            ],
+            [
+              "Impute median/mean",
+              "Numeric feature and a defensible baseline",
+              "Can distort variance or ignore missingness meaning"
+            ],
+            [
+              "Add missing indicator",
+              "Absence may be informative",
+              "May encode process or policy artifacts"
+            ],
+            [
+              "Keep missing as a category/nullable field",
+              "Missingness has meaningful semantics",
+              "Requires downstream support"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "duplicates-and-keys",
+      "title": "Duplicates depend on identity",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Exact duplicate rows are not the same as duplicate business events. Two records can have different timestamps but refer to the same provider event; conversely, two purchases with the same customer and amount may be two legitimate transactions."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Check duplicate keys before dropping anything",
+          "source": "import pandas as pd\n\ndf = pd.DataFrame({\n    \"provider_event_id\": [\"evt-1\", \"evt-2\", \"evt-1\"],\n    \"payload\": [\"approved\", \"declined\", \"approved\"],\n})\nduplicate_mask = df.duplicated(subset=[\"provider_event_id\"], keep=False)\nduplicates = df.loc[duplicate_mask].sort_values(\"provider_event_id\")\nprint(duplicates.to_string(index=False))"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output has both rows for `evt-1`; `keep=False` marks every member of a duplicate-key group, not just the later occurrence. Here the payloads agree, which is consistent with redelivery but does not prove it. If the same event ID had conflicting payloads, quarantine and investigate rather than choosing a winner silently."
+        },
+        {
+          "type": "paragraph",
+          "text": "`subset` defines the identity you are checking. Inspect duplicate groups and their payloads before deciding whether to retain the first row, last row, combine events, or quarantine conflicts."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A webhook table contains repeated provider event IDs, sometimes with different payloads.",
+          "reasoning": [
+            "The stable provider event ID is a better candidate key than comparing every column.",
+            "Repeated same-ID/same-payload rows may be redelivery; same-ID/different-payload rows are a conflict that needs investigation.",
+            "Use a uniqueness constraint or idempotent ingestion rule at the durable boundary, and retain enough metadata to audit what was discarded."
+          ],
+          "outcome": "Deduplication should follow a stated identity and conflict rule, not a generic `drop_duplicates()` call."
+        }
+      ]
+    },
+    {
+      "id": "outliers-and-validation",
+      "title": "Outliers may be errors—or the most important examples",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Use IQR as a screening signal, not an automatic deletion rule",
+          "source": "import pandas as pd\n\ndf = pd.DataFrame({\"amount\": [11, 12, 13, 12, 100]})\nq1 = df[\"amount\"].quantile(0.25)\nq3 = df[\"amount\"].quantile(0.75)\niqr = q3 - q1\nflag = (df[\"amount\"] < q1 - 1.5 * iqr) | (df[\"amount\"] > q3 + 1.5 * iqr)\noutliers = df.loc[flag, [\"amount\"]]\nprint(f\"Q1={q1}, Q3={q3}, IQR={iqr}\")\nprint(outliers.to_string(index=False))"
+        },
+        {
+          "type": "paragraph",
+          "text": "For this sample, Q1=12, Q3=13, and IQR=1. The lower fence is `12 - 1.5×1 = 10.5` and the upper fence is `13 + 1.5×1 = 14.5`, so only `100` is flagged; `11` is above the lower fence. The calculation identifies a statistical extreme, not a corrupt record; the value could still be a legitimate large transaction."
+        },
+        {
+          "type": "paragraph",
+          "text": "The interquartile range is Q3 minus Q1. The 1.5 × IQR rule flags values far from the middle half of a distribution. A flagged amount could be a typo or an unusually large but valid enterprise purchase; use domain limits and source evidence before changing it."
+        },
+        {
+          "type": "paragraph",
+          "text": "Keep separate checks for impossible values, parsing failures, and statistically unusual values. For example, a negative age may be invalid under the data contract, while a very high invoice amount may be rare but legitimate."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Do not remove a tail just because it is inconvenient",
+          "content": "Outlier removal can erase fraud, rare customer groups, failures, or high-value cases that the model is meant to identify."
+        }
+      ]
+    },
+    {
+      "id": "leakage-safe-preprocessing",
+      "title": "Keep preprocessing from leaking the test set",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "If you compute an imputation median, scaler mean, or outlier threshold using the whole dataset before splitting it, information from validation/test rows can leak into training. The test set is meant to estimate behavior on data the training pipeline did not learn from."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Fit on training rows; reuse on held-out rows",
+          "source": "import numpy as np\nfrom sklearn.impute import SimpleImputer\n\nX_train = np.array([[1.0], [np.nan], [5.0]])\nX_test = np.array([[np.nan], [9.0]])\n\nimputer = SimpleImputer(strategy=\"median\")\nX_train_clean = imputer.fit_transform(X_train)\nX_test_clean = imputer.transform(X_test)\nprint(X_train_clean.ravel().tolist())\nprint(X_test_clean.ravel().tolist())"
+        },
+        {
+          "type": "paragraph",
+          "text": "Requires NumPy and scikit-learn. Expected output: `[1.0, 3.0, 5.0]` and `[3.0, 9.0]`. The training values 1 and 5 have median 3, which fills the training null. The held-out null is filled with that same learned median; the test value 9 is left untouched. The test set never participates in fitting."
+        },
+        {
+          "type": "paragraph",
+          "text": "`fit_transform` learns the median from training data and transforms those rows. `transform` applies that same learned value to test rows. In production, persist the fitted preprocessing object with the model/version so training and inference use the same rule."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A test-set median differs significantly from the training median.",
+          "reasoning": [
+            "Do not refit the imputer on the test data just to make both sets look similar.",
+            "Fit preprocessing only using the training split, then apply it unchanged to validation, test, and production inputs.",
+            "Use a pipeline to keep learned preprocessing attached to the model and reduce accidental leakage."
+          ],
+          "outcome": "Evaluate the whole learned preprocessing pipeline, not just the estimator, and keep the held-out data out of fitting."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "paragraph",
+      "text": "Simple imputation can be a useful baseline, but it can flatten variation or encode missingness patterns. Dropping, winsorizing, or flagging unusual values should be justified against business meaning and model goals. Preserve raw values and document transformations for traceability."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Measure missing rates and patterns before choosing a rule."
+    },
+    {
+      "type": "paragraph",
+      "text": "Deduplicate using a real business key and investigate conflicting duplicates."
+    },
+    {
+      "type": "paragraph",
+      "text": "IQR flags extreme values; it does not prove they are errors."
+    },
+    {
+      "type": "paragraph",
+      "text": "Fit imputers/scalers/outlier thresholds on training data only, then reuse them on held-out and production data."
+    }
+  ],
+  "questions": [
+    {
+      "id": "clean-data-q1",
+      "type": "single_select",
+      "prompt": "A numeric field is missing. Why is filling every null with zero risky?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Zero may be a real value and can invent incorrect information"
+        },
+        {
+          "id": "b",
+          "text": "Pandas does not support zeros"
+        },
+        {
+          "id": "c",
+          "text": "Missing values never affect models"
+        },
+        {
+          "id": "d",
+          "text": "It always removes all duplicates"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Missing may mean unknown or not applicable; zero should be used only when it is the real semantic value."
+    },
+    {
+      "id": "clean-data-q2",
+      "type": "single_select",
+      "prompt": "What should you decide before using `drop_duplicates(subset=[...])`?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Which fields define one real business record and how conflicting duplicates are handled"
+        },
+        {
+          "id": "b",
+          "text": "How to maximize the number of removed rows"
+        },
+        {
+          "id": "c",
+          "text": "Whether to convert all columns to strings"
+        },
+        {
+          "id": "d",
+          "text": "Whether to remove every rare value"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Deduplication requires an identity rule and a conflict policy."
+    },
+    {
+      "id": "clean-data-q3",
+      "type": "single_select",
+      "prompt": "What does an IQR-based outlier rule establish?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A value is statistically unusual under the chosen rule, not necessarily wrong"
+        },
+        {
+          "id": "b",
+          "text": "A row must always be deleted"
+        },
+        {
+          "id": "c",
+          "text": "A field is definitely corrupted"
+        },
+        {
+          "id": "d",
+          "text": "The target label is correct"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Outlier rules flag candidates for investigation; business meaning determines whether to correct, retain, cap, or quarantine them."
+    },
+    {
+      "id": "clean-data-q4",
+      "type": "single_select",
+      "prompt": "When should a median imputer generally be fitted in a train/test workflow?",
+      "options": [
+        {
+          "id": "a",
+          "text": "On training data, then reused to transform held-out data"
+        },
+        {
+          "id": "b",
+          "text": "Separately on the training and test data"
+        },
+        {
+          "id": "c",
+          "text": "Only on the test set"
+        },
+        {
+          "id": "d",
+          "text": "On all rows before splitting"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Fitting on training only avoids using held-out distribution information during training."
+    },
+    {
+      "id": "clean-data-q5",
+      "type": "true_false",
+      "prompt": "Two rows with the same customer ID must always be duplicates.",
+      "correctAnswer": false,
+      "explanation": "One customer can have many legitimate events. Duplicate identity depends on the entity/event grain and business key."
+    },
+    {
+      "id": "clean-data-q6",
+      "type": "true_false",
+      "prompt": "A missingness pattern can contain information about data collection or business processes.",
+      "correctAnswer": true,
+      "explanation": "Missing values can be systematic and can signal source outages, inapplicability, policy, or other process behavior."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "clean-data-scenario-1",
+      "prompt": "Your model's test metrics improve after you drop all rows containing any missing values. How do you decide whether this cleaning step is valid?",
+      "skillsTested": [
+        "Data quality",
+        "Evaluation",
+        "Sampling bias"
+      ],
+      "strongAnswerPoints": [
+        "Measure how many rows and which groups/labels were removed.",
+        "Investigate why values are missing and whether dropping changes the evaluation population.",
+        "Compare a defensible imputation/indicator baseline and keep transformations fit only on training data."
+      ],
+      "pitfalls": [
+        "Assuming better test scores prove the data is better",
+        "Dropping rare classes without measuring the impact"
+      ],
+      "referenceAnswer": "I would quantify what was removed and whether missingness is systematic. A higher score can come from changing the test population, not from better generalization. I would compare justified alternatives without leaking test statistics."
+    },
+    {
+      "id": "clean-data-scenario-2",
+      "prompt": "A set of invoice rows is flagged as outliers and includes several extremely large valid invoices.",
+      "skillsTested": [
+        "Outlier handling",
+        "Domain reasoning",
+        "Auditability"
+      ],
+      "strongAnswerPoints": [
+        "Separate impossible values and parsing errors from rare-but-valid values.",
+        "Inspect source evidence and business rules before changing data.",
+        "Preserve raw values and document any capping, correction, or quarantine."
+      ],
+      "pitfalls": [
+        "Automatically deleting every value outside 1.5 × IQR"
+      ],
+      "referenceAnswer": "IQR is a screening rule, not a data-validity contract. I would verify the source and domain ranges, preserve legitimate large invoices, and correct or quarantine only evidence-backed errors."
+    }
+  ]
+}

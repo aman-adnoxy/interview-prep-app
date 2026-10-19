@@ -1,0 +1,365 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "concurrency-parallelism",
+  "topicId": "ai-engineering-python-data-backend",
+  "sectionId": "concurrency-parallelism",
+  "title": "Concurrency and Parallelism: Threads, Processes, and Async I/O",
+  "description": "Select an execution model for I/O waits, CPU-bound Python code, and coordinated backend work.",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 38,
+  "learningObjectives": [
+    "Distinguish concurrency from parallelism using practical examples.",
+    "Choose threads, processes, or async I/O based on whether work waits on I/O or consumes CPU.",
+    "Explain the CPython GIL at a useful interview level and recognize important exceptions.",
+    "Account for process startup, serialization, shared state, and bounded resource use."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Concurrency means several tasks can make progress over overlapping periods; parallelism means work is literally executing at the same time. Async, threads, and processes are tools for different bottlenecks, not interchangeable ways to make every task faster."
+  },
+  "concepts": [
+    {
+      "id": "concurrency-vs-parallelism",
+      "title": "Overlap is not the same as simultaneous execution",
+      "blocks": [
+        {
+          "type": "table",
+          "title": "Execution choices",
+          "columns": [
+            "Tool",
+            "Good starting point",
+            "Main cost or limitation"
+          ],
+          "rows": [
+            [
+              "Async I/O",
+              "Many cooperative network/file/database waits",
+              "Requires async-compatible operations; blocking code stalls the loop."
+            ],
+            [
+              "Threads",
+              "Blocking I/O or libraries that release the GIL",
+              "Shared memory needs coordination; pure-Python CPU work is limited by the standard CPython GIL in common builds."
+            ],
+            [
+              "Processes",
+              "CPU-bound Python work that can be split into independent chunks",
+              "Startup, memory duplication, serialization, and inter-process communication cost."
+            ],
+            [
+              "Single-thread synchronous",
+              "Simple sequential tasks or dependencies",
+              "Waiting is serialized but control flow is often easiest."
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "A web service may use async I/O to manage thousands of requests waiting on dependencies, a thread pool for an older blocking library, and worker processes for CPU-heavy document parsing. The design should follow measurements and library behavior."
+        }
+      ]
+    },
+    {
+      "id": "threads-and-gil",
+      "title": "Threads, shared state, and the GIL",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "In standard GIL-enabled CPython builds, only one thread at a time normally executes Python bytecode in a given interpreter. Threads can still help with blocking I/O because the waiting thread releases execution time for other work; some native numerical libraries also release the GIL while doing work in compiled code. Do not apply one blanket rule to every library or Python build."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Use a thread pool to overlap blocking I/O",
+          "source": "from concurrent.futures import ThreadPoolExecutor\n\ndef load_document(document_id: str) -> str:\n    # Represents a blocking storage/API call.\n    return f\"loaded:{document_id}\"\n\nwith ThreadPoolExecutor(max_workers=8) as pool:\n    results = list(pool.map(load_document, [\"d1\", \"d2\", \"d3\"]))\nprint(results)"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `['loaded:d1', 'loaded:d2', 'loaded:d3']`. This fast demo shows the return shape, not a speedup: `load_document` returns immediately. A real blocking download/database call is where overlapping waits can improve elapsed time; the thread pool still needs a bounded worker count and timeouts."
+        },
+        {
+          "type": "paragraph",
+          "text": "The pool reuses a bounded number of threads rather than creating a new thread for every item. The example is schematic about latency because the function returns immediately; the reason to use threads is a real blocking operation with meaningful wait time."
+        }
+      ]
+    },
+    {
+      "id": "processes-cpu-work",
+      "title": "Processes for CPU-bound work",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Distribute independent CPU chunks to worker processes",
+          "source": "from concurrent.futures import ProcessPoolExecutor\n\ndef sum_squares(values: list[int]) -> int:\n    return sum(value * value for value in values)\n\nchunks = [[1, 2, 3], [4, 5, 6]]\nwith ProcessPoolExecutor(max_workers=2) as pool:\n    partials = list(pool.map(sum_squares, chunks))\nprint(sum(partials))"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `91`. Worker processes execute independently. The work must be split into sufficiently large chunks to justify process startup and transferring inputs/results. Functions and arguments generally need to be serializable/picklable under the chosen start method; keep process creation behind the usual main guard in executable scripts where required by the platform."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A data pipeline spends 70% of its time in pure-Python scoring over independent documents.",
+          "reasoning": [
+            "First profile the pipeline to confirm CPU work, not network waits, is the bottleneck.",
+            "Partition documents into coarse independent batches and evaluate a process pool; avoid serializing huge shared objects for every small task.",
+            "Measure throughput and peak memory, handle worker failures, and compare with vectorized native libraries if numerical operations dominate."
+          ],
+          "outcome": "Processes can provide CPU parallelism for suitable tasks, but overhead and memory can erase the benefit for small jobs."
+        }
+      ]
+    },
+    {
+      "id": "safe-concurrency",
+      "title": "Shared state, limits, and failure handling",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "More concurrent tasks can reduce elapsed time until a resource saturates. Every thread, process, open socket, queued job, and database connection consumes capacity. Bound concurrency based on the actual dependency, and do not let each application replica independently assume it owns the full global limit."
+        },
+        {
+          "type": "paragraph",
+          "text": "Shared mutable state can race even when the CPU does not run two Python bytecode instructions simultaneously. A thread switch can occur between a read and a write, and other processes do not share ordinary Python memory in the same way. Prefer message passing, immutable results, database atomic operations, or explicit synchronization where needed."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Never retry unboundedly inside a saturated pool",
+          "content": "Immediate retries can take worker capacity away from new work and amplify an outage. Use bounded attempts, backoff with jitter, deadlines, idempotency, and a way to shed load."
+        },
+        {
+          "type": "table",
+          "title": "Worked saturation trace (illustrative numbers)",
+          "columns": [
+            "Stage",
+            "What happens",
+            "Why it matters"
+          ],
+          "rows": [
+            [
+              "1. Before the spike",
+              "The pool permits at most 40 active DB calls; typical traffic has about 20 active.",
+              "Some work starts immediately; pool wait is low."
+            ],
+            [
+              "2. A burst arrives",
+              "200 requests need a DB call. Assume each call holds one connection for 100 ms and there is no extra contention. They complete in five waves of 40: around 100, 200, 300, 400, and 500 ms.",
+              "The last wave waits roughly 400 ms before its query starts. Real times depend on query duration, scheduling, and database load."
+            ],
+            [
+              "3. Deadlines expire",
+              "With a 250 ms end-to-end deadline, requests in waves three through five cannot complete under these assumptions. A caller timeout does not prove the database operation was cancelled.",
+              "Without cancellation and retry control, timed-out work can continue holding connections."
+            ],
+            [
+              "4. Put bounds around the work",
+              "Reserve capacity for other application/admin work, cap this service's active queries below the full pool where appropriate, and use a finite queue. At queue capacity, reject quickly or enqueue durable work if the operation can run asynchronously.",
+              "A finite queue protects memory and makes overload visible instead of allowing unbounded waiting."
+            ],
+            [
+              "5. Make retries safe",
+              "Use one overall deadline, bounded attempts with backoff+jitter, and retry only explicitly transient failures. Writes need idempotency or reconciliation when the outcome is uncertain.",
+              "Retries stop after their deadline and do not create unlimited duplicate attempts."
+            ],
+            [
+              "6. Recover gradually",
+              "Track pool wait, active queries, queue depth/age, timeouts and retries. Allow the queue to drain as the dependency recovers; do not increase pools blindly.",
+              "Moving the queue into the database can increase contention and make recovery slower."
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "A service uses a pool of 40 database connections. A traffic burst creates 200 simultaneous requests; after requests start timing out, each caller immediately retries up to three times.",
+          "reasoning": [
+            "Assume, only for this calculation, that every query holds a connection for 100 ms, all 200 requests arrive together, and the database can complete the 40 active queries without their durations increasing. The five waves finish at approximately 100, 200, 300, 400 and 500 ms.",
+            "Under a 250 ms overall deadline, the first two waves can finish, while waves three through five are too late. That is approximately 120 requests whose callers may time out; the exact behavior of their DB operations depends on client cancellation and driver/server behavior.",
+            "If callers retry immediately, they add more attempts to an already full queue. First cap active calls and queue depth so overload cannot grow without bound. Use a fast, documented rejection or durable queue for excess demand.",
+            "Apply a total deadline with a small, bounded retry budget and backoff with jitter; stop once the remaining deadline is insufficient. Retry writes only when idempotency/reconciliation makes an uncertain outcome safe.",
+            "Monitor connection-pool wait separately from SQL execution time. Reduce concurrent work or optimize the actual expensive queries before deciding to increase the connection limit."
+          ],
+          "outcome": "With the assumptions stated, 40 connections × five 100 ms waves means roughly 500 ms for the burst to drain. A 250 ms deadline cannot serve the last three waves. Backpressure limits how much work enters the bottleneck; deadlines and bounded retries prevent the backlog from feeding itself."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "paragraph",
+      "text": "Threads simplify sharing data but need synchronization; processes isolate CPU work but increase serialization and memory costs; async reduces the cost of waiting but requires cooperative, non-blocking code. Choose the smallest mechanism that fits the measured bottleneck."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Concurrency = overlapping progress; parallelism = simultaneous execution."
+    },
+    {
+      "type": "paragraph",
+      "text": "Async is strongest for cooperative I/O; threads adapt blocking I/O; processes commonly suit CPU-bound Python."
+    },
+    {
+      "type": "paragraph",
+      "text": "Standard GIL-enabled CPython limits pure-Python bytecode parallelism across threads, with important native-library/build exceptions."
+    },
+    {
+      "type": "paragraph",
+      "text": "Measure startup, serialization, memory, throughput, and tail latency; bound work and retries."
+    }
+  ],
+  "questions": [
+    {
+      "id": "concurrency-q1",
+      "type": "single_select",
+      "prompt": "Which choice is usually a good fit for a pure-Python CPU-heavy transformation that can be split into independent chunks?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A process pool, after measuring serialization and startup cost"
+        },
+        {
+          "id": "b",
+          "text": "More async `await` expressions around the loop"
+        },
+        {
+          "id": "c",
+          "text": "A dictionary instead of a function"
+        },
+        {
+          "id": "d",
+          "text": "An unbounded number of threads"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Processes can execute CPU-bound Python chunks in parallel at the cost of coordination and data transfer."
+    },
+    {
+      "id": "concurrency-q2",
+      "type": "single_select",
+      "prompt": "Why can a thread pool help with blocking I/O in standard CPython even with the GIL?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Waiting I/O can release the GIL so other threads can run"
+        },
+        {
+          "id": "b",
+          "text": "The GIL makes all operations instantly parallel"
+        },
+        {
+          "id": "c",
+          "text": "Each thread automatically receives its own database"
+        },
+        {
+          "id": "d",
+          "text": "Threads never share memory"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Threads overlap I/O waits even though pure-Python bytecode execution is limited by the GIL in standard builds."
+    },
+    {
+      "id": "concurrency-q3",
+      "type": "single_select",
+      "prompt": "What is a major cost to consider when using processes for tiny tasks?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Process startup and serialization/communication overhead"
+        },
+        {
+          "id": "b",
+          "text": "The impossibility of failure handling"
+        },
+        {
+          "id": "c",
+          "text": "Automatic data consistency"
+        },
+        {
+          "id": "d",
+          "text": "No memory is used"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Small tasks may be overwhelmed by the cost of sending data to worker processes."
+    },
+    {
+      "id": "concurrency-q4",
+      "type": "single_select",
+      "prompt": "A high number of concurrent requests overwhelms a database connection pool. What should you consider?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Bound concurrent database work and queue/load-shed at the correct boundary"
+        },
+        {
+          "id": "b",
+          "text": "Increase all pools without measuring"
+        },
+        {
+          "id": "c",
+          "text": "Retry every request immediately forever"
+        },
+        {
+          "id": "d",
+          "text": "Move all work to CPU processes regardless of the bottleneck"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Concurrency must fit dependency capacity; excess work increases queueing and can cause failure amplification."
+    },
+    {
+      "id": "concurrency-q5",
+      "type": "true_false",
+      "prompt": "Async I/O by itself makes a CPU-heavy Python loop execute on multiple CPU cores.",
+      "correctAnswer": false,
+      "explanation": "Async cooperatively overlaps waits; CPU-bound work needs another execution strategy."
+    },
+    {
+      "id": "concurrency-q6",
+      "type": "true_false",
+      "prompt": "The standard CPython GIL means threads can never improve any workload.",
+      "correctAnswer": false,
+      "explanation": "Threads can help I/O-bound tasks and libraries that release the GIL."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "concurrency-scenario-1",
+      "prompt": "An AI document service downloads PDFs and then performs expensive pure-Python parsing. Which execution strategy would you consider?",
+      "skillsTested": [
+        "Workload decomposition",
+        "I/O vs CPU",
+        "Concurrency design"
+      ],
+      "strongAnswerPoints": [
+        "Use async or bounded threads for download I/O, depending on client libraries.",
+        "Measure CPU parsing and consider process workers for large independent parsing chunks.",
+        "Bound queue size, worker count, memory, and retries; pass compact data between stages."
+      ],
+      "pitfalls": [
+        "Using one unbounded executor for every stage",
+        "Assuming the same concurrency model is optimal for download and parsing"
+      ],
+      "referenceAnswer": "I'd separate I/O waits from CPU processing. I would overlap downloads with async I/O, then profile parsing and use bounded process workers if it is pure-Python CPU work and the chunk size pays for serialization."
+    },
+    {
+      "id": "concurrency-scenario-2",
+      "prompt": "A developer changes a sequential loop to 1,000 concurrent calls and the service starts timing out. Explain why and propose a fix.",
+      "skillsTested": [
+        "Backpressure",
+        "Dependency capacity",
+        "Failure handling"
+      ],
+      "strongAnswerPoints": [
+        "Identify which downstream resource saturated and observe queue depth/pool wait/latency.",
+        "Add a concurrency limit and bounded queue, plus timeouts and backoff with jitter.",
+        "Avoid retrying work that is not idempotent or whose outcome is unknown."
+      ],
+      "pitfalls": [
+        "Assuming that maximum concurrency always maximizes throughput"
+      ],
+      "referenceAnswer": "The dependency has finite capacity, so concurrency can increase queueing and failures. I'd cap in-flight calls based on measurements, use deadlines and bounded retries, and shed work if the queue fills."
+    }
+  ]
+}

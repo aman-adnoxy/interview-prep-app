@@ -228,6 +228,41 @@
             "Use EXPLAIN (ANALYZE, BUFFERS) to verify the access path and number of rows/pages touched."
           ],
           "outcome": "Index design is about matching real predicates and ordering, not merely including every column mentioned in the query."
+        },
+        {
+          "type": "paragraph",
+          "text": "### The right index for one query can be wrong for another"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "A global feed does not filter by tenant",
+          "source": "SELECT id, created_at\nFROM events\nWHERE created_at >= now() - interval '1 day'\nORDER BY created_at DESC, id DESC\nLIMIT 50;"
+        },
+        {
+          "type": "table",
+          "title": "Two real query shapes",
+          "columns": [
+            "Query shape",
+            "Candidate index",
+            "Why"
+          ],
+          "rows": [
+            [
+              "One tenant's newest events: `WHERE tenant_id = ? ORDER BY created_at DESC, id DESC LIMIT 50`",
+              "`(tenant_id, created_at DESC, id DESC)`",
+              "The leading equality key narrows to one tenant and the remaining keys provide order."
+            ],
+            [
+              "Newest events globally across all tenants",
+              "`(created_at DESC, id DESC)` (test against the workload)",
+              "The tenant-leading index groups entries by tenant; without a tenant predicate it cannot directly provide one global newest-first range."
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Do not build both automatically. A second index costs disk, cache capacity, write maintenance and vacuum work. Compare the importance/frequency of each query, selectivity, actual plans, and write load before deciding whether one or both access paths deserve an index."
         }
       ]
     },

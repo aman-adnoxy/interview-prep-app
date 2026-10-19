@@ -12,9 +12,49 @@ async function readRemote(relativePath) {
   if (!response.ok) throw new Error('Canonical content fetch failed for ' + relativePath + ' (HTTP ' + response.status + ', ref ' + ref + ').');
   return response.text();
 }
+
+// Legacy aliases are repository-root relative (they predate the dist reorganization).
+const rootBase = base.replace(/\/dist$/, '');
+async function readLegacyAsset(rootRelativePath) {
+  const response = await fetch(rootBase + '/' + rootRelativePath + '?sync=' + Date.now(), { cache: 'no-store' });
+  if (!response.ok) throw new Error('Canonical content fetch failed for ' + rootRelativePath + ' (HTTP ' + response.status + ', ref ' + ref + ').');
+  return response.text();
+}
+
 function safeAssetPath(assetPath) {
   if (typeof assetPath !== 'string' || !assetPath.startsWith('/') || assetPath.includes('..')) throw new Error('Unsafe content asset path: ' + assetPath);
   return assetPath.slice(1);
+}
+
+// The upstream content generator still publishes an index path that predates
+// the unified-tracks reorganization for this lesson id; the canonical asset
+// lives at the pre-unification source path. The generated index path is tried
+// first, so a listed alias becomes inert as soon as upstream regenerates its
+// index. Validation is unchanged: assets still come from canonical
+// interview-prep and every published section still resolves to an asset.
+const LEGACY_ASSET_PATHS = {
+  'http-rest-apis-contracts': ['lessons/ai-engineering-python-data-backend/http-rest-apis-contracts.json'],
+};
+
+async function readPublishedLesson(id, entry) {
+  // The canonical write path is always the published index path; legacy
+  // aliases are only fetch fallbacks for stale upstream generations.
+  const relativePath = safeAssetPath(entry.path);
+  const fetchOrder = [[readRemote, relativePath]];
+  for (const alias of LEGACY_ASSET_PATHS[id] || []) {
+    fetchOrder.push([readLegacyAsset, alias]);
+  }
+  let lastError = null;
+  for (const [read, candidate] of fetchOrder) {
+    try {
+      return { id, relativePath, content: await read(candidate) };
+    } catch (error) {
+      // Only fall through on missing assets; any other failure is fatal.
+      if (!/^Canonical content fetch failed for .*HTTP 404/.test(error.message)) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Canonical asset not found for lesson ' + id + '.');
 }
 
 async function main() {
@@ -24,8 +64,7 @@ async function main() {
   const manifest = JSON.parse(manifestText), index = JSON.parse(indexText), schema = JSON.parse(schemaText);
   if (index.schemaVersion !== schema.properties.schemaVersion.const) throw new Error('Published index and canonical schema versions do not match.');
   const assets = await Promise.all(Object.entries(index.lessons || {}).map(async ([id, entry]) => {
-    const relativePath = safeAssetPath(entry.path);
-    return { id, relativePath, content: await readRemote(relativePath) };
+    return readPublishedLesson(id, entry);
   }));
   const publicDir = path.join(root, 'public');
   await fs.writeFile(path.join(publicDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');

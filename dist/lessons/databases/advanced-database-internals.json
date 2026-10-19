@@ -75,6 +75,26 @@
         {
           "type": "paragraph",
           "text": "For example, repeatedly updating a row does not mean PostgreSQL can immediately erase every older version. A transaction that started earlier may still need to see one of those versions. VACUUM can reclaim versions only when they are no longer visible to any relevant snapshot. A long-running transaction can therefore hold up cleanup even if it is mostly idle."
+        },
+        {
+          "type": "paragraph",
+          "text": "Transaction-ID wraparound is a separate risk from ordinary dead-tuple bloat. PostgreSQL transaction IDs are 32-bit values, so old row versions must be frozen before their XIDs become ambiguous. A database with an old unfrozen transaction ID can eventually lose the ability to assign new XIDs; this is an availability emergency, not just a vacuum-performance problem."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "-- Rank databases by age of their oldest unfrozen transaction ID\nSELECT datname,\n       age(datfrozenxid) AS oldest_xid_age\nFROM pg_database\nORDER BY oldest_xid_age DESC;",
+          "title": "Check transaction-ID age by database"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "-- Find tables with the oldest unfrozen XIDs in the current database\nSELECT c.oid::regclass AS table_name,\n       greatest(age(c.relfrozenxid), age(toast.relfrozenxid)) AS oldest_xid_age,\n       c.relfrozenxid\nFROM pg_class AS c\nLEFT JOIN pg_class AS toast ON toast.oid = c.reltoastrelid\nWHERE c.relkind IN ('r', 'm')\nORDER BY oldest_xid_age DESC\nLIMIT 20;",
+          "title": "Find old tables and materialized views"
+        },
+        {
+          "type": "paragraph",
+          "text": "How to interpret the output: `age()` is measured in transactions, not seconds or days. Compare the oldest ages with the live settings from `SHOW autovacuum_freeze_max_age;` and `SHOW vacuum_failsafe_age;`, then inspect autovacuum activity, long-running transactions, table-specific settings, and logs. The PostgreSQL 18 default `autovacuum_freeze_max_age` is 200 million transactions, but settings and versions can differ. Treat growing age or anti-wraparound warnings as urgent, and respond well before the roughly two-billion-transaction wraparound horizon. A low age in one table does not cancel an old age elsewhere in the database."
         }
       ]
     },
@@ -89,12 +109,12 @@
         {
           "type": "code",
           "language": "sql",
-          "title": "Inspect checkpoint signals",
-          "source": "SELECT checkpoints_timed, checkpoints_req, checkpoint_write_time, checkpoint_sync_time, buffers_checkpoint, buffers_backend\nFROM pg_stat_bgwriter;"
+          "title": "PostgreSQL 17+: inspect checkpoint statistics",
+          "source": "-- PostgreSQL 17 and later\nSELECT num_timed,\n       num_requested,\n       restartpoints_timed,\n       restartpoints_req,\n       restartpoints_done,\n       write_time,\n       sync_time,\n       buffers_written,\n       stats_reset\nFROM pg_stat_checkpointer;"
         },
         {
           "type": "table",
-          "title": "Interpret signals",
+          "title": "Interpret checkpoint signals (PostgreSQL 17+)",
           "columns": [
             "Observation",
             "Possible meaning",
@@ -102,19 +122,24 @@
           ],
           "rows": [
             [
-              "Many requested checkpoints",
-              "WAL volume or settings may force checkpoints",
-              "WAL generation and checkpoint logs"
+              "Many requested checkpoints relative to timed checkpoints",
+              "WAL volume or checkpoint settings may be causing requested checkpoints",
+              "WAL generation rate, checkpoint logs, and storage throughput"
             ],
             [
-              "High checkpoint write time",
-              "Dirty-page writes are expensive",
-              "Storage latency"
+              "High checkpoint write_time or sync_time over a measured interval",
+              "Checkpoint writes or durable synchronization are taking significant time",
+              "Compare deltas over time, storage latency, and write load"
             ],
             [
-              "High backend writes",
-              "Foreground sessions write dirty buffers",
-              "Background-writer and checkpoint behavior"
+              "High buffers_written during checkpoints",
+              "Many shared buffers are written by checkpointer activity",
+              "Measure workload, WAL rate, and the duration represented by the counters"
+            ],
+            [
+              "High writes by foreground backends",
+              "Client sessions are doing writes that background processes might otherwise handle",
+              "On PostgreSQL 17+, inspect pg_stat_io for backend_type = 'client backend' and object = 'relation'"
             ]
           ]
         },
@@ -127,6 +152,16 @@
             "A checkpoint records a recovery point and reduces how far back recovery needs to replay, but checkpoints do not replace WAL."
           ],
           "outcome": "WAL is the recovery record; checkpoints help bound recovery work. They solve related but different problems."
+        },
+        {
+          "type": "paragraph",
+          "text": "Version note: PostgreSQL 17 moved checkpoint counters out of pg_stat_bgwriter into pg_stat_checkpointer. This query is for PostgreSQL 17+. On PostgreSQL 16 and earlier, use the version-specific pg_stat_bgwriter columns documented for that release; do not paste one query across versions blindly. Statistics are cumulative since stats_reset, so compare counter deltas over a known time window rather than treating a lifetime total as a current rate."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "-- PostgreSQL 17+ only: inspect relation I/O by backend type\nSELECT backend_type, object, context, writes, write_bytes, write_time\nFROM pg_stat_io\nWHERE backend_type = 'client backend'\n  AND object = 'relation'\nORDER BY writes DESC;",
+          "title": "Separate signal: foreground relation writes (PostgreSQL 16+)"
         }
       ]
     },
@@ -294,7 +329,7 @@
         },
         {
           "type": "paragraph",
-          "text": "2. Definition and design choice — PostgreSQL uses MVCC so transactions can see a consistent version of rows while other transactions write. Updates create new row versions; VACUUM cleans up versions no active snapshot needs, and WAL records changes for recovery."
+          "text": "2. Definition and design choice — MVCC keeps row versions visible to active snapshots; VACUUM reclaims versions when safe and freezes old XIDs to prevent wraparound. WAL enables crash recovery, while checkpoints bound recovery work. Monitoring views differ by PostgreSQL version."
         },
         {
           "type": "steps",
@@ -324,19 +359,20 @@
         },
         {
           "type": "worked_example",
-          "problem": "A transaction has been open for 45 minutes while another job updates 300,000 rows. Dead tuples rise and VACUUM cannot reclaim some versions.",
+          "problem": "A database has rising dead tuples, an old report transaction, and the oldest database XID age is 180 million. How do you triage the situation?",
           "reasoning": [
-            "Check pg_stat_activity for long-running and idle-in-transaction sessions, then compare dead-tuple and vacuum statistics. An old snapshot can prevent cleanup.",
-            "Ordinary VACUUM usually makes space reusable inside the table; it does not promise to shrink the file on disk. VACUUM FULL rewrites the table and takes a stronger lock.",
-            "Check WAL volume, checkpoint activity, lock waits, and the earliest plan-estimate mismatch before changing memory or vacuum settings."
+            "Check pg_stat_activity for long-running or idle-in-transaction sessions and look at replication slots/standby feedback that may retain history.",
+            "Rank database and table XID ages using age(datfrozenxid) and age(relfrozenxid), then compare them with the live freeze-age settings and server warnings.",
+            "For checkpoint diagnosis on PostgreSQL 17+, query pg_stat_checkpointer; use pg_stat_io separately to inspect relation I/O.",
+            "Remove the retention blocker and verify vacuum progress, dead-tuple trend, XID age, and storage/latency after the fix."
           ],
-          "outcome": "Remove the cause of the old snapshot or blocking, then verify dead-tuple trends, query latency, and disk growth over time."
+          "outcome": "Treat ordinary bloat and wraparound as related but distinct signals. Diagnose age and cleanup blockers before changing settings; an XID age is a count of transactions, not elapsed time."
         },
         {
           "type": "callout",
           "kind": "pitfall",
           "title": "5. Anti-pattern to avoid",
-          "content": "Identify the mechanism and validate it with workload evidence before changing database settings."
+          "content": "Using pg_stat_bgwriter for PostgreSQL 17+ checkpoint columns, treating checkpoint counters as rates without measuring deltas, or waiting for XID age to approach the wraparound limit before acting."
         },
         {
           "type": "checkpoint",

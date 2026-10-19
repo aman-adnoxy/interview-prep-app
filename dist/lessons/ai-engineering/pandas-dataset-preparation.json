@@ -1,0 +1,345 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "pandas-dataset-preparation",
+  "topicId": "ai-engineering-python-data-backend",
+  "sectionId": "pandas-dataset-preparation",
+  "title": "Pandas and Dataset Preparation: Read, Filter, Join, Group, Transform",
+  "description": "Prepare structured datasets safely and understand how pandas operations change row counts, columns, and dtypes.",
+  "difficulty": "beginner",
+  "estimatedMinutes": 38,
+  "learningObjectives": [
+    "Inspect a DataFrame's shape, columns, dtypes, and representative rows before transforming it.",
+    "Use filtering, column selection, merge, groupby, and transformations with predictable outputs.",
+    "Detect join multiplication and validate expected relationship cardinality.",
+    "Explain why dataset transformations should preserve lineage and be reproducible."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "A DataFrame is a labelled table. Every operation can change rows, columns, order, or types, so good dataset preparation checks what changed instead of assuming the table still represents the same records."
+  },
+  "concepts": [
+    {
+      "id": "inspect-before-transform",
+      "title": "Inspect before editing data",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Read and inspect a CSV",
+          "source": "from io import StringIO\nimport pandas as pd\n\ncsv_text = \"\"\"ticket_id,status,priority\nT-101,open,high\nT-102,closed,low\nT-103,open,medium\n\"\"\"\ndf = pd.read_csv(StringIO(csv_text))\nprint(df.shape)\nprint(df.dtypes)\nprint(df.head(3).to_string(index=False))"
+        },
+        {
+          "type": "paragraph",
+          "text": "This is a self-contained example: `StringIO` makes the sample text behave like a CSV file. Expected output begins with `(3, 3)`, then shows the inferred dtype for each column, followed by T-101, T-102, and T-103. The exact dtype labels can vary by pandas version and dtype configuration; the row/column shape and IDs are deterministic. Trace: `read_csv` parses the header into column names, infers types, and loads three rows; `shape`, `dtypes`, and `head` inspect it without changing it."
+        },
+        {
+          "type": "paragraph",
+          "text": "`shape` reports `(rows, columns)`, `dtypes` exposes inferred column types, and `head()` shows representative records. Also inspect key uniqueness, null counts, and ranges before assuming a column is numeric or an ID is unique."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Select and filter with an explicit condition",
+          "source": "open_tickets = df.loc[df[\"status\"].eq(\"open\"), [\"ticket_id\", \"priority\"]]\nprint(open_tickets.head())"
+        },
+        {
+          "type": "paragraph",
+          "text": "Using the `df` built in the preceding example, the result contains exactly two rows: `T-101 high` and `T-103 medium`. `.eq('open')` creates a Boolean condition, `.loc` keeps only matching rows, and the column list selects `ticket_id` and `priority`. The output depends on the input data; this preceding sample makes it reproducible."
+        },
+        {
+          "type": "paragraph",
+          "text": "The first condition selects open rows; the second argument chooses two columns. `.loc` makes the row and column selection explicit and avoids carrying unrelated fields through every later step."
+        }
+      ]
+    },
+    {
+      "id": "merge-and-cardinality",
+      "title": "Joins can silently multiply rows",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Join tickets to one row per customer",
+          "source": "import pandas as pd\n\ntickets = pd.DataFrame({\n    \"ticket_id\": [\"T-101\", \"T-102\", \"T-103\"],\n    \"customer_id\": [\"C1\", \"C2\", \"C1\"],\n})\ncustomers = pd.DataFrame({\n    \"customer_id\": [\"C1\", \"C2\"],\n    \"plan\": [\"pro\", \"starter\"],\n})\n\nresult = tickets.merge(\n    customers,\n    on=\"customer_id\",\n    how=\"left\",\n    validate=\"many_to_one\",\n)\nprint(len(tickets), len(result))\nprint(result.to_string(index=False))"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected first line: `3 3`. The output has three tickets, each joined to exactly one customer: T-101→C1/pro, T-102→C2/starter, and T-103→C1/pro. `many_to_one` validates that the customer side has at most one row per customer ID. If a duplicate `C1` row is added to `customers`, pandas raises a `MergeError` rather than silently multiplying ticket rows."
+        },
+        {
+          "type": "paragraph",
+          "text": "If each ticket should map to at most one customer row, `validate='many_to_one'` checks that the right side is unique by the join key. If it is not, pandas raises an error instead of silently multiplying ticket rows."
+        },
+        {
+          "type": "worked_example",
+          "problem": "There are 1,000 tickets and the customer table contains two rows for customer 42.",
+          "reasoning": [
+            "A ticket for customer 42 matches both customer rows in an ordinary merge.",
+            "Those tickets can appear twice in the output, so aggregate counts or class frequencies may become inflated.",
+            "Check duplicate keys and the intended relationship; use merge validation where possible, then compare row counts and unmatched keys."
+          ],
+          "outcome": "Do not accept a merge just because it ran. State whether the relationship is one-to-one, one-to-many, or many-to-one and validate that assumption."
+        }
+      ]
+    },
+    {
+      "id": "groupby-and-transform",
+      "title": "Group versus transform",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Aggregate to customer level",
+          "source": "import pandas as pd\n\nevents = pd.DataFrame({\n    \"event_id\": [\"e1\", \"e2\", \"e3\"],\n    \"customer_id\": [\"C1\", \"C1\", \"C2\"],\n    \"amount\": [10, 15, 7],\n})\nsummary = (\n    events.groupby(\"customer_id\", as_index=False)\n          .agg(event_count=(\"event_id\", \"count\"),\n               spend_total=(\"amount\", \"sum\"))\n)\nprint(summary.to_string(index=False))"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output is two rows: customer C1 has `event_count=2` and `spend_total=25`; C2 has `event_count=1` and `spend_total=7`. The input has three event rows, but `agg` returns one row per customer group. The amounts are summed within each group."
+        },
+        {
+          "type": "paragraph",
+          "text": "`groupby(...).agg(...)` returns one row per customer group. That is appropriate for customer-level summaries, but it no longer has one row per event."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Add a group statistic while preserving event rows",
+          "source": "import pandas as pd\n\nevents = pd.DataFrame({\n    \"event_id\": [\"e1\", \"e2\", \"e3\"],\n    \"customer_id\": [\"C1\", \"C1\", \"C2\"],\n    \"amount\": [10, 15, 7],\n})\nevents = events.copy()\nevents[\"customer_total\"] = events.groupby(\"customer_id\")[\"amount\"].transform(\"sum\")\nprint(events.to_string(index=False))"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output preserves all three events and adds `customer_total`: e1/C1/10/25, e2/C1/15/25, and e3/C2/7/7. `transform('sum')` computes a sum per customer and aligns it back to each original row; it does not reduce the table's grain."
+        },
+        {
+          "type": "paragraph",
+          "text": "`transform` returns a value aligned to the original rows, so every event receives its customer's total. This is different from `agg`, which reduces the table to one row per group."
+        }
+      ]
+    },
+    {
+      "id": "data-quality-and-reproducibility",
+      "title": "Make transformations auditable",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A data pipeline should make it possible to explain where rows disappeared or multiplied. Capture input row counts, filter counts, duplicate-key counts, merge coverage, null counts, and final output shape. A transformation that produces a plausible-looking result can still be wrong."
+        },
+        {
+          "type": "table",
+          "title": "Questions to ask after each step",
+          "columns": [
+            "Check",
+            "Reason"
+          ],
+          "rows": [
+            [
+              "Did row count change?",
+              "Filtering, exploding, joins, and grouping can change cardinality."
+            ],
+            [
+              "Did data types change?",
+              "Numbers read as text can break sorting and calculations."
+            ],
+            [
+              "Did key uniqueness change?",
+              "Duplicate keys can multiply rows or make updates ambiguous."
+            ],
+            [
+              "Did missingness change?",
+              "Joins and coercion can introduce new nulls."
+            ],
+            [
+              "Can the step be rerun?",
+              "Reproducible inputs and explicit transformations help debugging."
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Do not patch data quality silently",
+          "content": "Avoid silently coercing invalid values to zero or dropping all rows with any null. Record the rule and counts, preserve important IDs, and verify the result before sending it to a model."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "paragraph",
+      "text": "Pandas is convenient for medium-sized in-memory analysis, but memory use can grow through copies and wide joins. For data larger than memory, consider chunked processing or a database/stream engine instead of forcing the entire dataset into one DataFrame."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Inspect `shape`, `dtypes`, null counts, key uniqueness, and `head()` before transforming."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use `merge(validate=...)` to catch unexpected join cardinality."
+    },
+    {
+      "type": "paragraph",
+      "text": "`agg` usually reduces rows; `transform` aligns results back to input rows."
+    },
+    {
+      "type": "paragraph",
+      "text": "Compare row counts, duplicate keys, unmatched keys, and null counts after consequential steps."
+    }
+  ],
+  "questions": [
+    {
+      "id": "pandas-prep-q1",
+      "type": "single_select",
+      "prompt": "A merge unexpectedly doubles the number of event rows. What is a likely cause?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The right-side join key contains multiple matching rows"
+        },
+        {
+          "id": "b",
+          "text": "Pandas always duplicates all rows in a left join"
+        },
+        {
+          "id": "c",
+          "text": "The DataFrame shape is hidden"
+        },
+        {
+          "id": "d",
+          "text": "The CSV encoding is necessarily wrong"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "A many-to-many or unexpected one-to-many relationship can multiply matched rows."
+    },
+    {
+      "id": "pandas-prep-q2",
+      "type": "single_select",
+      "prompt": "What is the benefit of `merge(..., validate='many_to_one')` when joining events to customers?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It checks that the right-side join key is unique as expected"
+        },
+        {
+          "id": "b",
+          "text": "It sorts the events by time automatically"
+        },
+        {
+          "id": "c",
+          "text": "It fills missing customers with zeros"
+        },
+        {
+          "id": "d",
+          "text": "It guarantees data is fresh"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Merge validation checks the expected key relationship and surfaces duplicates rather than silently allowing multiplication."
+    },
+    {
+      "id": "pandas-prep-q3",
+      "type": "single_select",
+      "prompt": "Which operation is designed to calculate a group-level sum and keep one output row per customer?",
+      "options": [
+        {
+          "id": "a",
+          "text": "groupby(...).agg(...)"
+        },
+        {
+          "id": "b",
+          "text": "drop_duplicates() on every column"
+        },
+        {
+          "id": "c",
+          "text": "head()"
+        },
+        {
+          "id": "d",
+          "text": "astype(str)"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Aggregation reduces each group to a summary row."
+    },
+    {
+      "id": "pandas-prep-q4",
+      "type": "single_select",
+      "prompt": "You need each event row to include the total amount for its customer without reducing the event-level row count. Which concept is suitable?",
+      "options": [
+        {
+          "id": "a",
+          "text": "groupby(...).transform('sum')"
+        },
+        {
+          "id": "b",
+          "text": "groupby(...).agg() only"
+        },
+        {
+          "id": "c",
+          "text": "DataFrame.columns"
+        },
+        {
+          "id": "d",
+          "text": "read_csv()"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Transform produces results aligned to the original rows."
+    },
+    {
+      "id": "pandas-prep-q5",
+      "type": "true_false",
+      "prompt": "A successful pandas merge proves that the join keys and relationship were correct.",
+      "correctAnswer": false,
+      "explanation": "The merge can succeed with wrong cardinality or unmatched keys; validate assumptions and inspect the output."
+    },
+    {
+      "id": "pandas-prep-q6",
+      "type": "true_false",
+      "prompt": "Checking row counts and key uniqueness after a merge can reveal problems that are invisible in a few preview rows.",
+      "correctAnswer": true,
+      "explanation": "Summary checks are necessary because small samples may not expose duplicate-key multiplication or systematic unmatched records."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "pandas-scenario-1",
+      "prompt": "A training dataset suddenly reports twice as many positive examples after joining events to customer metadata.",
+      "skillsTested": [
+        "Pandas merges",
+        "Label integrity",
+        "Data debugging"
+      ],
+      "strongAnswerPoints": [
+        "Check uniqueness of customer IDs in the metadata table.",
+        "Use merge validation and count rows before/after; inspect keys with multiple matches.",
+        "Fix duplicate source keys or define an intentional aggregation/deduplication rule."
+      ],
+      "pitfalls": [
+        "Assuming the model data improved because there are more rows",
+        "Dropping duplicates without deciding which customer record is authoritative"
+      ],
+      "referenceAnswer": "I would suspect join multiplication first. I would verify customer-key uniqueness and the intended relationship, then validate the merge and recount class labels."
+    },
+    {
+      "id": "pandas-scenario-2",
+      "prompt": "A pipeline groups event data by customer and downstream code can no longer find `event_id` for individual events.",
+      "skillsTested": [
+        "Pandas aggregation",
+        "Data shape",
+        "Pipeline contracts"
+      ],
+      "strongAnswerPoints": [
+        "Explain that groupby/agg reduced to one row per group.",
+        "Use transform if the statistic must be attached to each event, or keep separate event and summary tables.",
+        "Document the row grain expected by each downstream stage."
+      ],
+      "pitfalls": [
+        "Trying to recreate original detail from an aggregated table without a join"
+      ],
+      "referenceAnswer": "The aggregate changed the grain from event-level to customer-level. I'd preserve the event table and either use transform or join a customer summary back to the event rows."
+    }
+  ]
+}

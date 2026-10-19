@@ -243,6 +243,58 @@
           ],
           "outcome": "A running total needs both a clear partition and a clear order/frame. Otherwise the result may not match the intended sequence.",
           "problem": "Calculate each customer's running order total in chronological order."
+        },
+        {
+          "type": "paragraph",
+          "text": "### The default frame and ties"
+        },
+        {
+          "type": "paragraph",
+          "text": "When an aggregate window has `ORDER BY` but no explicit frame, PostgreSQL's default frame includes peer rows that tie on the ordering expressions. If two events share the same timestamp, both can see a running total that includes both events. Use an explicit `ROWS` frame and a deterministic tie-breaker when you want the total to advance row by row."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Compare default peer frame with deterministic row-by-row total",
+          "source": "WITH events(id, created_at, amount) AS (\n  VALUES\n    (1, '2026-10-01 10:00'::timestamp, 5),\n    (2, '2026-10-01 10:00'::timestamp, 7),\n    (3, '2026-10-01 10:01'::timestamp, 2)\n)\nSELECT id, created_at, amount,\n       SUM(amount) OVER (ORDER BY created_at) AS peer_total,\n       SUM(amount) OVER (\n         ORDER BY created_at, id\n         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n       ) AS row_total\nFROM events\nORDER BY created_at, id;"
+        },
+        {
+          "type": "table",
+          "title": "Expected output",
+          "columns": [
+            "id",
+            "created_at",
+            "amount",
+            "peer_total",
+            "row_total"
+          ],
+          "rows": [
+            [
+              "1",
+              "10:00",
+              "5",
+              "12",
+              "5"
+            ],
+            [
+              "2",
+              "10:00",
+              "7",
+              "12",
+              "12"
+            ],
+            [
+              "3",
+              "10:01",
+              "2",
+              "14",
+              "14"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "The first two events are peers in the default frame because their `created_at` values tie, so both totals include 5 + 7. The second window orders by both timestamp and id and uses `ROWS`, making the running total deterministic: 5, then 12, then 14."
         }
       ]
     },

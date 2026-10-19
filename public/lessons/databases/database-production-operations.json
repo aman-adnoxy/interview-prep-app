@@ -5,12 +5,13 @@
   "sectionId": "database-production-operations",
   "title": "Database Production Operations: Backups, Migrations, and Monitoring",
   "difficulty": "advanced",
-  "estimatedMinutes": 34,
+  "estimatedMinutes": 44,
   "learningObjectives": [
     "Distinguish a backup from a proven recovery process.",
     "Explain RPO, RTO, WAL, and point-in-time recovery.",
     "Plan backward-compatible schema migrations.",
-    "Diagnose pool saturation, lock waits, query regressions, and storage growth."
+    "Diagnose pool saturation, lock waits, query regressions, and storage growth.",
+    "Measure index size and observed usage, distinguish size from bloat, and assess dependencies before replacing or removing an index."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -137,6 +138,123 @@
             "Application rollback does not automatically undo a destructive data migration."
           ],
           "outcome": "Use expand-and-contract so schema and application changes do not require every instance to switch simultaneously."
+        },
+        {
+          "type": "paragraph",
+          "text": "### Large-table uniqueness and index deployment"
+        },
+        {
+          "type": "paragraph",
+          "text": "A schema migration can be logically correct and still create too much downtime if it scans a large live table under a strong lock. For PostgreSQL, one way to enforce uniqueness with less write blocking is to clean up duplicates, prevent new duplicates during the rollout, create a unique index concurrently, verify the index is valid, then attach it as a constraint. Plan the exact sequence for the PostgreSQL version and table type."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Build and verify a concurrent unique index",
+          "source": "-- Resolve existing duplicates first, and coordinate writes so duplicates cannot reappear.\nCREATE UNIQUE INDEX CONCURRENTLY users_email_uq_idx\nON users (email);\n\nSELECT indexrelid::regclass AS index_name, indisvalid, indisready\nFROM pg_index\nWHERE indexrelid = 'public.users_email_uq_idx'::regclass;\n\nALTER TABLE users\nADD CONSTRAINT users_email_key UNIQUE USING INDEX users_email_uq_idx;"
+        },
+        {
+          "type": "paragraph",
+          "text": "`CREATE INDEX CONCURRENTLY` must be run outside an explicit transaction block. It uses more work and may take longer; monitor its progress, lock waits, write latency, and replication lag. If it fails, inspect the catalog flags and server logs before retrying. An invalid concurrent unique index can still enforce uniqueness in some failure states, so do not assume every invalid index is harmless. The exact recovery step depends on the failed phase and index type."
+        }
+      ]
+    },
+    {
+      "id": "index-operations-runbook",
+      "title": "Index operations: measure, replace, and remove safely",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Indexes are production objects: they consume disk, use cache space when their pages are hot, and add work to writes. An index change should start with the real query it supports and a baseline—not with the assumption that a bigger or more-used index is always better."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Measure index size and observed usage",
+          "source": "SELECT s.schemaname,\n       s.relname AS table_name,\n       s.indexrelname AS index_name,\n       s.idx_scan, s.idx_tup_read, s.idx_tup_fetch,\n       pg_size_pretty(pg_relation_size(s.indexrelid)) AS index_size\nFROM pg_stat_user_indexes AS s\nORDER BY pg_relation_size(s.indexrelid) DESC;"
+        },
+        {
+          "type": "paragraph",
+          "text": "Index size and index bloat are not the same thing. `pg_relation_size` reports the space occupied by the index; it does not estimate how much is wasted. The `pg_stat_user_indexes` counters describe the observed workload since statistics were last reset, so inspect `stats_reset` and measure a representative period before deciding an index is unused."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Optional B-tree page inspection with pgstattuple",
+          "source": "-- Optional: pgstattuple may need to be installed by an administrator.\nCREATE EXTENSION IF NOT EXISTS pgstattuple;\n\nSELECT version, tree_level, index_size,\n       avg_leaf_density, leaf_fragmentation,\n       leaf_pages, deleted_pages\nFROM pgstatindex('public.orders_status_created_at_idx');"
+        },
+        {
+          "type": "table",
+          "title": "What to check before an index change",
+          "columns": [
+            "Decision",
+            "Evidence to collect",
+            "Why it matters"
+          ],
+          "rows": [
+            [
+              "Is the index large or growing?",
+              "Size trend and table/index growth rate",
+              "Large size alone does not prove bloat."
+            ],
+            [
+              "Is it unused or redundant?",
+              "Representative query workload, index definition, predicates, sort order, included columns, operator class, and constraint dependencies",
+              "A zero scan count in a short window is not proof an index is safe to drop."
+            ],
+            [
+              "Can it be built online?",
+              "Table size, free disk, write load, build progress, locks, and replica lag",
+              "CREATE INDEX CONCURRENTLY reduces write blocking but takes more work and has restrictions."
+            ],
+            [
+              "Can it be removed?",
+              "Dependency/constraint check, rollback plan, and evidence the replacement serves the workload",
+              "A primary/unique constraint may depend on an index; removing it can change correctness, not just speed."
+            ]
+          ]
+        },
+        {
+          "type": "steps",
+          "title": "A safe index replacement workflow",
+          "steps": [
+            {
+              "id": "index-baseline",
+              "title": "1. Capture a baseline",
+              "description": "Record the slow query, EXPLAIN plan, p95/p99 latency, index size, and write overhead over a representative workload window."
+            },
+            {
+              "id": "index-build",
+              "title": "2. Build the candidate carefully",
+              "description": "For a large live table, consider CREATE INDEX CONCURRENTLY when its restrictions fit. Run it outside an explicit transaction block and monitor disk space, I/O, locks, errors, and replica lag."
+            },
+            {
+              "id": "index-validate",
+              "title": "3. Validate the result",
+              "description": "Check that the index is valid, compare query plans and observed latency, and verify uniqueness or other constraints where applicable."
+            },
+            {
+              "id": "index-remove",
+              "title": "4. Retire the old index only with evidence",
+              "description": "Check constraint ownership and dependencies, confirm the workload no longer needs the old definition, and prefer DROP INDEX CONCURRENTLY where appropriate and supported."
+            },
+            {
+              "id": "index-watch",
+              "title": "5. Observe after rollout",
+              "description": "Monitor query latency, errors, write throughput, disk usage, and replica lag. Keep a clear recovery plan if the new index performs worse."
+            }
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "A 300 GB orders table is gaining a new status/created_at index, and the team also suspects an older index is redundant.",
+          "reasoning": [
+            "Capture the affected query plan and representative latency first. Inspect the candidate index size and available disk before starting.",
+            "Use CREATE INDEX CONCURRENTLY if appropriate for the live workload; monitor its progress and expect additional I/O and CPU. If it fails, inspect catalog state and logs before retrying.",
+            "Compare both index definitions and query patterns. A similar leading column is not enough: sort order, predicates, included columns, operator classes, uniqueness, and constraints may differ.",
+            "Only remove the old index after the candidate is valid and measurements show it serves the workload. Use concurrent drop where appropriate and avoid dropping constraint-owned indexes directly."
+          ],
+          "outcome": "Safe index operations prove the benefit, preserve availability, and include a checked failure path—not merely a CREATE or DROP command."
         }
       ]
     },
@@ -301,27 +419,6 @@
       "explanation": "RTO describes the target duration to restore service."
     },
     {
-      "id": "restore-drill",
-      "type": "single_select",
-      "prompt": "Why run restore drills if backups report success?",
-      "options": [
-        {
-          "id": "a",
-          "text": "Prove the backup can be restored and data is usable"
-        },
-        {
-          "id": "b",
-          "text": "Increase production traffic"
-        },
-        {
-          "id": "c",
-          "text": "Remove need for monitoring"
-        }
-      ],
-      "correctOptionId": "a",
-      "explanation": "A backup can be incomplete, inaccessible, or too slow to restore."
-    },
-    {
       "id": "wal-pitr",
       "type": "single_select",
       "prompt": "What does WAL do in a PITR workflow?",
@@ -341,27 +438,6 @@
       ],
       "correctOptionId": "a",
       "explanation": "PITR combines a base backup with the required WAL history."
-    },
-    {
-      "id": "migration-order",
-      "type": "single_select",
-      "prompt": "When should the old column be removed?",
-      "options": [
-        {
-          "id": "a",
-          "text": "Before deploying new code"
-        },
-        {
-          "id": "b",
-          "text": "After all old consumers are gone"
-        },
-        {
-          "id": "c",
-          "text": "When adding new columns"
-        }
-      ],
-      "correctOptionId": "b",
-      "explanation": "Expand-and-contract delays removal until old code no longer depends on the old shape."
     },
     {
       "id": "pool-size",
@@ -385,18 +461,178 @@
       "explanation": "Too much concurrency can increase contention rather than throughput."
     },
     {
-      "id": "backup-proof",
-      "type": "true_false",
-      "prompt": "A successful backup job alone proves the team can meet its recovery time objective.",
-      "correctAnswer": false,
-      "explanation": "A restore drill measures the full recovery process and validates the restored data."
-    },
-    {
       "id": "migration-batches",
       "type": "true_false",
       "prompt": "Large backfills should be planned for WAL, locks, replication lag, restartability, and production load.",
       "correctAnswer": true,
       "explanation": "Backfills affect storage, replicas, locks, and latency; bounded batches and monitoring reduce risk."
+    },
+    {
+      "id": "pitr-requirements",
+      "type": "single_select",
+      "prompt": "What does PostgreSQL point-in-time recovery normally require?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A base backup and the needed continuous WAL archive to replay to the target time"
+        },
+        {
+          "id": "b",
+          "text": "Only a read replica"
+        },
+        {
+          "id": "c",
+          "text": "Only the latest schema dump"
+        },
+        {
+          "id": "d",
+          "text": "An index on every timestamp column"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "PITR restores a base backup and replays archived WAL up to the chosen point, provided the required chain is available."
+    },
+    {
+      "id": "expand-contract",
+      "type": "single_select",
+      "prompt": "Why keep the old column during the first deploy of an expand-and-contract migration?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Old application instances may still be reading or writing it while old and new versions coexist"
+        },
+        {
+          "id": "b",
+          "text": "PostgreSQL cannot add new columns"
+        },
+        {
+          "id": "c",
+          "text": "Columns cannot be dropped in PostgreSQL"
+        },
+        {
+          "id": "d",
+          "text": "The new application cannot use SQL"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "A rolling deployment can run application versions at once. Removing the old shape before every consumer is migrated can break older instances."
+    },
+    {
+      "id": "migration-index-build",
+      "type": "single_select",
+      "prompt": "A concurrent index build fails and leaves an invalid index. What is the safest next step?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Inspect its catalog state, server logs, dependencies, and failure phase before deciding whether to drop/rebuild"
+        },
+        {
+          "id": "b",
+          "text": "Assume it has no write overhead and ignore it forever"
+        },
+        {
+          "id": "c",
+          "text": "Immediately rerun CREATE INDEX with the same name without checking"
+        },
+        {
+          "id": "d",
+          "text": "Drop the table"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "An invalid index may consume storage/write overhead, and a failed unique concurrent build can have special enforcement behavior. Investigate first."
+    },
+    {
+      "id": "pool-budget",
+      "type": "single_select",
+      "prompt": "A database allows 120 client connections. Three services each configure pools of 50, before migrations and admin sessions. What is the main problem?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Their combined possible demand (150) already exceeds the whole server budget, leaving no headroom for other clients"
+        },
+        {
+          "id": "b",
+          "text": "Each service will automatically share one pool"
+        },
+        {
+          "id": "c",
+          "text": "Connection count does not affect resource use"
+        },
+        {
+          "id": "d",
+          "text": "Set every pool to 120"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Plan a global connection budget across replicas/services, reserve operational headroom, and cap concurrency. More connections can increase contention."
+    },
+    {
+      "id": "incident-diagnosis",
+      "type": "single_select",
+      "prompt": "API p95 jumps from 100 ms to 1.4 seconds, while pool wait time rises and the database shows many active sessions. What should you do first?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Increase every pool and retry without limits"
+        },
+        {
+          "id": "b",
+          "text": "Measure pool wait, active/idle-in-transaction sessions, lock waits, and query plans; then reduce or queue concurrency at the actual bottleneck"
+        },
+        {
+          "id": "c",
+          "text": "Drop indexes"
+        },
+        {
+          "id": "d",
+          "text": "Disable statement timeouts"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Break the latency into queueing, query execution, locks, I/O, and application time. Increasing concurrency without evidence can worsen saturation."
+    },
+    {
+      "id": "index-size-vs-bloat",
+      "type": "single_select",
+      "prompt": "A PostgreSQL index occupies 20 GB on disk. What does that number tell you by itself?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The index has exactly 20 GB of wasted space"
+        },
+        {
+          "id": "b",
+          "text": "Its current on-disk size is 20 GB, but more evidence is needed to estimate bloat"
+        },
+        {
+          "id": "c",
+          "text": "It uses 20 GB of RAM at all times"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "pg_relation_size measures index file size, not wasted space. Use trends and, when appropriate, detailed B-tree inspection such as pgstatindex from pgstattuple."
+    },
+    {
+      "id": "unused-index-safety",
+      "type": "single_select",
+      "prompt": "An index has `idx_scan = 0` during a one-hour monitoring window. What is the safest next step?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Drop it immediately because the statistic proves it is useless"
+        },
+        {
+          "id": "b",
+          "text": "Check a representative workload period and verify constraints and dependencies before considering removal"
+        },
+        {
+          "id": "c",
+          "text": "Reboot the database"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Statistics can reset and rare jobs may use the index. Some indexes are needed for uniqueness or constraints even when scan counts are low."
     }
   ],
   "interviewScenarios": [

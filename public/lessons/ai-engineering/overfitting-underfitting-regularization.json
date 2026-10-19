@@ -1,0 +1,303 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "overfitting-underfitting-regularization",
+  "topicId": "ai-engineering",
+  "sectionId": "overfitting-underfitting-regularization",
+  "title": "Overfitting, Underfitting, and Regularization",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 34,
+  "learningObjectives": [
+    "Diagnose overfitting and underfitting from training and validation behavior.",
+    "Explain regularization and common generalization remedies.",
+    "Choose remedies based on evidence rather than habit."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "A model should learn repeatable patterns, not memorize examples. Underfitting means it has not captured enough useful structure. Overfitting means it learned training-specific details that do not carry over to unseen examples."
+  },
+  "concepts": [
+    {
+      "id": "motivation",
+      "title": "Problem and motivation",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Training accuracy can keep rising while real-world performance falls. Learning curves help distinguish a model that is too limited from one that is fitting noise."
+        },
+        {
+          "type": "paragraph",
+          "text": "A model should learn repeatable patterns, not memorize examples. Underfitting means it has not captured enough useful structure. Overfitting means it learned training-specific details that do not carry over to unseen examples."
+        }
+      ]
+    },
+    {
+      "id": "technical-deep-dive",
+      "title": "Technical deep dive and worked example",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Regularization discourages overly complex fits. L2 penalizes squared parameter magnitudes; L1 penalizes absolute magnitudes and can set weights to zero. Early stopping selects a checkpoint based on validation behavior."
+        },
+        {
+          "type": "worked_example",
+          "problem": "Training accuracy rises from 92% to 99%, while validation accuracy peaks at 90% and then falls to 84%.",
+          "reasoning": [
+            "Check split integrity, duplicates, and distribution mismatch first.",
+            "If the evaluation is sound, choose the checkpoint near the best validation score.",
+            "Try stronger regularization, a simpler model, label-preserving augmentation, or more representative data.",
+            "Compare changes on the same validation protocol; keep the final test set untouched."
+          ],
+          "outcome": "The best model is not necessarily the one with the highest training score or longest training run."
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "source": "L2: new_loss = data_loss + lambda * sum(weight ** 2)\nL1: new_loss = data_loss + lambda * sum(abs(weight))",
+          "title": "How regularization changes the objective"
+        },
+        {
+          "type": "paragraph",
+          "text": "Walkthrough: `data_loss` is the penalty measured on training examples. The added term penalizes weight magnitude. `lambda` controls its strength: at zero there is no such penalty; larger values constrain weights more. L1 uses absolute values and can encourage exact zeros, while L2 squares weights and usually shrinks them smoothly. This is a mathematical illustration, not an executable training program."
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: Increasing lambda makes large weights more costly. Too little may not control overfitting; too much can force the model to underfit."
+        }
+      ]
+    },
+    {
+      "id": "tradeoffs-production",
+      "title": "Trade-offs and production behavior",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Regularization can improve generalization but excessive strength underfits. Larger models may need more data and compute. Augmentation helps only when the transformation preserves the target."
+        },
+        {
+          "type": "paragraph",
+          "text": "Production check: Track train/validation gaps and performance by user group or region. A good validation score can still fail after a distribution shift."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Anti-pattern to avoid",
+          "content": "Adding dropout to every model without evidence; training longer because training accuracy rises; treating one validation curve as proof without checking the split."
+        }
+      ]
+    },
+    {
+      "id": "six-layer-interview-synthesis",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem — Training performance can continue to improve while generalization gets worse."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Choice — Underfitting means the model misses useful structure; overfitting means it learns training-specific details; regularization discourages overly complex fits."
+        },
+        {
+          "type": "paragraph",
+          "text": "3. Mechanism — Compare train and validation curves, select checkpoints with validation data, and test targeted remedies such as regularization, simpler capacity, better data, or valid augmentation."
+        },
+        {
+          "type": "paragraph",
+          "text": "4. Trade-offs and scale — In the example, training accuracy rises 7 percentage points (92% to 99%) while validation accuracy falls 6 points (90% to 84%). That growing disagreement is evidence to investigate, not proof by itself: leakage, a bad split, and distribution mismatch can produce misleading curves too."
+        },
+        {
+          "type": "paragraph",
+          "text": "5. Avoid — Choosing by training accuracy alone, adding dropout by habit, or treating a validation gap as proof before checking leakage and distribution mismatch."
+        },
+        {
+          "type": "paragraph",
+          "text": "6. Interview probes — Are both train and validation errors high? Does only validation worsen? What happens if regularization is too strong? What evidence would justify adding model capacity?"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Engineering rule of thumb",
+      "content": "Select the best generalizing model, not the model that memorizes the training set best."
+    },
+    {
+      "type": "paragraph",
+      "text": "Regularization can improve generalization but excessive strength underfits. Larger models may need more data and compute. Augmentation helps only when the transformation preserves the target."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Underfitting: poor training and validation fit. Overfitting: training improves but validation lags or declines."
+    },
+    {
+      "type": "paragraph",
+      "text": "Regularization discourages overly complex fits; too much can underfit."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use validation to select checkpoints/hyperparameters. Keep test for a final estimate."
+    },
+    {
+      "type": "paragraph",
+      "text": "Check split quality and distribution mismatch before attributing every gap to model complexity."
+    }
+  ],
+  "questions": [
+    {
+      "id": "overfit-pattern",
+      "type": "single_select",
+      "prompt": "Which pattern most strongly suggests overfitting?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Both training and validation errors are high"
+        },
+        {
+          "id": "b",
+          "text": "Training error is low but validation error is much higher"
+        },
+        {
+          "id": "c",
+          "text": "Both metrics are strong and close"
+        },
+        {
+          "id": "d",
+          "text": "No labels exist"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "A large generalization gap suggests the model has fit training-specific patterns."
+    },
+    {
+      "id": "underfit-pattern",
+      "type": "single_select",
+      "prompt": "Training and validation performance are both poor. What is a reasonable hypothesis?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Underfitting, weak features, or a poor training setup"
+        },
+        {
+          "id": "b",
+          "text": "Guaranteed overfitting"
+        },
+        {
+          "id": "c",
+          "text": "A perfect model"
+        },
+        {
+          "id": "d",
+          "text": "A correct test split"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Poor performance on both partitions can indicate insufficient signal or model fit, though data problems must also be checked."
+    },
+    {
+      "id": "l2",
+      "type": "single_select",
+      "prompt": "After increasing L2 regularization, a model's training and validation errors both rise substantially. What is the most likely explanation?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The regularization may now be too strong, causing underfitting"
+        },
+        {
+          "id": "b",
+          "text": "The model is definitely more generalizable because weights are smaller"
+        },
+        {
+          "id": "c",
+          "text": "The test set has become the training set"
+        },
+        {
+          "id": "d",
+          "text": "L2 automatically fixes label errors"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Regularization trades fit against complexity. If both training and validation errors rise, the model may be too constrained; compare a smaller penalty and inspect data/optimization before concluding."
+    },
+    {
+      "id": "early-stopping",
+      "type": "single_select",
+      "prompt": "During training, validation performance peaks at epoch 8 and then falls, while training performance keeps improving. How should the team respond?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Deploy the last epoch because it has the best training score"
+        },
+        {
+          "id": "b",
+          "text": "Consider the epoch-8 checkpoint and verify the evaluation is representative"
+        },
+        {
+          "id": "c",
+          "text": "Use the test set every epoch to locate the best checkpoint"
+        },
+        {
+          "id": "d",
+          "text": "Increase regularization without comparing a baseline"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The growing gap is consistent with overfitting, and checkpoint selection belongs on validation data. First ensure the split and labels are sound; do not tune on the final test set."
+    },
+    {
+      "id": "regularization-always",
+      "type": "true_false",
+      "prompt": "Increasing regularization always improves model quality.",
+      "correctAnswer": false,
+      "explanation": "Too much regularization can make a model underfit."
+    },
+    {
+      "id": "train-accuracy-best",
+      "type": "true_false",
+      "prompt": "The model with the highest training accuracy is always the model to deploy.",
+      "correctAnswer": false,
+      "explanation": "Selection should consider validation performance and final test evidence, not training accuracy alone."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "generalization-gap",
+      "prompt": "A model has 99% training accuracy and 82% validation accuracy. Outline a disciplined diagnosis.",
+      "skillsTested": [
+        "learning curves",
+        "regularization",
+        "evaluation quality"
+      ],
+      "strongAnswerPoints": [
+        "Check split strategy, duplicates, leakage, and distribution differences.",
+        "Verify metric and label definitions match.",
+        "If the gap is genuine, try regularization, simpler capacity, augmentation, or more representative data."
+      ],
+      "pitfalls": [
+        "Tuning repeatedly on the final test set"
+      ],
+      "referenceAnswer": "I would verify the split and labels first. If the gap is genuine, I would test a smaller model, regularization, augmentation, and better data against the same validation set, reserving the final test for the final estimate."
+    },
+    {
+      "id": "both-poor",
+      "prompt": "Both training and validation errors are high. What would you investigate before increasing model size?",
+      "skillsTested": [
+        "underfitting",
+        "data quality",
+        "objective alignment"
+      ],
+      "strongAnswerPoints": [
+        "Check label quality and feature signal.",
+        "Compare with a simple baseline and inspect errors.",
+        "Check optimization and convergence before adding capacity."
+      ],
+      "pitfalls": [
+        "Assuming every weak model needs more parameters"
+      ],
+      "referenceAnswer": "I would compare against a baseline, inspect labels and features, and check whether training converged. High errors in both sets can reflect weak data or a mismatched objective, not just insufficient capacity."
+    }
+  ]
+}

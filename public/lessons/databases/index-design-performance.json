@@ -8,7 +8,7 @@
   "difficulty": "intermediate",
   "estimatedMinutes": 40,
   "learningObjectives": [
-    "Trace a lookup from root to leaf and explain why height matters.",
+    "Trace a lookup from root to leaf and explain cache hits, storage reads, heap fetches, and latency variability.",
     "Explain fan-out and page-oriented storage.",
     "Describe page splits and their maintenance effects.",
     "Separate index navigation from end-to-end query latency.",
@@ -308,6 +308,51 @@
             "Inspect the actual plan and buffer counts. A `shared hit` indicates a page found in PostgreSQL's buffer cache; a `shared read` indicates it had to be read into that cache, though the operating system may have served it from its own cache."
           ],
           "outcome": "An index reduces the search work; it does not eliminate row fetching or other sources of latency. Use `EXPLAIN (ANALYZE, BUFFERS)` and application timing to find where the time goes."
+        },
+        {
+          "type": "table",
+          "title": "One lookup, different cache states (illustrative)",
+          "columns": [
+            "State",
+            "Logical page path",
+            "Shared-buffer reads",
+            "What it means"
+          ],
+          "rows": [
+            [
+              "Warm index and heap",
+              "Root → internal → leaf → heap",
+              "Could be 0",
+              "Pages can be served from shared_buffers; CPU, visibility checks, locks, and network/application work still remain."
+            ],
+            [
+              "Warm index, cold leaf and heap",
+              "Root → internal → leaf → heap",
+              "Could be 2",
+              "Two blocks may need to be brought into shared_buffers; the operating system page cache might still avoid physical device reads."
+            ],
+            [
+              "Cold four-page path",
+              "Root → internal → leaf → heap",
+              "Could be up to 4",
+              "Each needed page misses shared_buffers. Storage reads may add latency, but EXPLAIN's `shared read` does not prove every block came from the physical device."
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "A B-tree lookup follows three index pages and then fetches one heap page. Why might the same query run in 0.4 ms in one request and 8 ms in another?",
+          "reasoning": [
+            "The path has four logical page accesses in the example, but each may be cached or uncached at different layers.",
+            "When the required pages are in shared_buffers, no PostgreSQL shared-buffer read is needed; when they miss, the operating system page cache may still satisfy the read, or the request may wait for storage.",
+            "Heap fetches, MVCC visibility checks, CPU contention, lock/pool waits, network round trips, and concurrent I/O can dominate a small lookup.",
+            "Compare repeated runs using EXPLAIN (ANALYZE, BUFFERS), application traces, and latency percentiles; do not generalize one fast warm-cache measurement to all requests."
+          ],
+          "outcome": "B-tree height explains the search path, not a fixed latency. Cache state and the work surrounding the index lookup explain much of the observed spread."
+        },
+        {
+          "type": "paragraph",
+          "text": "Latency magnitudes vary by machine and load: cached page processing may contribute microseconds-scale work, while a cache miss that waits on storage can add hundreds of microseconds or several milliseconds. These are order-of-magnitude examples, not SLAs. Cloud storage, queue depth, fsyncs, locks, connection-pool waiting, and network hops can change the result materially."
         }
       ]
     },

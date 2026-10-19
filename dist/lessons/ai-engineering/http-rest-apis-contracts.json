@@ -1,0 +1,377 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "http-rest-apis-contracts",
+  "topicId": "ai-engineering-python-data-backend",
+  "sectionId": "http-rest-apis-contracts",
+  "title": "HTTP, REST APIs, and API Contracts: Requests, Responses, Validation",
+  "description": "Understand how an AI application talks to services and defines predictable request/response contracts.",
+  "difficulty": "beginner",
+  "estimatedMinutes": 40,
+  "learningObjectives": [
+    "Explain HTTP methods, status codes, JSON serialization, and REST resource-oriented URLs.",
+    "Define a request contract with types, constraints, and validation errors.",
+    "Choose suitable timeout, retry, pagination, and idempotency behavior.",
+    "Explain why API contracts are part of reliability and not just documentation."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "An API contract is an agreement between the caller and server about request shape, meaning, responses, and failures. A predictable contract lets clients recover correctly without guessing what the server did."
+  },
+  "concepts": [
+    {
+      "id": "http-request-response",
+      "title": "An HTTP call has a method, path, headers, and body",
+      "blocks": [
+        {
+          "type": "table",
+          "title": "Common HTTP status codes",
+          "columns": [
+            "Code",
+            "Typical meaning",
+            "Client action"
+          ],
+          "rows": [
+            [
+              "200 OK",
+              "Request succeeded with a result",
+              "Read the response body"
+            ],
+            [
+              "201 Created",
+              "A resource was created",
+              "Use the returned ID/location"
+            ],
+            [
+              "202 Accepted",
+              "Work was accepted but is not finished",
+              "Use a job/status resource"
+            ],
+            [
+              "400 / 422",
+              "Malformed or semantically invalid input",
+              "Correct the request; do not blindly retry unchanged"
+            ],
+            [
+              "401 / 403",
+              "Missing/invalid authentication or insufficient permission",
+              "Authenticate or handle forbidden access"
+            ],
+            [
+              "404 / 409",
+              "Resource absent or a state/conflict condition",
+              "Check ID or resolve concurrency/idempotency conflict"
+            ],
+            [
+              "429",
+              "Rate limit reached",
+              "Respect `Retry-After` where available and back off"
+            ],
+            [
+              "500 / 503",
+              "Server error or temporary unavailability",
+              "Retry only when safe and within a deadline"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "The exact choice between 400 and 422 depends on the API's documented semantics. Status codes should have stable meaning; clients should not need to parse an error message to decide whether to retry."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "HTTP request pattern (replace the placeholder endpoint)",
+          "source": "import requests\n\nresponse = requests.get(\n    \"https://api.example.test/v1/models\",\n    timeout=(2, 10),  # connect timeout, read timeout\n)\nresponse.raise_for_status()\ndata = response.json()\nprint(type(data).__name__)"
+        },
+        {
+          "type": "paragraph",
+          "text": "This is syntactically runnable Python once `requests` is installed and the placeholder `https://api.example.test/v1/models` is replaced with a real endpoint you are authorized to call. As written, it is a pattern rather than an end-to-end request to a live service. The parsed payload's Python type depends on the endpoint's JSON response, so there is no fixed expected output for this placeholder."
+        },
+        {
+          "type": "paragraph",
+          "text": "The timeout tuple bounds connection establishment and waiting for response data in this example. `raise_for_status()` turns an HTTP error status into an exception, and `.json()` parses JSON into Python data. In production, handle network errors and HTTP status categories at the service boundary; do not log credentials or private response bodies indiscriminately."
+        }
+      ]
+    },
+    {
+      "id": "contracts-and-validation",
+      "title": "Validate the request before it reaches business logic",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "A typed request model (Pydantic)",
+          "source": "from pydantic import BaseModel, Field\n\nclass EmbedRequest(BaseModel):\n    text: str = Field(min_length=1, max_length=20_000)\n    dimensions: int = Field(default=768, ge=1, le=4096)\n\nrequest = EmbedRequest(text=\"database indexes\", dimensions=384)\nprint(request.dimensions)"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `384`. A schema gives the client a clear contract and lets the application reject empty or oversized inputs before expensive model work. Frameworks such as FastAPI can convert this validated model to/from JSON as part of route handling; Pydantic by itself validates the model object, not a network route or authorization."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A client sends a 5 MB text field to an embedding endpoint that is designed for small strings.",
+          "reasoning": [
+            "Validate body size and field bounds before tokenization or calling the model provider.",
+            "Return a documented client error with field-level detail without exposing internal stack traces.",
+            "Keep request limits aligned with model/provider limits, server memory, and expected cost."
+          ],
+          "outcome": "Validation protects correctness, resource budgets, and the client's ability to fix bad requests."
+        }
+      ]
+    },
+    {
+      "id": "rest-resource-semantics",
+      "title": "Resource semantics, idempotency, and pagination",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "REST-style APIs commonly expose resources with stable IDs and use methods such as GET, POST, PATCH, and DELETE for defined operations. A method name alone does not make an operation safe: the server must implement the documented semantics."
+        },
+        {
+          "type": "table",
+          "title": "Idempotency in practice",
+          "columns": [
+            "Operation",
+            "Typical semantics",
+            "Retry consideration"
+          ],
+          "rows": [
+            [
+              "GET /documents/42",
+              "Read a resource",
+              "Usually safe to retry within a deadline"
+            ],
+            [
+              "PUT /documents/42",
+              "Replace/set a known resource state",
+              "Designed to be idempotent when consistently implemented"
+            ],
+            [
+              "POST /jobs",
+              "Create work/resource",
+              "May create duplicates unless an idempotency key is supported"
+            ],
+            [
+              "PATCH /jobs/42/cancel",
+              "Request a state transition",
+              "Specify repeated-call behavior and conflict responses"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "For collection endpoints, define pagination—limit/offset or cursor—plus stable sorting and consistent item shape. State how errors are represented, which fields are optional, and how the contract evolves through versioning or backward-compatible additions."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "A timeout does not tell you whether a POST happened",
+          "content": "The server may commit a resource and lose the response. Use a client-generated idempotency key or stable business key where duplicate creation matters; store the outcome so a repeated request can return the same result."
+        }
+      ]
+    },
+    {
+      "id": "timeouts-retries-and-observability",
+      "title": "Treat failures as part of the API",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A reliable client distinguishes invalid input, missing permission, throttling, timeout, provider failure, and internal server errors. Timeouts bound resource use, but retries need a deadline, a bounded attempt count, backoff with jitter, and an operation that is safe to repeat."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "A runnable bounded-retry demonstration",
+          "source": "import random\nimport time\nfrom collections.abc import Callable\n\n\nclass TransientNetworkError(Exception):\n    \"\"\"Temporary failure that this example is allowed to retry.\"\"\"\n\n\ndef send_with_retry(\n    send: Callable[[], str],\n    *,\n    max_attempts: int = 3,\n    base_delay: float = 0.01,\n) -> str:\n    if max_attempts < 1:\n        raise ValueError(\"max_attempts must be at least 1\")\n\n    for attempt in range(max_attempts):\n        try:\n            return send()\n        except TransientNetworkError:\n            if attempt + 1 == max_attempts:\n                raise\n            delay = base_delay * (2 ** attempt) + random.uniform(0, base_delay)\n            time.sleep(delay)\n\n    raise AssertionError(\"loop exits only by returning or raising\")\n\n\ndef demo_sender() -> Callable[[], str]:\n    calls = 0\n\n    def send() -> str:\n        nonlocal calls\n        calls += 1\n        if calls == 1:\n            raise TransientNetworkError(\"temporary demo failure\")\n        return f\"created on attempt {calls}\"\n\n    return send\n\n\nprint(send_with_retry(demo_sender()))"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `created on attempt 2`. `demo_sender()` raises `TransientNetworkError` on its first call, then returns successfully on the second. The function rejects `max_attempts < 1`, so its loop cannot silently perform zero attempts. The jitter changes only the short wait, not which demo attempt succeeds."
+        },
+        {
+          "type": "paragraph",
+          "text": "This is an executable retry-control-flow demo, not a complete HTTP client. In production, the injected `send` must use the remaining end-to-end deadline; only explicitly transient failures should be retried; writes need an idempotency key or reconciliation; backoff/jitter and attempts must be bounded; and retries must stop when the deadline is exhausted. Do not retry validation/authentication errors. Record request IDs, latency, status, retry count and a redacted dependency name for diagnosis."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "paragraph",
+      "text": "Strict validation makes behavior more predictable but can reject clients that relied on undocumented fields. Define bounds and error semantics intentionally, evolve contracts compatibly, and apply retries only to errors and operations that permit them."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "HTTP status codes communicate outcome; the API should document error bodies and retry behavior."
+    },
+    {
+      "type": "paragraph",
+      "text": "Validate bounds and semantics before expensive inference or database operations."
+    },
+    {
+      "type": "paragraph",
+      "text": "Timeout bounds caller waiting but doesn't prove a remote write did not commit."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use idempotency keys for retryable create operations, pagination contracts, and redacted request observability."
+    }
+  ],
+  "questions": [
+    {
+      "id": "http-rest-q1",
+      "type": "single_select",
+      "prompt": "A request is accepted and queued for a document-processing job that will finish later. Which response is a natural fit?",
+      "options": [
+        {
+          "id": "a",
+          "text": "202 Accepted with a job/status reference"
+        },
+        {
+          "id": "b",
+          "text": "200 with a fabricated completed result"
+        },
+        {
+          "id": "c",
+          "text": "401 for every long-running request"
+        },
+        {
+          "id": "d",
+          "text": "429 even when the request was accepted"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "202 communicates that the work was accepted but not yet completed; a status resource can expose later progress."
+    },
+    {
+      "id": "http-rest-q2",
+      "type": "single_select",
+      "prompt": "What should an API normally do with an input that violates a documented maximum text length?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Validate it early and return a documented client error"
+        },
+        {
+          "id": "b",
+          "text": "Send it to the model provider anyway"
+        },
+        {
+          "id": "c",
+          "text": "Silently truncate it without telling the client"
+        },
+        {
+          "id": "d",
+          "text": "Treat it as an authentication failure"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Early validation protects cost/resource limits and gives the caller a predictable correction path."
+    },
+    {
+      "id": "http-rest-q3",
+      "type": "single_select",
+      "prompt": "A POST request times out after the server may have committed the resource. What helps a safe retry?",
+      "options": [
+        {
+          "id": "a",
+          "text": "An idempotency key and stored outcome/result"
+        },
+        {
+          "id": "b",
+          "text": "Retrying forever immediately"
+        },
+        {
+          "id": "c",
+          "text": "Assuming the server rolled back"
+        },
+        {
+          "id": "d",
+          "text": "Changing the URL randomly"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "An idempotency key lets the server recognize the repeated logical operation and avoid duplicate creation."
+    },
+    {
+      "id": "http-rest-q4",
+      "type": "single_select",
+      "prompt": "Why should an HTTP client set timeouts?",
+      "options": [
+        {
+          "id": "a",
+          "text": "To bound how long resources are tied up waiting on a dependency"
+        },
+        {
+          "id": "b",
+          "text": "To ensure the server never processes a write"
+        },
+        {
+          "id": "c",
+          "text": "To skip response validation"
+        },
+        {
+          "id": "d",
+          "text": "To make every request idempotent"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Timeouts prevent unbounded waiting but do not determine whether the remote operation completed."
+    },
+    {
+      "id": "http-rest-q5",
+      "type": "true_false",
+      "prompt": "A 401 and a 403 usually communicate the same client action in all API designs.",
+      "correctAnswer": false,
+      "explanation": "401 commonly signals authentication is missing/invalid; 403 signals the request is not permitted. Exact contract semantics should be documented."
+    },
+    {
+      "id": "http-rest-q6",
+      "type": "true_false",
+      "prompt": "A client should automatically retry every 500 response as many times as possible.",
+      "correctAnswer": false,
+      "explanation": "Retries need bounded attempts/deadline and safe idempotent semantics; retries can amplify overload."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "http-scenario-1",
+      "prompt": "An LLM-based API spends money on a provider call before discovering that the input exceeds the allowed length. How would you redesign it?",
+      "skillsTested": [
+        "API contract",
+        "Validation",
+        "Cost control"
+      ],
+      "strongAnswerPoints": [
+        "Validate body size and field constraints before expensive work.",
+        "Return a stable client error shape and document limits.",
+        "Track validation rejection rate and ensure direct callers cannot bypass the contract."
+      ],
+      "pitfalls": [
+        "Validating only in the frontend",
+        "Relying on an opaque provider error after paying for the request"
+      ],
+      "referenceAnswer": "I'd enforce the limit server-side at request parsing/validation before tokenization or provider calls, return a clear client error, and instrument rejection reasons without logging sensitive text."
+    },
+    {
+      "id": "http-scenario-2",
+      "prompt": "A client retries a create-job POST after a network timeout and now sees two jobs. How do you prevent this?",
+      "skillsTested": [
+        "API semantics",
+        "Idempotency",
+        "Distributed failure"
+      ],
+      "strongAnswerPoints": [
+        "Accept a stable idempotency key and bind it to the authenticated caller/request hash.",
+        "Persist the key and job/result atomically enough to return the same job for retries.",
+        "Define behavior for key reuse with a different payload and add expiry/retention policy."
+      ],
+      "pitfalls": [
+        "Assuming a client timeout means the server didn't commit"
+      ],
+      "referenceAnswer": "The write may have committed even though the response was lost. I'd store a stable idempotency key and outcome, reject conflicting reuse, and return the same job ID on safe repeats."
+    }
+  ]
+}

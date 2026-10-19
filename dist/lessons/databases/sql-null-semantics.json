@@ -112,6 +112,42 @@
             "Use `WHERE delivered_at IS NULL` to find missing delivery timestamps."
           ],
           "outcome": "Use IS NULL and IS NOT NULL for missing values; do not compare NULL with `=`."
+        },
+        {
+          "type": "table",
+          "title": "NOT does not turn UNKNOWN into TRUE",
+          "columns": [
+            "Expression",
+            "Result",
+            "Why"
+          ],
+          "rows": [
+            [
+              "NOT TRUE",
+              "FALSE",
+              "NOT reverses TRUE."
+            ],
+            [
+              "NOT FALSE",
+              "TRUE",
+              "NOT reverses FALSE."
+            ],
+            [
+              "NOT UNKNOWN",
+              "UNKNOWN",
+              "SQL still cannot decide the condition."
+            ],
+            [
+              "FALSE AND UNKNOWN",
+              "FALSE",
+              "The FALSE condition determines the result."
+            ],
+            [
+              "TRUE OR UNKNOWN",
+              "TRUE",
+              "The TRUE condition determines the result."
+            ]
+          ]
         }
       ]
     },
@@ -154,6 +190,16 @@
             "Use this only when that is the business meaning of missing values."
           ],
           "outcome": "Null-safe comparison is useful when NULL should be treated as a comparable state, but it can change join multiplicity if many NULL keys match."
+        },
+        {
+          "type": "worked_example",
+          "problem": "The incoming table has two rows with `external_code = NULL`; the existing table also has two rows with `external_code = NULL`. What happens when you join them?",
+          "reasoning": [
+            "With ordinary `i.external_code = e.external_code`, NULL never equals NULL, so these four row pairs do not match.",
+            "`IS NOT DISTINCT FROM` treats the two NULL keys as equal.",
+            "Each of the two incoming NULL rows matches both existing NULL rows, producing 2 × 2 = 4 joined rows. Add a stable business key or model absence explicitly if that multiplicity is not intended."
+          ],
+          "outcome": "NULL-safe equality is not the same as treating missing values as unique. Before using it in a join, decide whether many missing keys should match one another."
         }
       ]
     },

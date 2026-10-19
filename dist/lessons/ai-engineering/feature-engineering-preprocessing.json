@@ -1,0 +1,299 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "feature-engineering-preprocessing",
+  "topicId": "ai-engineering",
+  "sectionId": "feature-engineering-preprocessing",
+  "title": "Feature Engineering and Data Preprocessing",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 36,
+  "learningObjectives": [
+    "Explain encoding, scaling, imputation, and transformation choices.",
+    "Fit learned preprocessing only on training data.",
+    "Choose preprocessing based on data meaning and model assumptions."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Preprocessing defines the representation the model sees. Every transformation makes assumptions about meaning, scale, missingness, and availability. Fit learned transformations on training data and reuse them in validation, test, and production."
+  },
+  "concepts": [
+    {
+      "id": "motivation",
+      "title": "Problem and motivation",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Raw data often contains categories, missing values, skew, duplicates, and numeric scales unsuitable for a particular model. Cleaning without understanding why values are missing can destroy signal."
+        },
+        {
+          "type": "paragraph",
+          "text": "Preprocessing defines the representation the model sees. Every transformation makes assumptions about meaning, scale, missingness, and availability. Fit learned transformations on training data and reuse them in validation, test, and production."
+        }
+      ]
+    },
+    {
+      "id": "technical-deep-dive",
+      "title": "Technical deep dive and worked example",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "One-hot encoding represents unordered categories without inventing rank. Scaling can help distance-based and many gradient-based methods. Imputation fills missing values but should reflect why they are missing. Pipelines prevent fitting transformation statistics on test data."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A model uses annual spend, account age, region, and plan; some spend values are missing.",
+          "reasoning": [
+            "Impute numeric values using a statistic learned on training rows; consider a missingness indicator.",
+            "Standardize numeric features when the estimator benefits from comparable scales.",
+            "One-hot encode nominal categories and define behavior for unseen categories.",
+            "Package transformations with the model so training and inference use the same fitted steps."
+          ],
+          "outcome": "A reproducible preprocessing pipeline is safer than separate ad hoc cleaning in notebooks and production."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "source": "import pandas as pd\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.preprocessing import StandardScaler, OneHotEncoder\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.linear_model import LogisticRegression\n\nX_train = pd.DataFrame({\n    \"annual_spend\": [50000, None, 120000, 80000, 40000, 90000],\n    \"account_age_years\": [2, 3, 7, 5, 1, 4],\n    \"region\": [\"north\", \"south\", \"north\", \"east\", \"west\", \"east\"],\n    \"plan\": [\"basic\", \"pro\", \"pro\", \"basic\", \"basic\", \"pro\"],\n})\ny_train = [0, 1, 1, 0, 0, 1]\n\nnumeric = [\"annual_spend\", \"account_age_years\"]\ncategorical = [\"region\", \"plan\"]\npreprocess = ColumnTransformer([\n    (\"num\", make_pipeline(SimpleImputer(strategy=\"median\"), StandardScaler()), numeric),\n    (\"cat\", make_pipeline(\n        SimpleImputer(strategy=\"most_frequent\"),\n        OneHotEncoder(handle_unknown=\"ignore\")\n    ), categorical),\n])\nmodel = make_pipeline(preprocess, LogisticRegression(max_iter=1000))\nmodel.fit(X_train, y_train)\n\nX_new = pd.DataFrame({\n    \"annual_spend\": [70000],\n    \"account_age_years\": [3],\n    \"region\": [\"central\"],  # unseen category\n    \"plan\": [\"basic\"],\n})\nencoded = model.named_steps[\"columntransformer\"].transform(X_new)\nprint(encoded.shape)",
+          "title": "A fitted preprocessing pipeline"
+        },
+        {
+          "type": "paragraph",
+          "text": "Walkthrough: `numeric` and `categorical` select columns by type of meaning. The numeric pipeline fills missing spend using a median learned from training rows and standardizes the numeric values. The categorical pipeline fills missing categories using a training-set mode and one-hot encodes known categories. `handle_unknown=\"ignore\"` allows `central`, which was not present during training, without crashing; its region indicators will be zero. `fit` learns all preprocessing statistics and trains logistic regression. Finally, we inspect the transformed feature shape, not a prediction."
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `(1, 8)`. The two numeric columns contribute two features; the four training regions and two plans contribute six one-hot columns. The unseen `central` value is ignored within the already learned region columns. This example assumes scikit-learn and pandas are installed."
+        }
+      ]
+    },
+    {
+      "id": "tradeoffs-production",
+      "title": "Trade-offs and production behavior",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Richer preprocessing can improve signal but adds latency, memory, and versioning complexity. One-hot encoding high-cardinality fields can create wide matrices. Imputation may hide informative missingness."
+        },
+        {
+          "type": "paragraph",
+          "text": "Production check: Monitor missingness, unseen-category rates, feature freshness, and training-serving parity after releases."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Anti-pattern to avoid",
+          "content": "Fitting scaling before splitting; encoding nominal categories as arbitrary ordered integers; clipping outliers without checking; rebuilding transformations differently in production."
+        }
+      ]
+    },
+    {
+      "id": "six-layer-interview-synthesis",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem — Raw data contains categories, missingness, skew, duplicates, and scales that may distort a model's input representation."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Choice — Use encoding for categories, scaling when the estimator benefits from it, and imputation only after understanding missingness."
+        },
+        {
+          "type": "paragraph",
+          "text": "3. Mechanism — Fit each learned transformation on training data; save its statistics/vocabulary; reuse the same fitted pipeline at inference."
+        },
+        {
+          "type": "paragraph",
+          "text": "4. Trade-offs and scale — One million rows × 100 dense float32 features is about 400 MB of raw numeric values, before data-frame overhead and temporary copies. One-hot encoding a very high-cardinality field can expand dimensions dramatically; compare sparse encoding, hashing, embeddings, or aggregated features using measured memory and prediction quality."
+        },
+        {
+          "type": "paragraph",
+          "text": "5. Avoid — Fitting transforms on all data, inventing order for nominal categories, or clipping outliers without domain checks."
+        },
+        {
+          "type": "paragraph",
+          "text": "6. Interview probes — Does this model need scaling? What happens to unseen categories? Why is the value missing? Can production reproduce training transformations?"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Engineering rule of thumb",
+      "content": "Treat preprocessing as a versioned part of the model, not disposable notebook code."
+    },
+    {
+      "type": "paragraph",
+      "text": "Richer preprocessing can improve signal but adds latency, memory, and versioning complexity. One-hot encoding high-cardinality fields can create wide matrices. Imputation may hide informative missingness."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Treat preprocessing as a versioned part of the model pipeline."
+    },
+    {
+      "type": "paragraph",
+      "text": "Fit medians, scalers, category vocabulary, and feature selectors on training data only."
+    },
+    {
+      "type": "paragraph",
+      "text": "Define behavior for missing values, unseen categories, duplicate records, and extreme values."
+    }
+  ],
+  "questions": [
+    {
+      "id": "one-hot",
+      "type": "single_select",
+      "prompt": "Why is one-hot encoding suitable for an unordered category such as region?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It avoids inventing numeric order"
+        },
+        {
+          "id": "b",
+          "text": "It guarantees accuracy"
+        },
+        {
+          "id": "c",
+          "text": "It removes the need for testing"
+        },
+        {
+          "id": "d",
+          "text": "It turns the category into a label"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "One-hot encoding represents category membership without implying that one region is greater than another."
+    },
+    {
+      "id": "scaling",
+      "type": "single_select",
+      "prompt": "A nearest-neighbor model compares annual spend up to ₹500,000 with age between 0 and 20 years. Spend dominates distances even when age matters. What would you try first?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Standardize numeric features using training-set statistics and reevaluate"
+        },
+        {
+          "id": "b",
+          "text": "Encode age as a target label"
+        },
+        {
+          "id": "c",
+          "text": "Fit the scaler on the test set only"
+        },
+        {
+          "id": "d",
+          "text": "Remove all records with high spend"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Distance calculations are sensitive to feature scales. Standardization is a reasonable experiment; fit it on training data and verify whether it helps the task rather than assuming it must."
+    },
+    {
+      "id": "fit-transform",
+      "type": "single_select",
+      "prompt": "A developer calculates the mean and standard deviation using the full dataset, then splits into train and test. Why is that still leakage if labels were not used?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The preprocessing learned from the held-out test feature distribution"
+        },
+        {
+          "id": "b",
+          "text": "Scaling automatically exposes the test labels"
+        },
+        {
+          "id": "c",
+          "text": "All scaling is invalid for ML"
+        },
+        {
+          "id": "d",
+          "text": "The test set must be used to fit logistic regression"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The held-out test distribution influenced the learned transformation statistics. Split first and fit the scaler only on training data; apply the stored parameters unchanged to validation/test data."
+    },
+    {
+      "id": "missingness",
+      "type": "single_select",
+      "prompt": "Missing values are much more common for one provider. What should you do first?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Delete all affected rows"
+        },
+        {
+          "id": "b",
+          "text": "Investigate why values are missing and whether absence carries meaning"
+        },
+        {
+          "id": "c",
+          "text": "Replace everything with zero"
+        },
+        {
+          "id": "d",
+          "text": "Treat missing as the target"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The pattern may reflect a collection issue or meaningful process difference."
+    },
+    {
+      "id": "outliers-errors",
+      "type": "true_false",
+      "prompt": "Every extreme numeric value should be removed as an error.",
+      "correctAnswer": false,
+      "explanation": "Extreme values can be valid rare events; validate them against domain rules first."
+    },
+    {
+      "id": "all-scale",
+      "type": "true_false",
+      "prompt": "Every ML algorithm requires standardized numeric features.",
+      "correctAnswer": false,
+      "explanation": "Scaling matters for some methods, especially distance-based and many gradient-based models, but is less important for many tree models."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "preprocess-leakage",
+      "prompt": "A developer standardized all features before splitting. What should change?",
+      "skillsTested": [
+        "preprocessing leakage",
+        "pipeline design"
+      ],
+      "strongAnswerPoints": [
+        "Split first using the deployment-appropriate strategy.",
+        "Fit learned transformations on training data only.",
+        "Package preprocessing and estimator in one pipeline.",
+        "Recompute the evaluation."
+      ],
+      "pitfalls": [
+        "Keeping global statistics because labels were not used"
+      ],
+      "referenceAnswer": "The scaler learned from the test feature distribution even though it did not use labels. I would split first, fit transformations on training data, and use the same fitted pipeline on validation and test data."
+    },
+    {
+      "id": "high-cardinality",
+      "prompt": "A category has two million unique product IDs. Should you one-hot encode it directly?",
+      "skillsTested": [
+        "feature representation",
+        "scale",
+        "trade-offs"
+      ],
+      "strongAnswerPoints": [
+        "Estimate matrix width and memory cost.",
+        "Check whether IDs generalize or merely memorize entities.",
+        "Compare hashing, embeddings, or aggregated features and test unseen products."
+      ],
+      "pitfalls": [
+        "Assuming one-hot encoding is always best"
+      ],
+      "referenceAnswer": "Two million one-hot columns can be expensive and may not generalize to new products. I would inspect cardinality, memory, and leakage risk, then compare alternatives on a realistic holdout."
+    }
+  ]
+}

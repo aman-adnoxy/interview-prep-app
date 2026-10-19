@@ -26,11 +26,7 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "An index is an extra lookup structure that helps PostgreSQL find rows without checking every row in the table."
-        },
-        {
-          "type": "paragraph",
-          "text": "An index is a separate lookup structure that helps the database find table rows. Think of the index at the back of a book: instead of reading every page, you look up the topic and jump to the right pages. The database may still need to visit the table to fetch the full row."
+          "text": "An index is a separate lookup structure, like the index at the back of a book: it maps a searchable key to the location of matching table rows, so the database may avoid checking every table row. In PostgreSQL, the index has its own persistent pages on disk; frequently used pages may also be cached in shared_buffers or the operating system's page cache. An index makes a query eligible for a faster path, but does not force the planner to use it."
         },
         {
           "type": "code",
@@ -96,11 +92,7 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "A B-tree keeps keys sorted across balanced pages. The database narrows the possible key range at each level until it reaches the relevant leaf."
-        },
-        {
-          "type": "paragraph",
-          "text": "A B-tree is PostgreSQL's usual default index. It keeps keys in sorted, balanced pages, so the database can find a value, search a range, or read rows in a compatible order without checking every key."
+          "text": "A B-tree is PostgreSQL's usual default index. It keeps keys sorted across balanced pages; separator keys direct the search to child pages until the leaf that can contain the key is reached. Its order also supports range conditions and compatible sorting."
         },
         {
           "type": "code",
@@ -276,11 +268,7 @@
       "blocks": [
         {
           "type": "paragraph",
-          "text": "Selectivity is the share of rows that match a condition. PostgreSQL estimates that share and compares the likely cost of available plans."
-        },
-        {
-          "type": "paragraph",
-          "text": "Selectivity means how many rows match a condition. Searching for one rare email is selective; searching for a status shared by half the table is not. PostgreSQL estimates the cost of each route and may skip an index if reading many scattered rows would be slower."
+          "text": "Selectivity is the fraction of rows matching a predicate. Searching for one rare email is highly selective; searching for a status shared by half the table is not. PostgreSQL estimates matching rows and compares the cost of index navigation plus heap fetches with alternatives such as a sequential or bitmap scan."
         },
         {
           "type": "code",
@@ -784,6 +772,106 @@
         "c"
       ],
       "explanation": "Good index design starts from real query patterns, uses execution plans to understand current behavior, and validates improvements through measurement. Indexing every column blindly can increase storage and write costs."
+    },
+    {
+      "id": "index-disk-memory",
+      "type": "single_select",
+      "prompt": "Where does a PostgreSQL index live?",
+      "options": [
+        {
+          "id": "a",
+          "text": "As persistent database pages on storage; frequently used pages may also be cached in shared_buffers and the OS page cache"
+        },
+        {
+          "id": "b",
+          "text": "Only in RAM; a restart deletes it"
+        },
+        {
+          "id": "c",
+          "text": "Only inside the table's heap pages"
+        },
+        {
+          "id": "d",
+          "text": "Only in the SQL query plan"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Indexes have persistent on-disk storage and can consume memory through caching. Cache residency is a performance state, not the index's only storage location."
+    },
+    {
+      "id": "index-planner-choice",
+      "type": "single_select",
+      "prompt": "An index exists on `is_active`, and 90% of rows are active. Why might PostgreSQL choose a sequential scan?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Fetching most heap rows through the index may cost more than reading table pages in order"
+        },
+        {
+          "id": "b",
+          "text": "PostgreSQL ignores every Boolean index"
+        },
+        {
+          "id": "c",
+          "text": "A sequential scan cannot use MVCC"
+        },
+        {
+          "id": "d",
+          "text": "Indexes are never used for equality predicates"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "If most rows match, index navigation plus scattered heap fetches can cost more than sequentially reading the table."
+    },
+    {
+      "id": "explain-analyze-impact",
+      "type": "single_select",
+      "prompt": "What is an important difference between `EXPLAIN` and `EXPLAIN ANALYZE`?",
+      "options": [
+        {
+          "id": "a",
+          "text": "EXPLAIN shows a planned path; EXPLAIN ANALYZE executes the statement and reports measured results"
+        },
+        {
+          "id": "b",
+          "text": "EXPLAIN ANALYZE never executes SQL"
+        },
+        {
+          "id": "c",
+          "text": "EXPLAIN reports exact runtime rows without executing"
+        },
+        {
+          "id": "d",
+          "text": "They always return identical timings"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "EXPLAIN ANALYZE executes the statement, so take extra care with data-changing queries and production workloads."
+    },
+    {
+      "id": "index-write-cost",
+      "type": "single_select",
+      "prompt": "A table receives 5,000 inserts per second. What should be checked before adding several more indexes?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Read benefit versus index-maintenance work, WAL, storage, and cache pressure under representative writes"
+        },
+        {
+          "id": "b",
+          "text": "Only how short the index name is"
+        },
+        {
+          "id": "c",
+          "text": "Whether the query contains SELECT"
+        },
+        {
+          "id": "d",
+          "text": "Whether the table uses a foreign key"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Each applicable insert/update must maintain relevant indexes. Benchmark the whole workload, not only the read query."
     }
   ],
   "interviewScenarios": [
@@ -809,6 +897,25 @@
         "Running expensive EXPLAIN ANALYZE queries on production without considering impact."
       ],
       "referenceAnswer": "I would first capture the exact query and representative parameters, then inspect EXPLAIN to see the chosen plan. If safe, I would use EXPLAIN ANALYZE to compare estimated and actual rows and identify where time is spent. I would verify selectivity, statistics, predicate shape, composite-index column order, sorting and joins. I would also check whether the delay is caused by locking, I/O or another bottleneck. Only then would I test a targeted index or query rewrite and measure the result against representative workload data."
+    },
+    {
+      "id": "index-vs-seqscan-diagnosis",
+      "prompt": "A million-row users table has an email lookup that returns one row and an active-user report that returns 900,000 rows. Explain how you would check whether indexes help each query.",
+      "skillsTested": [
+        "Query-plan reasoning",
+        "Selectivity and access-path cost",
+        "Measurement under production-like workload"
+      ],
+      "strongAnswerPoints": [
+        "Compare EXPLAIN plans and actual rows/buffers on representative data.",
+        "Explain that a selective email lookup may benefit from an index while the broad report may prefer a sequential scan.",
+        "Measure latency and write overhead before keeping an index."
+      ],
+      "pitfalls": [
+        "Claiming every index scan is faster",
+        "Using a single synthetic query as proof of workload-wide benefit"
+      ],
+      "referenceAnswer": "I would test each query separately with representative parameters. An indexed equality lookup returning one row may avoid most heap work, while returning 90% of the table may make sequential access cheaper. I would compare plans, buffers, latency, and write cost before deciding."
     }
   ]
 }

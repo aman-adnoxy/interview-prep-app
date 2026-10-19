@@ -1,0 +1,297 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "training-validation-test-splits",
+  "topicId": "ai-engineering",
+  "sectionId": "training-validation-test-splits",
+  "title": "Training, Validation, and Test Datasets",
+  "difficulty": "beginner",
+  "estimatedMinutes": 36,
+  "learningObjectives": [
+    "Explain the purpose of training, validation, and test sets.",
+    "Choose split strategies that match deployment.",
+    "Identify leakage through features, preprocessing, and repeated entities."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Training teaches the model, validation helps select models and settings, and test estimates final performance after the design is frozen. If test results influence your choices, the test set is no longer an independent final check."
+  },
+  "concepts": [
+    {
+      "id": "motivation",
+      "title": "Problem and motivation",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A model can look excellent offline and fail in production if evaluation accidentally includes future information, duplicate entities, or preprocessing fitted on all rows."
+        },
+        {
+          "type": "paragraph",
+          "text": "Training teaches the model, validation helps select models and settings, and test estimates final performance after the design is frozen. If test results influence your choices, the test set is no longer an independent final check."
+        }
+      ]
+    },
+    {
+      "id": "technical-deep-dive",
+      "title": "Technical deep dive and worked example",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Split strategy should match what must be new at deployment. Forecasting usually needs time-respecting splits; repeated customers or patients often need group splits. Fit learned preprocessing on training data only."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A dataset contains 20 visits per patient, and the model will be used on patients it has never seen.",
+          "reasoning": [
+            "A random row split can put the same patient's patterns in training and test.",
+            "Split by patient ID so all visits for a patient stay in one partition.",
+            "Fit preprocessing on training patients only and reserve an untouched final test set."
+          ],
+          "outcome": "Split on the unit that must be new at deployment, not automatically on individual rows."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "source": "from sklearn.model_selection import GroupShuffleSplit\n\n# X is a pandas DataFrame; y is aligned with its rows.\ngroups = X[\"patient_id\"].to_numpy()       # grouping only, not a feature\nfeatures = X.drop(columns=[\"patient_id\"])\nsplitter = GroupShuffleSplit(test_size=0.2, n_splits=1, random_state=42)\ntrain_idx, test_idx = next(splitter.split(features, y, groups=groups))\nX_train, X_test = features.iloc[train_idx], features.iloc[test_idx]\nprint(len(set(groups[train_idx]) & set(groups[test_idx])))",
+          "title": "Keep patient groups separate"
+        },
+        {
+          "type": "paragraph",
+          "text": "Walkthrough: `groups` holds patient IDs separately from model features so the ID itself is not used as a predictor. `GroupShuffleSplit` returns row indices while ensuring a patient's rows stay together. `.iloc` selects those rows. The final set intersection should be empty, so the printed result is `0`."
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `0`. No patient identifier appears in both the training and test groups. The example assumes `X` is a pandas DataFrame with a `patient_id` column and `y` is aligned row-for-row with it."
+        }
+      ]
+    },
+    {
+      "id": "tradeoffs-production",
+      "title": "Trade-offs and production behavior",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A single split is simple but noisy. Cross-validation costs more but can give a more stable estimate. Time/group splits may reduce sample size yet better reflect deployment."
+        },
+        {
+          "type": "paragraph",
+          "text": "Production check: For churn forecasting, train on earlier periods and evaluate on later ones. Monitor performance after launch because production data may still drift."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Anti-pattern to avoid",
+          "content": "Tuning on test results; splitting rows when users repeat; fitting preprocessing on all rows; random splitting a future-forecasting task."
+        }
+      ]
+    },
+    {
+      "id": "six-layer-interview-synthesis",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem — Excellent offline scores may be misleading when similar entities cross splits or future information enters features."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Choice — Training fits parameters; validation selects models/settings; test is the final check after decisions are frozen."
+        },
+        {
+          "type": "paragraph",
+          "text": "3. Mechanism — Choose time/group/random splitting from the deployment question, split before fitting transformations, and keep the final test untouched."
+        },
+        {
+          "type": "paragraph",
+          "text": "4. Trade-offs and scale — For 100,000 independent examples, an 80/10/10 split gives 80,000 training, 10,000 validation, and 10,000 test examples. That is a starting ratio, not a rule: grouped or time-based splits can change the counts and better represent deployment; small test sets make the estimate noisier."
+        },
+        {
+          "type": "paragraph",
+          "text": "5. Avoid — Tuning on test, randomly splitting repeated patients when deployment is to new patients, or fitting a scaler on all data."
+        },
+        {
+          "type": "paragraph",
+          "text": "6. Interview probes — What must be unseen at deployment? Which information existed at prediction time? How would you detect entity leakage?"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Engineering rule of thumb",
+      "content": "Use the split that simulates how the model will actually be used."
+    },
+    {
+      "type": "paragraph",
+      "text": "A single split is simple but noisy. Cross-validation costs more but can give a more stable estimate. Time/group splits may reduce sample size yet better reflect deployment."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Train fits; validation selects; test estimates final generalization after decisions are frozen."
+    },
+    {
+      "type": "paragraph",
+      "text": "Split by time, customer, patient, or site when that matches deployment."
+    },
+    {
+      "type": "paragraph",
+      "text": "Fit scalers/imputers/feature selectors on training data only; a split alone does not remove future-derived features."
+    }
+  ],
+  "questions": [
+    {
+      "id": "train-purpose",
+      "type": "single_select",
+      "prompt": "Which split fits model parameters?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Test"
+        },
+        {
+          "id": "b",
+          "text": "Training"
+        },
+        {
+          "id": "c",
+          "text": "Production only"
+        },
+        {
+          "id": "d",
+          "text": "Validation only"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The training set is used to fit model parameters."
+    },
+    {
+      "id": "test-purpose",
+      "type": "single_select",
+      "prompt": "When should the test set be used?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Repeatedly tune every setting"
+        },
+        {
+          "id": "b",
+          "text": "Choose the best of hundreds of prompts"
+        },
+        {
+          "id": "c",
+          "text": "Estimate final performance after decisions are frozen"
+        },
+        {
+          "id": "d",
+          "text": "Fit the scaler before splitting"
+        }
+      ],
+      "correctOptionId": "c",
+      "explanation": "The test set is intended as a final independent estimate."
+    },
+    {
+      "id": "time-split",
+      "type": "single_select",
+      "prompt": "You are forecasting sales for next month. Random splitting gives a great score, but it mixes rows from January through December into both partitions. What is the strongest concern?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The evaluation may let patterns from later time periods influence a prediction of earlier periods"
+        },
+        {
+          "id": "b",
+          "text": "Time-based splits always have higher accuracy"
+        },
+        {
+          "id": "c",
+          "text": "Random splits cannot be used for any ML task"
+        },
+        {
+          "id": "d",
+          "text": "The model should be selected on the final test set"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "For forecasting, later-period information should not influence evaluation of predictions made from earlier periods. Use a chronological holdout that matches the intended forecast horizon; random splits remain useful when examples are independent and deployment has the same mixture."
+    },
+    {
+      "id": "group-split",
+      "type": "single_select",
+      "prompt": "A hospital model will be used for patients never seen during training. Each patient has many visit rows. Which evaluation setup best tests this requirement?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Randomly split visit rows so each patient appears in both sets"
+        },
+        {
+          "id": "b",
+          "text": "Keep every patient's visits in one partition using a patient-group split"
+        },
+        {
+          "id": "c",
+          "text": "Use patient ID as the target"
+        },
+        {
+          "id": "d",
+          "text": "Choose the split that gives the highest score"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Grouping by patient tests generalization to unseen patients and avoids patient-specific patterns leaking between train and test."
+    },
+    {
+      "id": "preprocess-before-split",
+      "type": "true_false",
+      "prompt": "It is safe to fit a scaler on the whole dataset before splitting because it does not use labels.",
+      "correctAnswer": false,
+      "explanation": "The scaler learns from the test feature distribution; fit it only on training data."
+    },
+    {
+      "id": "split-fixes-leakage",
+      "type": "true_false",
+      "prompt": "A time split automatically fixes a feature that directly contains the future target.",
+      "correctAnswer": false,
+      "explanation": "The feature itself must be removed or reconstructed using information available at prediction time."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "offline-online-gap",
+      "prompt": "A model achieves 99% offline accuracy but fails in production. What do you inspect first?",
+      "skillsTested": [
+        "leakage",
+        "split strategy",
+        "distribution shift"
+      ],
+      "strongAnswerPoints": [
+        "Audit prediction-time feature availability and target leakage.",
+        "Check duplicate entities and preprocessing scope.",
+        "Compare offline and production populations and label definitions."
+      ],
+      "pitfalls": [
+        "Assuming the model simply needs more parameters"
+      ],
+      "referenceAnswer": "I would audit leakage and split design, then compare feature availability and production distribution. I would verify that preprocessing was fitted only on training data and repeated entities did not cross partitions."
+    },
+    {
+      "id": "patient-split",
+      "prompt": "A medical model must generalize to unseen patients. How do you evaluate it?",
+      "skillsTested": [
+        "grouped validation",
+        "generalization"
+      ],
+      "strongAnswerPoints": [
+        "Split by patient ID, not visit row.",
+        "Keep every visit for a patient in one partition.",
+        "Report uncertainty and subgroup performance."
+      ],
+      "pitfalls": [
+        "Randomly splitting visits and claiming new-patient generalization"
+      ],
+      "referenceAnswer": "I would use a patient-grouped split. That tests generalization to unseen patients rather than recognition of familiar patient-specific patterns."
+    }
+  ]
+}

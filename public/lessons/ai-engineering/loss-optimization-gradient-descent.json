@@ -1,0 +1,302 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "loss-optimization-gradient-descent",
+  "topicId": "ai-engineering",
+  "sectionId": "loss-optimization-gradient-descent",
+  "title": "Loss Functions, Optimization, and Gradient Descent",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 38,
+  "learningObjectives": [
+    "Explain how loss converts prediction errors into a training objective.",
+    "Trace a gradient-descent update numerically.",
+    "Distinguish loss, optimizer, learning rate, parameters, and evaluation metric."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Training repeats a loop: predict, measure error with a loss, calculate how parameters affect that loss, and update parameters in a direction expected to reduce it. The loss defines what the model is encouraged to do; the optimizer defines how it updates."
+  },
+  "concepts": [
+    {
+      "id": "motivation",
+      "title": "Problem and motivation",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A model cannot improve just by seeing examples; training needs a numeric objective that indicates how predictions differ from targets. Different losses emphasize different kinds of mistakes."
+        },
+        {
+          "type": "paragraph",
+          "text": "Training repeats a loop: predict, measure error with a loss, calculate how parameters affect that loss, and update parameters in a direction expected to reduce it. The loss defines what the model is encouraged to do; the optimizer defines how it updates."
+        }
+      ]
+    },
+    {
+      "id": "technical-deep-dive",
+      "title": "Technical deep dive and worked example",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A gradient contains derivatives of loss with respect to parameters. Gradient descent moves opposite the gradient. The learning rate sets step size; a batch is the examples used for one update; an epoch is one pass through the training set."
+        },
+        {
+          "type": "worked_example",
+          "problem": "Minimize L(w) = (w - 3)^2 starting at w=0 with learning rate 0.1.",
+          "reasoning": [
+            "The derivative is dL/dw = 2(w-3).",
+            "At w=0, the gradient is -6.",
+            "Update w_new = 0 - 0.1 × (-6) = 0.6.",
+            "The loss falls from 9 to (0.6-3)^2 = 5.76."
+          ],
+          "outcome": "The parameter moves from 0 to 0.6 in one step because the update moves opposite the negative gradient."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "source": "w = 0.0\nlearning_rate = 0.1\nfor step in range(5):\n    loss = (w - 3) ** 2\n    print(step + 1, round(w, 3), round(loss, 3))  # current w and its loss\n    gradient = 2 * (w - 3)\n    w = w - learning_rate * gradient\nprint(\"final\", round(w, 3), round((w - 3) ** 2, 3))",
+          "title": "A small gradient-descent loop"
+        },
+        {
+          "type": "paragraph",
+          "text": "Walkthrough of the first update: at `w = 0`, the loss is `(0−3)² = 9`, and the gradient is `2(0−3) = −6`. The update is `0 − 0.1×(−6) = 0.6`. The loop prints the current weight alongside the loss calculated for that same weight, then updates it. Each later row follows the same order."
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output:\n1 0.0 9.0\n2 0.6 5.76\n3 1.08 3.686\n4 1.464 2.359\n5 1.771 1.51\nfinal 2.017 0.966\nThe loop prints the current weight and its matching loss before applying each update, then prints the final weight and loss after five updates."
+        }
+      ]
+    },
+    {
+      "id": "tradeoffs-production",
+      "title": "Trade-offs and production behavior",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Small learning rates may require many updates; large rates can overshoot or diverge. Larger batches can improve hardware utilization but require more memory and change update frequency."
+        },
+        {
+          "type": "paragraph",
+          "text": "Production check: Track training and validation curves, learning-rate schedules, gradient norms, and the task-specific metric. A falling training loss alone is not proof of product improvement."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Anti-pattern to avoid",
+          "content": "Treating loss as the only product metric; changing many settings at once; reporting loss without saying which split it belongs to."
+        }
+      ]
+    },
+    {
+      "id": "six-layer-interview-synthesis",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem — A model needs a numeric objective and an update rule to improve from prediction errors."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Choice — The loss says what errors cost during training; the optimizer describes how parameters change; the learning rate controls step size."
+        },
+        {
+          "type": "paragraph",
+          "text": "3. Mechanism — Forward pass → loss → gradients → parameter update. A batch is the data used for one update; an epoch is one pass through the dataset."
+        },
+        {
+          "type": "paragraph",
+          "text": "4. Trade-offs and scale — In the worked example, the first update moves w from 0 to 0.6 and reduces loss from 9 to 5.76. After five updates at learning rate 0.1, w is about 2.017 and loss about 0.966. The loss is still not zero; step size and objective shape determine how updates progress."
+        },
+        {
+          "type": "paragraph",
+          "text": "5. Avoid — Changing many settings at once, reading loss without its step/split, or assuming lower training loss guarantees better generalization."
+        },
+        {
+          "type": "paragraph",
+          "text": "6. Interview probes — What does the gradient tell you? Why step in the negative direction? How would you diagnose divergence? What metric would you use to choose a checkpoint?"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Engineering rule of thumb",
+      "content": "Change one training variable at a time and track validation behavior, not just training loss."
+    },
+    {
+      "type": "paragraph",
+      "text": "Small learning rates may require many updates; large rates can overshoot or diverge. Larger batches can improve hardware utilization but require more memory and change update frequency."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Training loop: predict → calculate loss → calculate gradients → update parameters."
+    },
+    {
+      "type": "paragraph",
+      "text": "Update: parameter := parameter − learning_rate × gradient."
+    },
+    {
+      "type": "paragraph",
+      "text": "Batch = examples per update; epoch = one pass through training data."
+    },
+    {
+      "type": "paragraph",
+      "text": "Track validation and task metrics, not only training loss."
+    }
+  ],
+  "questions": [
+    {
+      "id": "gradient-direction",
+      "type": "single_select",
+      "prompt": "Why does gradient descent subtract the gradient?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The gradient points toward local increase, so the negative direction tends to decrease loss"
+        },
+        {
+          "id": "b",
+          "text": "The gradient is always negative"
+        },
+        {
+          "id": "c",
+          "text": "Subtraction enlarges the dataset"
+        },
+        {
+          "id": "d",
+          "text": "It removes the need for a loss"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "A small step opposite the gradient is expected to reduce loss locally."
+    },
+    {
+      "id": "learning-rate",
+      "type": "single_select",
+      "prompt": "What can happen when the learning rate is too large?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Guaranteed faster convergence"
+        },
+        {
+          "id": "b",
+          "text": "Overshooting, oscillation, or divergence"
+        },
+        {
+          "id": "c",
+          "text": "Automatic removal of overfitting"
+        },
+        {
+          "id": "d",
+          "text": "No parameter updates"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Large updates can jump across a minimum or destabilize training."
+    },
+    {
+      "id": "epoch",
+      "type": "single_select",
+      "prompt": "A training log says the model completed 12 epochs but made 3,600 optimizer updates. What does “12 epochs” mean?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The model saw 12 examples total"
+        },
+        {
+          "id": "b",
+          "text": "The training loop made 12 full passes through the training dataset"
+        },
+        {
+          "id": "c",
+          "text": "The model made exactly 12 parameter updates"
+        },
+        {
+          "id": "d",
+          "text": "Validation ran 12 times, regardless of the dataset"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "An epoch is a full pass through the training examples. The number of optimizer updates also depends on dataset size and batch size."
+    },
+    {
+      "id": "loss-metric",
+      "type": "single_select",
+      "prompt": "Training loss keeps falling, but the validation F1 score drops after epoch 8. What is the best next step?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Always continue until training loss reaches zero"
+        },
+        {
+          "id": "b",
+          "text": "Inspect the learning curves and consider selecting the checkpoint near the best validation F1"
+        },
+        {
+          "id": "c",
+          "text": "Replace F1 with training loss without checking the task"
+        },
+        {
+          "id": "d",
+          "text": "Tune repeatedly on the final test set"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The training objective is improving while the task metric on unseen validation data worsens. That can indicate overfitting or objective/metric mismatch. Use validation to select a checkpoint and keep the test set untouched."
+    },
+    {
+      "id": "global-minimum",
+      "type": "true_false",
+      "prompt": "Gradient descent always finds the global minimum of a neural-network loss.",
+      "correctAnswer": false,
+      "explanation": "Neural-network objectives are generally non-convex and practical training does not guarantee a global minimum."
+    },
+    {
+      "id": "train-loss-only",
+      "type": "true_false",
+      "prompt": "Decreasing training loss alone proves production performance is improving.",
+      "correctAnswer": false,
+      "explanation": "Training loss can fall while generalization worsens or the objective fails to match the business goal."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "training-diverges",
+      "prompt": "Training loss oscillates and then explodes after the learning rate is increased. What do you do?",
+      "skillsTested": [
+        "optimization mechanics",
+        "diagnosis"
+      ],
+      "strongAnswerPoints": [
+        "Suspect unstable updates or overshooting.",
+        "Inspect learning-rate schedule, gradient norms, and data anomalies.",
+        "Return to a stable baseline and change one factor at a time."
+      ],
+      "pitfalls": [
+        "Assuming more epochs will fix any divergence"
+      ],
+      "referenceAnswer": "The larger learning rate may be causing unstable updates. I would restore a stable baseline, inspect gradients, test a smaller rate or schedule, and change one variable at a time."
+    },
+    {
+      "id": "loss-metric-mismatch",
+      "prompt": "Training loss improves but the business metric gets worse. How do you investigate?",
+      "skillsTested": [
+        "objective alignment",
+        "evaluation",
+        "error analysis"
+      ],
+      "strongAnswerPoints": [
+        "Verify labels and metric calculation.",
+        "Check whether the loss matches business error costs.",
+        "Inspect thresholding, calibration, and subgroup or tail errors."
+      ],
+      "pitfalls": [
+        "Assuming the optimizer is broken without checking the metric"
+      ],
+      "referenceAnswer": "I would verify labels and metrics, then check whether the loss is a good proxy for the business goal. I would inspect thresholding/calibration for classification or tail errors for regression."
+    }
+  ]
+}

@@ -1,0 +1,299 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "ai-vs-ml-deep-learning-generative-ai",
+  "topicId": "ai-engineering",
+  "sectionId": "ai-vs-ml-deep-learning-generative-ai",
+  "title": "AI vs Machine Learning vs Deep Learning vs Generative AI",
+  "difficulty": "beginner",
+  "estimatedMinutes": 32,
+  "learningObjectives": [
+    "Explain how AI, ML, deep learning, and generative AI relate.",
+    "Choose a suitable approach for a product problem.",
+    "Explain why AI products often combine models with deterministic code."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "AI is the broad goal of building systems that perform tasks associated with intelligence. ML learns patterns from examples. Deep learning is a family of ML based on multi-layer neural networks. Generative AI creates new content and commonly uses deep learning; these are overlapping categories, not four alternatives."
+  },
+  "concepts": [
+    {
+      "id": "motivation",
+      "title": "Problem and motivation",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A request to “add AI” is not a technical design. Clarify the required output, available data, tolerance for errors, and whether decisions must be auditable. The solution may be rules, a classifier, an LLM, or a combination."
+        },
+        {
+          "type": "paragraph",
+          "text": "AI is the broad goal of building systems that perform tasks associated with intelligence. ML learns patterns from examples. Deep learning is a family of ML based on multi-layer neural networks. Generative AI creates new content and commonly uses deep learning; these are overlapping categories, not four alternatives."
+        }
+      ]
+    },
+    {
+      "id": "technical-deep-dive",
+      "title": "Technical deep dive and worked example",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Rules execute conditions written by engineers. Supervised ML learns a mapping from examples to a target. Deep networks learn layered representations for complex inputs. Generative models produce content conditioned on input. A language model is usually a deep-learning model, which is ML within AI."
+        },
+        {
+          "type": "worked_example",
+          "problem": "An invoice product reads scanned documents, extracts a total, verifies arithmetic, and enforces tenant access.",
+          "reasoning": [
+            "Use OCR or a vision model to read scanned text.",
+            "Use structured extraction to propose fields and retain evidence.",
+            "Use ordinary code to recompute totals and compare with tolerances.",
+            "Use authenticated application permissions to enforce tenant access; never ask an LLM to decide authorization."
+          ],
+          "outcome": "Use models for perception and flexible interpretation; use deterministic code for arithmetic, validation, and security invariants."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "source": "def route_ticket(text):\n    if not text.strip():\n        return {\"queue\": \"manual_review\", \"reason\": \"empty ticket\"}\n    lowered = text.lower()\n    if \"invoice\" in lowered or \"refund\" in lowered:\n        queue = \"billing\"\n    elif \"password\" in lowered or \"login\" in lowered:\n        queue = \"account_access\"\n    else:\n        queue = \"technical_support\"\n    return {\"queue\": queue, \"reason\": \"baseline rule\"}\n\nprint(route_ticket(\"I need a refund for an invoice\"))",
+          "title": "A deterministic baseline for ticket routing"
+        },
+        {
+          "type": "paragraph",
+          "text": "Walkthrough: `strip()` catches an empty ticket before classification. `lower()` makes matching case-insensitive. The `if/elif` chain chooses the first matching rule, so invoice/refund wins if both keyword groups occur. The final `else` is the fallback. The output reports both the queue and rule reason; it does not claim a model inferred intent."
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: {'queue': 'billing', 'reason': 'baseline rule'}. This is a simple baseline, not a robust language classifier."
+        }
+      ]
+    },
+    {
+      "id": "tradeoffs-and-production",
+      "title": "Trade-offs and production behavior",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Rules are cheap and auditable but brittle. Traditional ML can be fast for stable prediction tasks but needs labeled data and monitoring. LLMs handle flexible language but add variable latency, cost, and output uncertainty. Compare cost per successful task, not just cost per call."
+        },
+        {
+          "type": "paragraph",
+          "text": "Production check: For invoice processing, track field-level accuracy, exception rate, review workload, latency, and cost per successfully processed document. Validate every extracted amount before using it downstream."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Anti-pattern to avoid",
+          "content": "Calling every model “AI”; assuming a bigger model is always better; using an LLM for exact arithmetic; treating generated explanations as proof of correctness."
+        }
+      ]
+    },
+    {
+      "id": "six-layer-interview-synthesis",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem — “Add AI” is a goal, not a solution. Identify the output, data, cost of mistakes, and need for auditability."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Choice — Rules fit explicit policies; supervised ML fits labeled prediction; deep learning handles learned representations; generative AI creates content."
+        },
+        {
+          "type": "paragraph",
+          "text": "3. Mechanism — Rules execute conditions, classifiers map inputs to labels or scores, and generative models produce content from context. Keep authorization and exact arithmetic deterministic."
+        },
+        {
+          "type": "paragraph",
+          "text": "4. Trade-offs and scale — A hybrid router can cut model calls: if it routes 9 of every 10 tickets with trustworthy rules and sends only ambiguous cases to an LLM, it makes about 90% fewer LLM calls than an all-LLM design at the same ticket volume. That is a call-volume estimate, not a quality guarantee; measure routing misses and p95 latency."
+        },
+        {
+          "type": "paragraph",
+          "text": "5. Avoid — Using an LLM for every step, trusting generated explanations as proof, and allowing a model to grant access."
+        },
+        {
+          "type": "paragraph",
+          "text": "6. Interview probes — Which stage actually needs learned behavior? What is the baseline? How will correctness and incremental value be measured?"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Engineering rule of thumb",
+      "content": "Use the simplest approach that meets the quality bar; add a model only where it provides measurable value."
+    },
+    {
+      "type": "paragraph",
+      "text": "Rules are cheap and auditable but brittle. Traditional ML can be fast for stable prediction tasks but needs labeled data and monitoring. LLMs handle flexible language but add variable latency, cost, and output uncertainty. Compare cost per successful task, not just cost per call."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "AI is the umbrella; ML learns patterns; deep learning uses multi-layer neural networks; generative AI creates content."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use rules for stable explicit policies, ML for prediction, and generative models for flexible language/content tasks."
+    },
+    {
+      "type": "paragraph",
+      "text": "Hybrid systems are common: model for perception/interpretation; code for validation, arithmetic, permissions, and side effects."
+    }
+  ],
+  "questions": [
+    {
+      "id": "ai-umbrella",
+      "type": "single_select",
+      "prompt": "Which statement best describes AI, ML, and deep learning?",
+      "options": [
+        {
+          "id": "a",
+          "text": "They are unrelated fields"
+        },
+        {
+          "id": "b",
+          "text": "Deep learning is a type of ML, which is one approach within AI"
+        },
+        {
+          "id": "c",
+          "text": "AI always means an LLM"
+        },
+        {
+          "id": "d",
+          "text": "ML only generates text"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Deep learning is a subset of ML, and ML is part of the broader AI field."
+    },
+    {
+      "id": "rules-fit",
+      "type": "single_select",
+      "prompt": "Which task is best suited to deterministic rules?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Summarizing a transcript"
+        },
+        {
+          "id": "b",
+          "text": "Enforcing that only an invoice owner can view their invoice"
+        },
+        {
+          "id": "c",
+          "text": "Writing a product description"
+        },
+        {
+          "id": "d",
+          "text": "Interpreting ambiguous language"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Authorization is a security invariant and must use trusted identity and policy data."
+    },
+    {
+      "id": "ml-fit",
+      "type": "single_select",
+      "prompt": "A team has 80,000 labeled historical support tickets and needs to route new tickets into five fixed queues. What is a sensible baseline to compare against its LLM?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A supervised text classifier evaluated on a held-out set"
+        },
+        {
+          "id": "b",
+          "text": "Unsupervised clustering treated as the true queue label"
+        },
+        {
+          "id": "c",
+          "text": "A generative image model"
+        },
+        {
+          "id": "d",
+          "text": "A rule that always selects the first queue"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The labels and fixed target categories make supervised classification a reasonable baseline. Evaluate it on the same held-out examples as the LLM; use class-specific metrics because rare queues can be missed."
+    },
+    {
+      "id": "genai-fit",
+      "type": "single_select",
+      "prompt": "An invoice product must summarize a paragraph in plain English but calculate tax totals exactly. Which design is most defensible?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Ask the LLM to do both and trust its explanation"
+        },
+        {
+          "id": "b",
+          "text": "Use a generative model for the summary and deterministic arithmetic for tax totals"
+        },
+        {
+          "id": "c",
+          "text": "Use clustering for both steps"
+        },
+        {
+          "id": "d",
+          "text": "Avoid validating the model output if JSON is valid"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Flexible language generation fits generative AI, while arithmetic and financial invariants should be computed and checked by deterministic code."
+    },
+    {
+      "id": "all-ai-learns",
+      "type": "true_false",
+      "prompt": "Every AI system must learn from data.",
+      "correctAnswer": false,
+      "explanation": "Rule-based systems can be designed without learning parameters from examples."
+    },
+    {
+      "id": "llm-permissions",
+      "type": "true_false",
+      "prompt": "An LLM saying a user is authorized is sufficient proof of authorization.",
+      "correctAnswer": false,
+      "explanation": "Authorization must be enforced with trusted application identity and policy checks."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "invoice-architecture",
+      "prompt": "Design an invoice-processing product that reads scans, checks totals, and enforces tenant permissions.",
+      "skillsTested": [
+        "decomposition",
+        "technique selection",
+        "security boundaries"
+      ],
+      "strongAnswerPoints": [
+        "Separate OCR/vision, extraction, arithmetic validation, and authorization.",
+        "Retain evidence for extracted values and route uncertain cases to review.",
+        "Evaluate field accuracy, exceptions, latency, and cost per successful invoice."
+      ],
+      "pitfalls": [
+        "Using one prompt as the only validation and security layer"
+      ],
+      "referenceAnswer": "I would use vision/OCR to read the document, structured extraction to propose fields with evidence, deterministic code to verify totals, and trusted authorization to check tenant access."
+    },
+    {
+      "id": "replace-expensive-llm",
+      "prompt": "A team uses an expensive LLM to classify every short support ticket. How would you decide whether to replace it?",
+      "skillsTested": [
+        "baseline design",
+        "offline evaluation",
+        "cost-quality trade-offs"
+      ],
+      "strongAnswerPoints": [
+        "Compare rules, a supervised classifier, and the LLM on the same labeled test set.",
+        "Measure per-class precision/recall, latency, and cost per correctly routed ticket.",
+        "Keep the LLM where it provides measurable incremental value."
+      ],
+      "pitfalls": [
+        "Choosing based on one demo"
+      ],
+      "referenceAnswer": "I would create a representative labeled test set and compare a baseline, classifier, and current LLM. I would measure class-specific errors and cost, then consider a hybrid for ambiguous cases."
+    }
+  ]
+}

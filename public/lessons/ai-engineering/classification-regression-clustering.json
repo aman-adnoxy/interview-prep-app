@@ -1,0 +1,328 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "classification-regression-clustering",
+  "topicId": "ai-engineering",
+  "sectionId": "classification-regression-clustering",
+  "title": "Classification, Regression, and Clustering",
+  "difficulty": "beginner",
+  "estimatedMinutes": 34,
+  "learningObjectives": [
+    "Distinguish classification, regression, and clustering by their outputs.",
+    "Trace model outputs into a product decision.",
+    "Choose metrics appropriate to each task."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Ask what kind of answer the system must produce. A class or category is classification. A numeric quantity is regression. A grouping discovered without predefined labels is clustering. The product's decision policy sits on top of the model output."
+  },
+  "concepts": [
+    {
+      "id": "motivation",
+      "title": "Problem and motivation",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A request to “predict customer behavior” hides several different tasks. Predicting whether a customer will churn is classification; estimating how much they will spend is regression; discovering unknown behavioral groups is clustering. Define the output before choosing an algorithm."
+        },
+        {
+          "type": "paragraph",
+          "text": "Ask what kind of answer the system must produce. A class or category is classification. A numeric quantity is regression. A grouping discovered without predefined labels is clustering. The product's decision policy sits on top of the model output."
+        }
+      ]
+    },
+    {
+      "id": "technical-deep-dive",
+      "title": "Technical deep dive and worked example",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Classification predicts categories and may return scores or probabilities. Regression estimates numeric targets. Clustering groups examples by a similarity criterion without supplied target classes. A cluster ID does not inherently mean rank or business value."
+        },
+        {
+          "type": "table",
+          "title": "Task types",
+          "columns": [
+            "Task",
+            "Output",
+            "Example",
+            "Evaluation"
+          ],
+          "rows": [
+            [
+              "Classification",
+              "Category or class score",
+              "Fraud / not fraud",
+              "Precision, recall, F1, ROC-AUC or PR-AUC"
+            ],
+            [
+              "Regression",
+              "Numeric estimate",
+              "Delivery time in minutes",
+              "MAE, RMSE, residual analysis"
+            ],
+            [
+              "Clustering",
+              "Group assignment",
+              "Customer behavior segments",
+              "Stability, interpretability, internal and downstream checks"
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "A delivery product returns fraud score 0.82, estimated delivery time 47 minutes, and cluster ID 2.",
+          "reasoning": [
+            "Treat fraud detection as classification; a threshold or policy converts its score into action.",
+            "Treat delivery time as regression and measure error in minutes.",
+            "Treat cluster 2 as a group identifier; inspect group properties before assigning business meaning."
+          ],
+          "outcome": "Output type determines the evaluation method and downstream policy."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "source": "fraud_probability = 0.82\npredicted_delivery_minutes = 47\ncluster_id = 2\nreview_threshold = 0.75\nsend_to_review = fraud_probability >= review_threshold\nprint(send_to_review)\nprint(f\"Estimated delivery: {predicted_delivery_minutes} minutes\")\nprint(f\"Discovered segment: {cluster_id}\")",
+          "title": "Model output versus product decision"
+        },
+        {
+          "type": "paragraph",
+          "text": "Walkthrough: `fraud_probability >= review_threshold` compares 0.82 with 0.75, so `send_to_review` becomes `True`. The f-strings print the numeric delivery estimate and cluster ID. `cluster_id = 2` is only a group identifier; it does not mean twice the value or risk of cluster 1."
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output:\nTrue\nEstimated delivery: 47 minutes\nDiscovered segment: 2\nThe threshold 0.75 is illustrative, not universal. Choose it from error costs and operational capacity."
+        }
+      ]
+    },
+    {
+      "id": "tradeoffs-production",
+      "title": "Trade-offs and production behavior",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Classification thresholds trade false positives against false negatives. Regression needs error units and tail analysis. Clustering depends on feature scale, distance choice, and stability; a cluster ID is not a ranked score."
+        },
+        {
+          "type": "paragraph",
+          "text": "Production check: monitor false-positive review workload, regression error by region/time, and cluster stability when incoming data changes."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Do not confuse model output with business policy",
+          "content": "A probability is not an action by itself. A cluster ID is not a label with known meaning. A regression estimate is not a guarantee."
+        }
+      ]
+    },
+    {
+      "id": "six-layer-interview-synthesis",
+      "title": "Six-layer interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Problem — “Predict” is ambiguous until the desired output is stated: category, number, or exploratory group."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Choice — Classification predicts categories, regression estimates numeric targets, and clustering discovers groups without target labels."
+        },
+        {
+          "type": "paragraph",
+          "text": "3. Mechanism — Classification scores are converted into actions by a threshold or policy. Regression is judged against numeric outcomes. Cluster IDs identify groups and have no inherent ordering."
+        },
+        {
+          "type": "paragraph",
+          "text": "4. Trade-offs and scale — With 1,000 transactions and a 0.5% fraud rate, only about 5 are fraudulent. Predicting “not fraud” for every row achieves 99.5% accuracy but 0% fraud recall. This simple calculation shows why class prevalence and error costs matter more than accuracy alone."
+        },
+        {
+          "type": "paragraph",
+          "text": "5. Avoid — Using accuracy alone for rare classes, reporting error without units, and treating cluster IDs as rankings."
+        },
+        {
+          "type": "paragraph",
+          "text": "6. Interview probes — What is the target? What metric fits the cost of error? What threshold is operationally feasible? Are groups stable and useful?"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Choose metrics to match the task",
+      "content": "Classification: inspect confusion matrix and class metrics. Regression: report error in target units. Clustering: assess stability, interpretability, and downstream usefulness."
+    },
+    {
+      "type": "paragraph",
+      "text": "A model score is not a product decision. Choose thresholds and actions using business costs, risk tolerance, and operational capacity."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Classification → category; regression → numeric value; clustering → group discovered without predefined labels."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use task-aligned metrics: precision/recall for classification, MAE/RMSE for regression, and stability/interpretability checks for clustering."
+    },
+    {
+      "type": "paragraph",
+      "text": "A model score is not automatically a business decision; thresholds reflect error cost and operational capacity."
+    }
+  ],
+  "questions": [
+    {
+      "id": "classification-output",
+      "type": "single_select",
+      "prompt": "Predicting whether a payment is fraudulent is usually which task?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Regression"
+        },
+        {
+          "id": "b",
+          "text": "Classification"
+        },
+        {
+          "id": "c",
+          "text": "Clustering"
+        },
+        {
+          "id": "d",
+          "text": "Dimensionality reduction only"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The target is a category such as fraud/not fraud."
+    },
+    {
+      "id": "regression-output",
+      "type": "single_select",
+      "prompt": "Predicting delivery time in minutes is usually which task?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Regression"
+        },
+        {
+          "id": "b",
+          "text": "Clustering"
+        },
+        {
+          "id": "c",
+          "text": "Classification only"
+        },
+        {
+          "id": "d",
+          "text": "Prompt engineering"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The target is numeric, so regression is the natural framing."
+    },
+    {
+      "id": "cluster-id",
+      "type": "single_select",
+      "prompt": "A clustering job assigns two customers IDs 2 and 7. A manager says customer 7 must be more valuable because 7 is larger. What is the correct response?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Agree; cluster IDs are always ranked"
+        },
+        {
+          "id": "b",
+          "text": "Reject the inference and profile the groups before assigning meaning"
+        },
+        {
+          "id": "c",
+          "text": "Interpret the difference as a 5% value increase"
+        },
+        {
+          "id": "d",
+          "text": "Treat the cluster IDs as supervised labels"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Cluster IDs are arbitrary identifiers. Their numeric values do not encode order or business value; group characteristics and downstream usefulness must be assessed."
+    },
+    {
+      "id": "mae",
+      "type": "single_select",
+      "prompt": "Delivery predictions average 8 minutes of absolute error, but errors reach 70 minutes for rural deliveries. What should the team do next?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Report only overall MAE and ignore location"
+        },
+        {
+          "id": "b",
+          "text": "Inspect the error distribution and subgroup MAE by delivery region"
+        },
+        {
+          "id": "c",
+          "text": "Switch to clustering and assume the issue is fixed"
+        },
+        {
+          "id": "d",
+          "text": "Convert minutes to classes without checking requirements"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Aggregate MAE hides the worse subgroup. Inspect errors by region and investigate data coverage or distribution shift before choosing a remedy."
+    },
+    {
+      "id": "threshold-universal",
+      "type": "true_false",
+      "prompt": "A fraud threshold of 0.5 is always the best operational cutoff.",
+      "correctAnswer": false,
+      "explanation": "The threshold depends on calibration, prevalence, review capacity, and false-positive/false-negative costs."
+    },
+    {
+      "id": "clusters-ground-truth",
+      "type": "true_false",
+      "prompt": "Clusters discovered without labels should automatically be treated as real business categories.",
+      "correctAnswer": false,
+      "explanation": "Clusters require stability, interpretability, and downstream validation."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "task-framing",
+      "prompt": "A product manager wants to predict future customer spend and discover behavior groups.",
+      "skillsTested": [
+        "task formulation",
+        "metrics",
+        "evaluation"
+      ],
+      "strongAnswerPoints": [
+        "Use regression for numeric spend; classification only for a defined category.",
+        "Use clustering separately to explore unlabeled groups.",
+        "Use time-aware holdout data and inspect subgroup errors."
+      ],
+      "pitfalls": [
+        "Using clustering as if it predicts a known numeric target"
+      ],
+      "referenceAnswer": "I would clarify the output. Predicting spend is regression, predicting a defined label is classification, and discovering unknown behavior groups is clustering. I would choose separate metrics and ensure features only use information available at prediction time."
+    },
+    {
+      "id": "fraud-threshold",
+      "prompt": "A classifier has high accuracy but misses many fraud cases. What do you investigate?",
+      "skillsTested": [
+        "metrics",
+        "thresholding",
+        "class imbalance"
+      ],
+      "strongAnswerPoints": [
+        "Inspect prevalence and confusion matrix.",
+        "Measure precision, recall, and PR-AUC as appropriate.",
+        "Choose threshold using fraud costs and review capacity."
+      ],
+      "pitfalls": [
+        "Reporting accuracy alone"
+      ],
+      "referenceAnswer": "I would inspect the confusion matrix and fraud recall. If fraud is rare, majority-class predictions can achieve high accuracy. I would compare precision-recall trade-offs and choose a threshold based on missed-fraud cost and review capacity."
+    }
+  ]
+}

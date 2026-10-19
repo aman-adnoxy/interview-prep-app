@@ -203,6 +203,26 @@
         {
           "type": "paragraph",
           "text": "For example, adding five indexes to a write-heavy orders table means every insert must maintain five extra lookup structures where applicable. That can increase write latency, WAL volume, cache pressure, and storage. Before keeping an index, compare how often it helps important reads with the ongoing cost imposed on writes."
+        },
+        {
+          "type": "paragraph",
+          "text": "### Measure storage and investigate bloat"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Inventory index size, usage, and validity",
+          "source": "SELECT s.schemaname,\n       s.relname AS table_name,\n       s.indexrelname,\n       pg_size_pretty(pg_relation_size(s.indexrelid)) AS index_size,\n       s.idx_scan,\n       i.indisvalid,\n       i.indisready,\n       i.indisprimary,\n       i.indisunique\nFROM pg_stat_user_indexes AS s\nJOIN pg_index AS i ON i.indexrelid = s.indexrelid\nORDER BY pg_relation_size(s.indexrelid) DESC;"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Optional B-tree health details with pgstattuple",
+          "source": "-- Requires the pgstattuple extension and appropriate permissions.\nCREATE EXTENSION IF NOT EXISTS pgstattuple;\nSELECT * FROM pgstatindex('public.idx_orders_customer_created');"
+        },
+        {
+          "type": "paragraph",
+          "text": "`pg_relation_size` tells you how many bytes an index occupies; it does not prove the index is bloated. `pgstatindex` can report B-tree structure details such as leaf density and fragmentation, but it scans the index and can consume I/O, so schedule it thoughtfully on large production indexes. There is no single bloat percentage that proves an index should be rebuilt: compare size, page density, workload, query plans, maintenance history, and the cost of rebuilding."
         }
       ]
     },
@@ -233,6 +253,53 @@
             "Test one candidate index, compare latency and buffer activity, and measure write overhead."
           ],
           "outcome": "An index is justified by a measured workload improvement, not merely because a column appears in WHERE."
+        },
+        {
+          "type": "steps",
+          "title": "Safe index replacement/removal runbook",
+          "steps": [
+            {
+              "id": "capture-baseline",
+              "title": "Capture a baseline",
+              "description": "Record query latency, EXPLAIN (ANALYZE, BUFFERS) where safe, index size, write latency, and representative workload timing."
+            },
+            {
+              "id": "verify-usage",
+              "title": "Verify usage and dependencies",
+              "description": "Review idx_scan across at least one normal workload cycle, when statistics were last reset, query logs/plans, UNIQUE/PRIMARY KEY constraints, foreign-key needs, and overlapping indexes."
+            },
+            {
+              "id": "build-replacement",
+              "title": "Build the replacement",
+              "description": "If needed, use CREATE INDEX CONCURRENTLY outside an explicit transaction block, while monitoring write load and replica lag."
+            },
+            {
+              "id": "verify-index",
+              "title": "Verify before removing the old index",
+              "description": "Check pg_index.indisvalid and indisready, compare plans and latency, and let the changed workload run through peak and low periods."
+            },
+            {
+              "id": "drop-old-index",
+              "title": "Remove cautiously",
+              "description": "Drop only a confirmed unneeded, non-constraint-backed index with DROP INDEX CONCURRENTLY; monitor for regressions and retain a recreate/rollback plan."
+            }
+          ]
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Check whether a concurrent index build is valid",
+          "source": "SELECT idx.oid::regclass AS index_name,\n       pi.indisvalid,\n       pi.indisready,\n       pi.indisunique\nFROM pg_class AS idx\nJOIN pg_index AS pi ON pi.indexrelid = idx.oid\nWHERE idx.oid = 'public.idx_orders_customer_created'::regclass;"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Check in-progress index builds",
+          "source": "SELECT pid, command, phase,\n       lockers_total, lockers_done,\n       blocks_total, blocks_done,\n       tuples_total, tuples_done\nFROM pg_stat_progress_create_index;"
+        },
+        {
+          "type": "paragraph",
+          "text": "Never drop an index only because `idx_scan = 0`: statistics may have been reset, the workload window may omit rare jobs, or the index may support a constraint. A failed `CREATE INDEX CONCURRENTLY` can leave an invalid index and the failure mode depends on whether it is unique and which build phase failed. Inspect `indisvalid`/`indisready`, check logs and duplicate data, then deliberately decide whether to drop and retry. A failed concurrent unique build can still enforce uniqueness after some failures; treat cleanup as a verified operation, not a blanket instruction."
         }
       ]
     },
@@ -458,77 +525,77 @@
     {
       "id": "database-index-selection-selectivity-sequential-scans-index-costs-q6",
       "type": "single_select",
-      "prompt": "Safest way to investigate an unused index?",
+      "prompt": "A production team needs to replace an index on a busy table. Which approach best limits write blocking?",
       "options": [
         {
           "id": "a",
-          "text": "Read actual plan and buffers, compare estimates, verify query shape"
+          "text": "Build the replacement with CREATE INDEX CONCURRENTLY, verify validity and plans, then remove the old non-constraint-backed index concurrently"
         },
         {
           "id": "b",
-          "text": "Disable sequential scans globally"
+          "text": "Drop the old index first and hope the query remains fast"
         },
         {
           "id": "c",
-          "text": "Create duplicate indexes"
+          "text": "Run CREATE INDEX CONCURRENTLY inside a transaction block"
         },
         {
           "id": "d",
-          "text": "Drop table statistics"
+          "text": "Create an index on every column in the table"
         }
       ],
       "correctOptionId": "a",
-      "explanation": "Plan evidence distinguishes rational sequential scans from design/estimate issues."
+      "explanation": "A staged concurrent build keeps ordinary writes available during much of the build. Verify the result and workload before removing the old index."
     },
     {
       "id": "database-index-selection-selectivity-sequential-scans-index-costs-q7",
       "type": "single_select",
-      "prompt": "Why can a low-cardinality status index be unhelpful for a broad predicate?",
+      "prompt": "A 900 MB B-tree index is large. Which conclusion is justified by `pg_relation_size` alone?",
       "options": [
         {
           "id": "a",
-          "text": "Many rows may match and require many heap visits"
+          "text": "It occupies about 900 MB on disk; this alone does not prove bloat"
         },
         {
           "id": "b",
-          "text": "Low cardinality means no index entries"
+          "text": "Exactly 900 MB is wasted space"
         },
         {
           "id": "c",
-          "text": "B-tree cannot store repeated values"
+          "text": "The index should be dropped immediately"
         },
         {
           "id": "d",
-          "text": "PostgreSQL refuses text indexes"
+          "text": "The cache holds the entire index in RAM"
         }
       ],
       "correctOptionId": "a",
-      "explanation": "Broad results may make a table scan cheaper."
+      "explanation": "Relation size reports on-disk size, not the portion that could be reclaimed. Diagnose bloat and value using more evidence."
     },
     {
       "id": "database-index-selection-selectivity-sequential-scans-index-costs-q8",
       "type": "single_select",
-      "prompt": "Why not drop an index based only on idx_scan?",
+      "prompt": "`idx_scan = 0` for an index in the current statistics view. What should you check before considering removal?",
       "options": [
         {
           "id": "a",
-          "text": "Stats may reset and rare critical queries or constraints may rely on it"
+          "text": "Stats reset time, a representative workload window, dependencies/constraints, and query plans"
         },
         {
           "id": "b",
-          "text": "idx_scan measures latency exactly"
+          "text": "Only whether the index name looks old"
         },
         {
           "id": "c",
-          "text": "Unused indexes use no storage"
+          "text": "Whether the database has a replica"
         },
         {
           "id": "d",
-          "text": "PostgreSQL has no index stats"
+          "text": "Whether all queries use SELECT *"
         }
       ],
       "correctOptionId": "a",
-      "explanation": "Use a representative observation window and account for constraints and rare paths."
+      "explanation": "Zero observed scans can reflect a statistics reset or workloads that run infrequently. Constraint-backed indexes require special care."
     },
     {
       "id": "database-index-selection-selectivity-sequential-scans-index-costs-q9",
@@ -598,9 +665,9 @@
     {
       "id": "database-index-selection-selectivity-sequential-scans-index-costs-q12",
       "type": "true_false",
-      "prompt": "Every additional index has zero write cost if it speeds reads.",
-      "correctAnswer": false,
-      "explanation": "Indexes add write maintenance, storage, cache, WAL, and operational cost."
+      "prompt": "A failed concurrent unique-index build can still enforce uniqueness in some failure states, even while the index is marked invalid.",
+      "correctAnswer": true,
+      "explanation": "PostgreSQL documents failure states where an invalid index left by CREATE UNIQUE INDEX CONCURRENTLY continues to enforce uniqueness. Inspect the build phase, logs, and catalog flags before cleanup."
     }
   ],
   "interviewScenarios": [

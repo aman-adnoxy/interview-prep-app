@@ -294,6 +294,83 @@
           ]
         },
         {
+          "type": "table",
+          "title": "Before normalization: facts repeated per enrollment",
+          "columns": [
+            "student_id",
+            "student_name",
+            "course_id",
+            "course_title",
+            "instructor_id",
+            "instructor_name",
+            "grade"
+          ],
+          "rows": [
+            [
+              "1",
+              "Asha",
+              "10",
+              "Databases",
+              "5",
+              "Ravi",
+              "A"
+            ],
+            [
+              "2",
+              "Neel",
+              "10",
+              "Databases",
+              "5",
+              "Ravi",
+              "B"
+            ],
+            [
+              "1",
+              "Asha",
+              "20",
+              "Networks",
+              "8",
+              "Kavita",
+              "A-"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "title": "After decomposition: the same facts have one home",
+          "columns": [
+            "Table",
+            "Sample rows",
+            "Why the split helps"
+          ],
+          "rows": [
+            [
+              "students",
+              "(1, Asha); (2, Neel)",
+              "A student's name is updated once, not in every enrollment."
+            ],
+            [
+              "instructors",
+              "(5, Ravi); (8, Kavita)",
+              "An instructor's name has one authoritative row."
+            ],
+            [
+              "courses",
+              "(10, Databases, 5); (20, Networks, 8)",
+              "Course title and current instructor are stored with the course, under the assumption shown."
+            ],
+            [
+              "enrollments",
+              "(1, 10, A); (2, 10, B); (1, 20, A-)",
+              "The composite key (student_id, course_id) identifies each enrollment and its grade."
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "This example assumes each course has one current instructor. If a course can have several instructors or instructor assignments change over time, model those relationships explicitly instead of forcing the assumption into this schema. Normalization follows real functional dependencies and business rules; the table split is not a universal template."
+        },
+        {
           "type": "paragraph",
           "text": "The original table repeats student, course, and instructor facts. Updating an instructor name requires changing every enrollment row for that instructor; a new course cannot be recorded until a student enrolls; deleting the last enrollment can erase course details. These are update, insert, and delete anomalies."
         },

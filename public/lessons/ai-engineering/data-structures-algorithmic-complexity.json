@@ -1,0 +1,345 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "data-structures-algorithmic-complexity",
+  "topicId": "ai-engineering-python-data-backend",
+  "sectionId": "data-structures-algorithmic-complexity",
+  "title": "Data Structures and Algorithmic Complexity for AI Services",
+  "description": "Choose Python collections based on lookup, counting, ordering, and scale requirements.",
+  "difficulty": "beginner",
+  "estimatedMinutes": 34,
+  "learningObjectives": [
+    "Compare list, dictionary, set, and heap behavior for common backend tasks.",
+    "Explain Big O with input-size examples and practical caveats.",
+    "Choose a data structure that avoids repeated scans or unnecessary sorting.",
+    "Read a small Python example and explain its time and memory costs."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Data structures determine how much work the program must do to find, count, deduplicate, or prioritize items. Big O describes how work grows as input grows; it is a reasoning tool, not a millisecond promise."
+  },
+  "concepts": [
+    {
+      "id": "collection-choices",
+      "title": "Choose a collection for the operation",
+      "blocks": [
+        {
+          "type": "table",
+          "title": "Common Python operations",
+          "columns": [
+            "Need",
+            "Useful structure",
+            "Typical cost",
+            "Caveat"
+          ],
+          "rows": [
+            [
+              "Preserve sequence/order and index by position",
+              "list",
+              "Index O(1); membership O(n)",
+              "Searching each item still scans"
+            ],
+            [
+              "Look up a value by key",
+              "dict",
+              "Average O(1) lookup",
+              "Hashing and resizing have costs"
+            ],
+            [
+              "Check whether an item was seen",
+              "set",
+              "Average O(1) membership",
+              "Requires hashable elements"
+            ],
+            [
+              "Repeatedly get the smallest/largest-priority item",
+              "heap",
+              "Peek O(1); push/pop O(log n)",
+              "Heap is not fully sorted"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "A frequent performance bug is choosing a list for membership checks inside a loop. If there are n incoming records and m known IDs in a list, checking every record against that list may take O(n × m) work. Building a set once usually changes membership work to average O(1) per record."
+        }
+      ]
+    },
+    {
+      "id": "big-o-scaling",
+      "title": "Reason about growth, not just one run",
+      "blocks": [
+        {
+          "type": "table",
+          "title": "Illustrative growth",
+          "columns": [
+            "Input size n",
+            "O(n)",
+            "O(n²)",
+            "O(n log₂ n)"
+          ],
+          "rows": [
+            [
+              "100",
+              "100 units",
+              "10,000 units",
+              "about 664 units"
+            ],
+            [
+              "1,000",
+              "1,000 units",
+              "1,000,000 units",
+              "about 9,966 units"
+            ],
+            [
+              "10,000",
+              "10,000 units",
+              "100,000,000 units",
+              "about 132,877 units"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "These are operation-count illustrations, not elapsed-time predictions. A linear scan through contiguous memory may be fast for small lists; a dictionary has hashing and memory overhead. Actual latency depends on the operation, data sizes, hardware, implementation, and workload."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Deduplicate IDs with a set",
+          "source": "seen = set()\nduplicates = []\n\nfor record_id in [\"a\", \"b\", \"a\", \"c\", \"b\"]:\n    if record_id in seen:\n        duplicates.append(record_id)\n    else:\n        seen.add(record_id)\n\nprint(duplicates)"
+        },
+        {
+          "type": "paragraph",
+          "text": "Walkthrough: each lookup checks `seen`, then the first occurrence gets inserted. Expected output is `['a', 'b']`. The algorithm visits each input once, so it is O(n) average time and O(u) additional memory where u is the number of unique IDs."
+        }
+      ]
+    },
+    {
+      "id": "heaps-and-top-k",
+      "title": "Use heaps when only priorities matter",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Keep the smallest three scores",
+          "source": "import heapq\n\nscores = [8.2, 2.1, 9.4, 5.0, 3.7]\nprint(heapq.nsmallest(3, scores))"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `[2.1, 3.7, 5.0]`. A heap is useful when the system repeatedly needs the next highest- or lowest-priority item. To retrieve the top k items from a large stream, a bounded heap can use O(k) memory instead of sorting and storing every item, though the exact strategy depends on the input and implementation."
+        },
+        {
+          "type": "worked_example",
+          "problem": "An AI service receives one million candidates but must keep only the best 20 for a later ranking step.",
+          "reasoning": [
+            "Sorting all candidates typically costs O(n log n) time and materializes the ordering of all items.",
+            "A size-20 heap can keep only the current best 20 while scanning; each candidate costs roughly O(log 20) when it needs to replace the heap boundary.",
+            "If the entire ordered result is needed, sort the retained 20 items at the end. If all one million items are already in memory and simplicity matters, compare with a built-in selection/sort implementation before optimizing."
+          ],
+          "outcome": "Choose a heap for ongoing top-k selection; do not assume a heap gives every element in sorted order."
+        }
+      ]
+    },
+    {
+      "id": "complexity-in-code-review",
+      "title": "Spot repeated work",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Avoid a nested membership scan",
+          "source": "known_ids = {\"A1\", \"A2\", \"A3\"}\nnew_records = [\"A2\", \"B9\", \"C4\"]\n\nunknown = [record_id for record_id in new_records if record_id not in known_ids]\nprint(unknown)"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `['B9', 'C4']`. Creating `known_ids` costs time and memory, but amortizes the cost over repeated checks. If there is only one small lookup, a list may be perfectly fine. The important question is how often and at what scale the operation runs."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Big O is not a full performance diagnosis",
+          "content": "Big O ignores constants and memory layout. Measure representative workloads after identifying the algorithm; do not replace readable code with a complicated structure based on asymptotic notation alone."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "paragraph",
+      "text": "A dictionary or set uses extra memory for fast average lookups. A heap supports priority retrieval but does not support fast arbitrary sorted iteration. Sorting is often the simplest choice when the full ordering is needed."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "List position lookup: O(1); list membership: O(n)."
+    },
+    {
+      "type": "paragraph",
+      "text": "Dict/set membership: average O(1), with memory/hash overhead and worst-case caveats."
+    },
+    {
+      "type": "paragraph",
+      "text": "Sort: O(n log n) typical comparison sorting; heap push/pop: O(log n), peek O(1)."
+    },
+    {
+      "type": "paragraph",
+      "text": "Complexity describes growth; benchmark real inputs before micro-optimizing."
+    }
+  ],
+  "questions": [
+    {
+      "id": "dsa-complexity-q1",
+      "type": "single_select",
+      "prompt": "You check whether each of 100,000 IDs exists in a collection repeatedly. Which structure usually suits membership checks?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A set or dictionary keyed by ID"
+        },
+        {
+          "id": "b",
+          "text": "A list that is rescanned each time"
+        },
+        {
+          "id": "c",
+          "text": "A heap without an ID index"
+        },
+        {
+          "id": "d",
+          "text": "A tuple of all records with linear scans"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Set/dictionary membership is average O(1), versus O(n) list scanning."
+    },
+    {
+      "id": "dsa-complexity-q2",
+      "type": "single_select",
+      "prompt": "What is the typical time complexity of sorting n items with a comparison sort?",
+      "options": [
+        {
+          "id": "a",
+          "text": "O(1)"
+        },
+        {
+          "id": "b",
+          "text": "O(log n)"
+        },
+        {
+          "id": "c",
+          "text": "O(n log n)"
+        },
+        {
+          "id": "d",
+          "text": "O(n²) in every implementation"
+        }
+      ],
+      "correctOptionId": "c",
+      "explanation": "Comparison sorting is typically O(n log n); the exact algorithm and input can affect details."
+    },
+    {
+      "id": "dsa-complexity-q3",
+      "type": "single_select",
+      "prompt": "You need the next smallest priority repeatedly. Which structure is designed for this?",
+      "options": [
+        {
+          "id": "a",
+          "text": "A heap"
+        },
+        {
+          "id": "b",
+          "text": "A plain set"
+        },
+        {
+          "id": "c",
+          "text": "A dictionary with no priority index"
+        },
+        {
+          "id": "d",
+          "text": "A string"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "A heap exposes the priority boundary efficiently with O(log n) insertion/removal."
+    },
+    {
+      "id": "dsa-complexity-q4",
+      "type": "single_select",
+      "prompt": "What is the average time complexity of a list membership test for an item near the end?",
+      "options": [
+        {
+          "id": "a",
+          "text": "O(1)"
+        },
+        {
+          "id": "b",
+          "text": "O(n)"
+        },
+        {
+          "id": "c",
+          "text": "O(log n)"
+        },
+        {
+          "id": "d",
+          "text": "O(n log n)"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "A list normally tests items sequentially until it finds the target or reaches the end."
+    },
+    {
+      "id": "dsa-complexity-q5",
+      "type": "true_false",
+      "prompt": "A heap stores every item in fully sorted order, so arbitrary iteration always returns increasing priorities.",
+      "correctAnswer": false,
+      "explanation": "A heap guarantees its root has the best priority; it does not globally sort every element."
+    },
+    {
+      "id": "dsa-complexity-q6",
+      "type": "true_false",
+      "prompt": "Big O by itself tells you the exact milliseconds a function will take on production data.",
+      "correctAnswer": false,
+      "explanation": "Big O describes growth and omits constants, machine effects, memory behavior, and workload details."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "dsa-scenario-1",
+      "prompt": "A data-cleaning job takes 20 minutes to check whether each incoming record ID appears among existing IDs. What would you examine first?",
+      "skillsTested": [
+        "Complexity",
+        "Data structures",
+        "Performance diagnosis"
+      ],
+      "strongAnswerPoints": [
+        "Look for membership checks inside a loop against a list.",
+        "Estimate repeated O(n × m) work and convert the reusable lookup collection to a set/dictionary where appropriate.",
+        "Benchmark before and after with realistic data and memory measurements."
+      ],
+      "pitfalls": [
+        "Adding threads before examining algorithmic work",
+        "Claiming a data structure guarantees exact latency"
+      ],
+      "referenceAnswer": "I would inspect the repeated membership path. Building a set of existing IDs once can reduce the expected lookup work substantially; then I would benchmark runtime and memory on representative data."
+    },
+    {
+      "id": "dsa-scenario-2",
+      "prompt": "An AI pipeline receives candidates continuously and must preserve only the 50 highest scores. Which approach would you compare?",
+      "skillsTested": [
+        "Heaps",
+        "Top-k algorithms",
+        "Memory trade-offs"
+      ],
+      "strongAnswerPoints": [
+        "Compare full sorting with a bounded heap of size k.",
+        "Explain time and O(k) extra memory for the bounded heap approach.",
+        "Sort the final retained items only if ordered output is required."
+      ],
+      "pitfalls": [
+        "Assuming heap iteration is already fully sorted"
+      ],
+      "referenceAnswer": "For a stream, a bounded heap can retain the current top 50 without storing all candidates. I would compare it with sorting or library selection based on input size and whether all items are already resident."
+    }
+  ]
+}

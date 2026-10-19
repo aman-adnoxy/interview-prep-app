@@ -1,0 +1,360 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "python-for-ai-engineering",
+  "topicId": "ai-engineering-python-data-backend",
+  "sectionId": "python-for-ai-engineering",
+  "title": "Python for AI Engineering: Functions, Classes, Modules, and Clean Code",
+  "description": "Read and reason about maintainable Python used in AI services, data pipelines, and API backends.",
+  "difficulty": "beginner",
+  "estimatedMinutes": 36,
+  "learningObjectives": [
+    "Explain how functions, arguments, return values, classes, and modules organize Python code.",
+    "Use type hints and exceptions to make interfaces and failures easier to understand.",
+    "Recognize mutable-default, overly broad exception, and hidden-side-effect pitfalls.",
+    "Read a small service-oriented Python example and explain each execution step."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "A Python module should make it easy to answer four questions: what goes in, what comes out, what state changes, and what can fail. Good structure helps you understand existing production code—not just write a short script."
+  },
+  "concepts": [
+    {
+      "id": "functions-and-contracts",
+      "title": "Functions are small contracts",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A function names one piece of work. Its parameters describe the inputs, its return value describes the output, and exceptions describe failures the caller may need to handle. Prefer a function that returns a result over one that secretly changes unrelated global state."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "A small function with an explicit result",
+          "source": "def normalized_text(value: str) -> str:\n    return value.strip().lower()\n\nresult = normalized_text(\"  Refund Request \")\nprint(result)"
+        },
+        {
+          "type": "paragraph",
+          "text": "Walkthrough: `value: str` says the intended input type; `-> str` says the intended return type. `strip()` removes leading/trailing whitespace and `lower()` normalizes case. The call stores the returned string in `result`; the function does not print or mutate anything else."
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `refund request`. Type hints help editors, reviewers, and static type checkers, but Python does not automatically enforce every hint at runtime."
+        }
+      ]
+    },
+    {
+      "id": "arguments-and-mutable-state",
+      "title": "Arguments, defaults, and mutable state",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Avoid a shared mutable default",
+          "source": "def add_tag(tag: str, tags: list[str] | None = None) -> list[str]:\n    if tags is None:\n        tags = []\n    tags.append(tag)\n    return tags\n\nprint(add_tag(\"urgent\"))\nprint(add_tag(\"billing\"))"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `['urgent']` then `['billing']`. The `None` default means each call without a list creates a fresh list. By contrast, `def add_tag(tag, tags=[])` creates one list when Python defines the function, so separate calls can accidentally share old entries."
+        },
+        {
+          "type": "worked_example",
+          "problem": "An AI request handler keeps returning tags from a previous request.",
+          "reasoning": [
+            "Inspect defaults and module-level variables before assuming the model or database leaked data.",
+            "A mutable default list or dictionary can persist between calls because the same object is reused.",
+            "Use `None` as the default, create a new object inside the function, and add a regression test for two independent calls."
+          ],
+          "outcome": "Hidden shared state can become a correctness or cross-request isolation bug. Make object ownership explicit."
+        }
+      ]
+    },
+    {
+      "id": "classes-modules-and-types",
+      "title": "Classes, modules, and types",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Use a small data object and a separate function",
+          "source": "from dataclasses import dataclass\n\n@dataclass(frozen=True)\nclass Ticket:\n    ticket_id: str\n    text: str\n\n\ndef ticket_length(ticket: Ticket) -> int:\n    return len(ticket.text)\n\nitem = Ticket(ticket_id=\"T-104\", text=\"Cannot sign in\")\nprint(ticket_length(item))"
+        },
+        {
+          "type": "paragraph",
+          "text": "Walkthrough: `@dataclass` creates routine methods such as initialization; `frozen=True` prevents field reassignment after construction. The function accepts a `Ticket` and returns a number. Put related types/functions in a module with a clear import path rather than building one very large file."
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `14`. Use a class when the data and behavior belong together or an object needs a meaningful lifecycle; a simple function is often clearer for a stateless transformation."
+        },
+        {
+          "type": "table",
+          "title": "Type hints are a communication tool",
+          "columns": [
+            "Construct",
+            "Meaning",
+            "Limit"
+          ],
+          "rows": [
+            [
+              "`str`, `int`, `list[str]`",
+              "Documents intended value shapes",
+              "Does not validate external JSON by itself"
+            ],
+            [
+              "`-> Result`",
+              "Documents the return contract",
+              "Does not guarantee every return path matches"
+            ],
+            [
+              "`dataclass`",
+              "Convenient structured record",
+              "Does not validate business rules automatically"
+            ],
+            [
+              "Module",
+              "A file/namespace for related code",
+              "Overly broad modules become hard to test"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "exceptions-and-clean-code",
+      "title": "Exceptions and maintainable code",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Catch the failure you can handle",
+          "source": "def parse_limit(raw: str) -> int:\n    try:\n        limit = int(raw)\n    except ValueError as exc:\n        raise ValueError(\"limit must be an integer\") from exc\n\n    if limit < 1:\n        raise ValueError(\"limit must be positive\")\n    return limit\n\n\nprint(parse_limit(\"12\"))\ntry:\n    parse_limit(\"abc\")\nexcept ValueError as exc:\n    print(type(exc).__name__, str(exc))"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `12`, followed by `ValueError limit must be an integer`. Execution trace: `int('12')` succeeds and the positive-value check passes. For `'abc'`, conversion raises `ValueError`; the handler raises a clearer `ValueError` while preserving the original as the exception cause. `parse_limit('0')` reaches the separate positivity check and raises `limit must be positive`."
+        },
+        {
+          "type": "paragraph",
+          "text": "The conversion can fail with `ValueError`. The function adds context, preserves the original exception as its cause, and checks the business rule after parsing. It does not turn malformed input into a plausible default such as 0."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Do not hide every exception",
+          "content": "`except Exception: return None` can disguise programming errors, outages, and data corruption as ordinary missing results. Catch an error where you can recover, retry safely, or translate it into a meaningful application response; otherwise let it reach the proper error boundary."
+        }
+      ]
+    },
+    {
+      "id": "interview-synthesis",
+      "title": "Interview synthesis",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "1. Motivation — Python code must be understandable and safe under repeated requests, not just work once in a notebook."
+        },
+        {
+          "type": "paragraph",
+          "text": "2. Design — Keep functions focused, use classes for meaningful records/state, and put related code in modules."
+        },
+        {
+          "type": "paragraph",
+          "text": "3. Mechanism — Inputs flow through parameters; results flow through return values; failures use explicit exceptions; hints communicate the intended contract."
+        },
+        {
+          "type": "paragraph",
+          "text": "4. Trade-off — Abstraction helps when it names a real concept; layers and classes added without a purpose obscure flow."
+        },
+        {
+          "type": "paragraph",
+          "text": "5. Avoid — Mutable defaults, hidden global state, broad silent exception handling, and assuming type hints validate untrusted inputs."
+        },
+        {
+          "type": "paragraph",
+          "text": "6. Interview probes — What is the function's contract? What state is shared? What errors should the caller handle? How would you test independent calls?"
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Practical rule",
+      "content": "Optimize for obvious data flow and explicit failure handling. A short function with a clear contract is often easier to test than a clever abstraction."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Parameters describe inputs; return values describe success results; exceptions describe failures."
+    },
+    {
+      "type": "paragraph",
+      "text": "Type hints assist reasoning and tooling but do not replace runtime validation at trust boundaries."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use `None` for optional mutable defaults and allocate a new list/dictionary inside the function."
+    },
+    {
+      "type": "paragraph",
+      "text": "Catch only failures you can meaningfully handle."
+    }
+  ],
+  "questions": [
+    {
+      "id": "python-functions-q1",
+      "type": "single_select",
+      "prompt": "What is the main benefit of a function with explicit inputs and a return value?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Its behavior and data flow are easier to test and reason about"
+        },
+        {
+          "id": "b",
+          "text": "Python automatically makes it run in parallel"
+        },
+        {
+          "id": "c",
+          "text": "It prevents every possible exception"
+        },
+        {
+          "id": "d",
+          "text": "It stores its return value permanently"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "An explicit contract makes dependencies and results visible; it does not itself provide concurrency or eliminate errors."
+    },
+    {
+      "id": "python-functions-q2",
+      "type": "single_select",
+      "prompt": "Why is `tags=[]` a risky default argument for a function that appends to `tags`?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The list is recreated on every call"
+        },
+        {
+          "id": "b",
+          "text": "The same list object can be reused across calls"
+        },
+        {
+          "id": "c",
+          "text": "Lists cannot contain strings"
+        },
+        {
+          "id": "d",
+          "text": "Default arguments are always immutable"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Python evaluates the default when the function is defined, so a mutable object can be shared."
+    },
+    {
+      "id": "python-functions-q3",
+      "type": "single_select",
+      "prompt": "What do `value: str` and `-> int` primarily do in a function signature?",
+      "options": [
+        {
+          "id": "a",
+          "text": "They document intended input and output types and support tooling"
+        },
+        {
+          "id": "b",
+          "text": "They automatically validate all incoming JSON at runtime"
+        },
+        {
+          "id": "c",
+          "text": "They make the function a class"
+        },
+        {
+          "id": "d",
+          "text": "They catch all conversion errors"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Type annotations communicate the contract and help static analysis, but runtime validation needs explicit logic or a validator."
+    },
+    {
+      "id": "python-functions-q4",
+      "type": "single_select",
+      "prompt": "When should a function catch an exception?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Always, so the program never shows errors"
+        },
+        {
+          "id": "b",
+          "text": "When it can recover, add useful context, or translate the failure at the right boundary"
+        },
+        {
+          "id": "c",
+          "text": "Only when the exception is unknown"
+        },
+        {
+          "id": "d",
+          "text": "To replace every failure with an empty string"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Catch errors when you can handle them meaningfully; broad silent catches obscure real failures."
+    },
+    {
+      "id": "python-functions-q5",
+      "type": "true_false",
+      "prompt": "A Python type hint by itself guarantees that an HTTP request body has the annotated type.",
+      "correctAnswer": false,
+      "explanation": "An incoming JSON body needs runtime parsing/validation; annotations alone do not enforce it."
+    },
+    {
+      "id": "python-functions-q6",
+      "type": "true_false",
+      "prompt": "A new list created inside a function call is normally independent of lists created inside other calls.",
+      "correctAnswer": true,
+      "explanation": "Each executed list literal creates a new list object unless it is assigned from shared state."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "python-scenario-1",
+      "prompt": "A request handler sometimes sees tags that were added while handling an earlier request. Explain how you would investigate.",
+      "skillsTested": [
+        "Python state",
+        "Debugging",
+        "Request isolation"
+      ],
+      "strongAnswerPoints": [
+        "Check mutable default arguments and module-level shared state.",
+        "Use `None` defaults and create fresh per-request collections.",
+        "Add a test that calls the function twice and verifies the outputs do not share mutations."
+      ],
+      "pitfalls": [
+        "Blaming the model or database before tracing in-process state",
+        "Using a silent broad exception to suppress the symptom"
+      ],
+      "referenceAnswer": "I would inspect shared mutable state first, especially defaults such as `tags=[]`. I would allocate per-call state explicitly and add a regression test covering consecutive independent requests."
+    },
+    {
+      "id": "python-scenario-2",
+      "prompt": "A Python function returns `int` according to its type hint but receives an HTTP query parameter containing `\"abc\"`. What should happen?",
+      "skillsTested": [
+        "Types",
+        "Validation",
+        "Error handling"
+      ],
+      "strongAnswerPoints": [
+        "Treat external values as untrusted strings and parse explicitly.",
+        "Handle ValueError with a suitable client-facing validation error.",
+        "Keep type hints as documentation/static checks, not a substitute for runtime input validation."
+      ],
+      "pitfalls": [
+        "Assuming the annotation coerces values automatically"
+      ],
+      "referenceAnswer": "The query parameter arrives as text. Parse it, catch a conversion failure at the input boundary, and return a clear validation response rather than relying on the return/type annotation."
+    }
+  ]
+}

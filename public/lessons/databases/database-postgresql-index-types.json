@@ -11,7 +11,8 @@
     "Match PostgreSQL index families to operators and data shape.",
     "Explain GIN, GiST, and BRIN trade-offs.",
     "Use partial and expression indexes when predicates match.",
-    "Recognize operator-class requirements."
+    "Recognize operator-class requirements.",
+    "Recognize SP-GiST for compatible partitionable data and match JSONB GIN operator classes to the operators a query uses."
   ],
   "mentalModel": {
     "type": "paragraph",
@@ -137,6 +138,37 @@
           ],
           "outcome": "Choose an index by the operator the query uses and the data shape—not simply because a column is JSONB.",
           "problem": "A product's `attributes` JSONB column stores color, size, and material. The endpoint asks for products whose attributes contain `{\"color\":\"blue\"}`."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "The operator must match the GIN operator class",
+          "source": "-- jsonb_path_ops supports JSON containment/path matching such as @>\nSELECT id FROM products\nWHERE attributes @> '{\"color\":\"blue\"}'::jsonb;\n\n-- The default jsonb_ops supports key-existence operators such as ?\n-- Use a default GIN index if this operator is important to the workload.\nCREATE INDEX products_attrs_default_gin\nON products USING GIN (attributes);\nSELECT id FROM products WHERE attributes ? 'color';"
+        },
+        {
+          "type": "table",
+          "title": "JSONB GIN operator-class fit",
+          "columns": [
+            "Operator class",
+            "Operators supported by the class",
+            "When it fits"
+          ],
+          "rows": [
+            [
+              "jsonb_ops (default)",
+              "?, ?|, ?&, @>, @?, @@",
+              "Use when key-existence queries and containment both matter."
+            ],
+            [
+              "jsonb_path_ops",
+              "@>, @?, @@",
+              "Use when containment/path searches fit; it does not support ?, ?|, or ?&."
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Do not create both indexes by default: each adds storage, cache footprint, write work, and maintenance. Start from the actual operators in representative queries and verify the selected plan. A query that uses an operator unsupported by the chosen operator class will not get the expected index path from that index."
         }
       ]
     },
@@ -305,6 +337,32 @@
           "prompt": "6. Interview probe — Which is the default starting point for scalar equality, range, and ordered scans?",
           "answer": "B-tree supports equality, range, and compatible ordering.",
           "explanation": "A strong answer connects the problem to the mechanism, states assumptions and trade-offs, and explains how to verify the decision in practice."
+        }
+      ]
+    },
+    {
+      "id": "spgist",
+      "title": "SP-GiST: partitioned search spaces",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "SP-GiST (space-partitioned GiST) supports partition trees that do not need to keep every leaf at the same depth. It is useful when a data type and operator class can split its search space effectively, such as point data or certain range, IP-address, and text/prefix operators. It is not a universal replacement for B-tree; check the exact operator class and query operator."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Point-in-box query with SP-GiST",
+          "source": "CREATE INDEX locations_point_spgist_idx\nON locations USING SPGIST (location);\n\nSELECT id\nFROM locations\nWHERE location <@ box '((0,0),(10,10))';"
+        },
+        {
+          "type": "worked_example",
+          "problem": "A map endpoint searches points inside a rectangular area. The column is PostgreSQL's point type and the query uses the supported point containment operator.",
+          "reasoning": [
+            "Check which operator class supports the column type and `<@` predicate.",
+            "Compare a compatible SP-GiST index with other supported plans on representative spatial data.",
+            "Measure insert/update cost and index size alongside query latency."
+          ],
+          "outcome": "Choose SP-GiST only when the operator class matches the actual operation and measurements justify it."
         }
       ]
     }

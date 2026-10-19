@@ -177,6 +177,26 @@
         {
           "type": "paragraph",
           "text": "For a concrete comparison, joining 30 customers to their orders can suit a nested loop when each customer lookup uses an index and returns few rows. Joining hundreds of thousands of orders to customers may favor a hash or merge strategy. These are not fixed rules: inspect actual outer rows, inner `loops`, buffers, and whether inputs are already ordered."
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Read rows together with loops",
+          "source": "Nested Loop  (actual rows=1000 loops=1)\n  -> Index Scan on customers  (actual rows=1000 loops=1)\n  -> Index Scan on orders_customer_idx  (actual rows=1 loops=1000)"
+        },
+        {
+          "type": "worked_example",
+          "problem": "EXPLAIN ANALYZE shows an inner index scan with `actual rows=1 loops=1000`. Does that mean the node fetched only one row in total?",
+          "reasoning": [
+            "`loops=1000` means the inner plan node executed 1,000 times, usually once for each outer row in a nested-loop join.",
+            "`actual rows` is reported as an average per execution, so roughly one row per execution means about 1,000 rows emitted in total (rounding can apply).",
+            "Compare the estimated versus actual row count at the earliest bad step. If the planner expected only 100 outer rows but receives 100,000, the inner lookup can run far more times than planned."
+          ],
+          "outcome": "Read `actual rows` and `loops` together. A cheap inner lookup repeated hundreds of thousands of times can dominate the query, and row-estimate errors upstream often explain why the planner chose that plan."
+        },
+        {
+          "type": "paragraph",
+          "text": "Remember that EXPLAIN's `actual time` is in milliseconds, while planner `cost` uses arbitrary cost units and is not milliseconds. Timing and row counts are averages at repeated nodes, so inspect loops and buffers as well as the displayed time."
         }
       ]
     },

@@ -147,6 +147,57 @@
         {
           "type": "paragraph",
           "text": "Failover also has a data-loss question: asynchronous replication may not have shipped or replayed the newest committed writes when the primary fails. The promoted replica can therefore be missing recent changes. RPO describes the loss you are prepared to tolerate; it is not a promise that no data will be lost."
+        },
+        {
+          "type": "table",
+          "title": "Asynchronous-replica failure timeline",
+          "columns": [
+            "Time",
+            "Primary",
+            "Standby",
+            "Risk"
+          ],
+          "rows": [
+            [
+              "T0",
+              "Commits write W1 and acknowledges client",
+              "Has replayed only through W0",
+              "Client believes W1 is durable on the primary; standby may still be behind."
+            ],
+            [
+              "T1",
+              "Fails before W1 is received/replayed by standby",
+              "Still at W0",
+              "Promotion can lose W1; this is the data-loss window described by RPO."
+            ],
+            [
+              "T2",
+              "Unavailable",
+              "Promoted to primary at W0",
+              "Reads/writes resume, but W1 is absent from the new history."
+            ],
+            [
+              "T3",
+              "Old primary returns",
+              "Must remain fenced from accepting writes until safely rejoined/resynchronized",
+              "Without reliable fencing/leader coordination, both nodes accepting writes creates split-brain risk."
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Before failover, establish whether the commit was acknowledged locally, written to a standby, or replayed there. PostgreSQL synchronous-commit and synchronous-standby settings change which stage an acknowledged commit waits for, trading commit latency/availability for stronger durability or replay guarantees. Asynchronous replication normally prioritizes lower commit wait but permits a nonzero loss window. After promotion, reconnect clients, ensure the old primary is fenced, validate data/replication state, and reconcile requests whose client timed out without knowing whether a commit survived."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A payment API reports success for a write, then the primary fails and the promoted asynchronous standby lacks that row. What should the team explain and do?",
+          "reasoning": [
+            "The standby had not received or replayed the acknowledged write before promotion, so this outcome is consistent with a nonzero asynchronous-replication RPO.",
+            "Fence the old primary and prevent split-brain while the new primary becomes authoritative.",
+            "Compare the data-loss window with the agreed RPO, inspect logs/replication positions, and reconcile affected requests using durable request IDs/idempotency records.",
+            "If this loss window is unacceptable, evaluate synchronous replication and its latency/availability costs; it is not a free guarantee and its behavior depends on the configured acknowledgment policy."
+          ],
+          "outcome": "Failover is a data-consistency event as well as a routing event. RPO, acknowledgment settings, fencing, and request reconciliation must be designed together."
         }
       ]
     },
@@ -183,6 +234,47 @@
             "If writes are still bottlenecked on one primary, partitioning alone does not distribute writes across servers; sharding is a separate architecture with routing and rebalancing costs."
           ],
           "outcome": "Partition by a key that supports pruning or lifecycle management. Shard only when measured limits justify distributing ownership across nodes."
+        },
+        {
+          "type": "table",
+          "title": "Hot partition or shard: what changes?",
+          "columns": [
+            "Design",
+            "Where the work runs",
+            "Hotspot failure mode",
+            "Possible response"
+          ],
+          "rows": [
+            [
+              "Time partitioning on one PostgreSQL server",
+              "All partitions still share the server's CPU, memory, storage, and connection budget",
+              "A current partition receiving nearly all writes can saturate the same instance even though older partitions are separate",
+              "Use partitioning for pruning/retention and measure the active partition; optimize the write path or scale the actual shared bottleneck."
+            ],
+            [
+              "Sharding by tenant_id",
+              "A tenant's rows route to one shard",
+              "One unusually large or busy tenant can overload its shard while others are quiet",
+              "Track per-shard traffic; consider tenant isolation or a more balanced key only when the cross-shard query and migration costs are acceptable."
+            ],
+            [
+              "Hash-distribution of a hot tenant's rows",
+              "That tenant's rows may spread across buckets/shards only if the routing key actually includes a distributed component",
+              "Queries by tenant may need fan-out/merge, and a hot natural key can remain hot if all writes still map to one partition",
+              "Choose the key from write distribution and query needs; consider bucketing/striping only with explicit read/consistency complexity."
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "One tenant generates 45% of all writes. The team partitions the table by tenant_id, but all partitions remain on one PostgreSQL instance.",
+          "reasoning": [
+            "Partition pruning may reduce the number of pages scanned for that tenant's query, but it does not create more CPU, memory, I/O bandwidth, or independent connection capacity on the instance.",
+            "If the active tenant partition and its indexes dominate writes, other tenants still compete for the same server resources.",
+            "Sharding can spread work across machines only if routing actually distributes this tenant's writes; keeping all tenant rows on one shard does not fix the hotspot.",
+            "A bucketed key can distribute writes, but queries and uniqueness constraints may become more complex or require fan-out."
+          ],
+          "outcome": "Partitioning organizes data and can reduce per-query work; sharding distributes work across nodes. Neither automatically fixes a skewed, hot key."
         }
       ]
     },

@@ -1,0 +1,322 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "ml-evaluation-fundamentals",
+  "topicId": "ai-engineering",
+  "sectionId": "ml-evaluation-fundamentals",
+  "title": "ML Evaluation Fundamentals: Baselines, Precision, Recall, F1, Thresholds, and Calibration",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 42,
+  "learningObjectives": [
+    "Build a baseline and read a confusion matrix.",
+    "Calculate precision, recall, and F1 from counts.",
+    "Explain class imbalance, threshold trade-offs, and calibration."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Evaluation turns model outputs into evidence. Start with a baseline, define what counts as a correct outcome, inspect the confusion matrix, and choose metrics that reflect the cost of mistakes. A score is not a decision until a threshold converts it into action."
+  },
+  "concepts": [
+    {
+      "id": "motivation",
+      "title": "Problem and motivation",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A classifier can report 96% accuracy and still miss too much fraud when positive cases are rare. Counts of true positives, false positives, false negatives, and true negatives expose the actual errors."
+        },
+        {
+          "type": "paragraph",
+          "text": "Evaluation turns model outputs into evidence. Start with a baseline, define what counts as a correct outcome, inspect the confusion matrix, and choose metrics that reflect the cost of mistakes. A score is not a decision until a threshold converts it into action."
+        }
+      ]
+    },
+    {
+      "id": "technical-deep-dive",
+      "title": "Technical deep dive and worked example",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Precision = TP/(TP+FP). Recall = TP/(TP+FN). F1 is the harmonic mean of precision and recall. Accuracy can hide failures on rare classes. Thresholds trade precision against recall; calibration asks whether predicted probabilities match observed frequencies."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A fraud detector has TP=40, FP=30, FN=10, TN=920.",
+          "reasoning": [
+            "Precision = 40/(40+30) ≈ 57.1%.",
+            "Recall = 40/(40+10) = 80%.",
+            "F1 = 2PR/(P+R) ≈ 66.7%.",
+            "Accuracy = (40+920)/1000 = 96%, but this hides missed fraud and false alerts."
+          ],
+          "outcome": "A confusion matrix makes error types visible; the right threshold depends on business cost and operational capacity."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "source": "tp, fp, fn, tn = 40, 30, 10, 920\nprecision = tp / (tp + fp)\nrecall = tp / (tp + fn)\nf1 = 2 * precision * recall / (precision + recall)\naccuracy = (tp + tn) / (tp + fp + fn + tn)\nprint(round(precision, 3), round(recall, 3), round(f1, 3), round(accuracy, 3))",
+          "title": "Calculate classification metrics"
+        },
+        {
+          "type": "paragraph",
+          "text": "Walkthrough: `precision` divides true positives by all flagged cases (40+30), giving 0.571. `recall` divides true positives by all actual fraud cases (40+10), giving 0.8. F1 combines precision and recall; accuracy divides correct predictions by all 1,000 examples and reaches 0.96 because true negatives dominate. The printed values are rounded only for display."
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: 0.571 0.8 0.667 0.96"
+        }
+      ]
+    },
+    {
+      "id": "tradeoffs-production",
+      "title": "Trade-offs and production behavior",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Threshold choice affects review workload and error costs. PR curves are often informative for rare positives. Calibration needs enough data and can drift as the population changes."
+        },
+        {
+          "type": "paragraph",
+          "text": "Production check: Track class prevalence, threshold volume, precision/recall when labels arrive, calibration, and subgroup performance."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Anti-pattern to avoid",
+          "content": "Reporting accuracy alone on imbalanced data; assuming a score of 0.8 is calibrated; choosing a threshold without considering capacity."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A defect detector looks strong on a random offline split, but misses cases after launch. Walk through how you would investigate the gap and pick a threshold.",
+          "reasoning": [
+            "First verify the information boundary: remove features created after the prediction timestamp and fit imputers/scalers only on training data. Split by time or entity when the production task requires generalizing to future periods or unseen customers, then rerun the evaluation.",
+            "On a time-based validation set of 10,000 cases with 100 actual defects, threshold A produces TP=72, FP=428, FN=28, TN=9,472. Precision is 72/500=14.4%, recall is 72/100=72%, and 500/10,000=5% of cases are sent for review.",
+            "Threshold B produces TP=55, FP=145, FN=45, TN=9,755. Precision is 55/200=27.5%, recall is 55%, and review volume is 200/10,000=2%. Threshold A catches more defects but requires reviewing 2.5 times as many flagged cases in this example.",
+            "Choose using the cost of missed defects, false alarms, and the actual inspection capacity—not a universal best threshold. If each review costs $2, those validation volumes correspond to $1,000 versus $400 per 10,000 cases, before the cost of missed defects.",
+            "After launch, check whether defect prevalence or score distributions changed. For example, if positives fall from 1% to 0.4%, precision can fall even if the false-positive rate is similar. Track delayed labels, precision/recall by relevant subgroup, calibration, review volume, latency and cost per correctly handled case."
+          ],
+          "outcome": "A credible offline score depends on valid time/entity splits and leakage-free preprocessing; a production threshold must balance error cost and capacity and be monitored as the population changes."
+        }
+      ]
+    },
+    {
+      "id": "offline-to-production-evaluation-checklist",
+      "title": "Offline-to-production evaluation checklist",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Before trusting a model score, verify that every feature existed at the prediction timestamp and that learned preprocessing was fitted only on training data. If users, stores, patients, or other entities recur across rows, consider whether a group split is needed; if the task predicts the future, prefer a time-aware holdout."
+        },
+        {
+          "type": "paragraph",
+          "text": "Compare against a simple baseline and inspect the confusion matrix, not only accuracy. For rare positives, report precision and recall, and state how many cases would be flagged for human review at each candidate threshold."
+        },
+        {
+          "type": "paragraph",
+          "text": "Translate thresholds into operating consequences. Estimate false-negative cost, false-positive cost, review capacity, service latency, and cost per successfully handled case. A model with a better offline metric may be a worse product if it overloads reviewers or misses high-cost cases."
+        },
+        {
+          "type": "paragraph",
+          "text": "Keep ranking and calibration separate. A model can order risky cases well while systematically overestimating probabilities. When decisions use the probability value itself, compare predicted probability bands with observed outcomes and calibrate using held-out data."
+        },
+        {
+          "type": "paragraph",
+          "text": "After launch, monitor the input/score distribution, class prevalence, delayed-label precision/recall, calibration, subgroup outcomes, review volume, latency and cost. A change in prevalence alone can change precision; rising errors may reflect drift, leakage in evaluation, a changed workflow, or a changed threshold—not only model quality."
+        },
+        {
+          "type": "paragraph",
+          "text": "In an interview, narrate the chain: validate the information boundary → choose a deployment-like split → compare baselines → quantify threshold consequences → define monitoring and rollback/review triggers. Use a versioned evaluation set so later changes are comparable."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Engineering rule of thumb",
+      "content": "Pick metrics and thresholds based on the actual cost of mistakes, not habit."
+    },
+    {
+      "type": "paragraph",
+      "text": "Threshold choice affects review workload and error costs. PR curves are often informative for rare positives. Calibration needs enough data and can drift as the population changes."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Precision = TP/(TP+FP); recall = TP/(TP+FN); F1 is their harmonic mean."
+    },
+    {
+      "type": "paragraph",
+      "text": "Accuracy can mislead on imbalanced classes; always inspect the confusion matrix."
+    },
+    {
+      "type": "paragraph",
+      "text": "Thresholds convert scores to actions and should reflect error costs and capacity."
+    },
+    {
+      "type": "paragraph",
+      "text": "Calibration compares predicted probabilities with observed frequencies."
+    }
+  ],
+  "questions": [
+    {
+      "id": "precision",
+      "type": "single_select",
+      "prompt": "A fraud model flags 70 transactions and 42 are genuinely fraudulent. What is its precision?",
+      "options": [
+        {
+          "id": "a",
+          "text": "42/70 = 60%"
+        },
+        {
+          "id": "b",
+          "text": "42/50 = 84%"
+        },
+        {
+          "id": "c",
+          "text": "920/1,000 = 92%"
+        },
+        {
+          "id": "d",
+          "text": "28/70 = 40%"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Precision is the fraction of predicted positives that are actually positive: 42 divided by all 70 flagged transactions. It answers how noisy the alert queue is."
+    },
+    {
+      "id": "recall",
+      "type": "single_select",
+      "prompt": "Out of 50 fraudulent transactions, a model catches 40 and misses 10. What is recall?",
+      "options": [
+        {
+          "id": "a",
+          "text": "40/50 = 80%"
+        },
+        {
+          "id": "b",
+          "text": "40/70 ≈ 57%"
+        },
+        {
+          "id": "c",
+          "text": "10/50 = 20%"
+        },
+        {
+          "id": "d",
+          "text": "A value determined by true negatives only"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Recall is TP/(TP+FN), so 40/(40+10)=80%. It measures coverage of actual positive cases, not the fraction of alerts that are correct."
+    },
+    {
+      "id": "imbalance",
+      "type": "single_select",
+      "prompt": "Fraud is 0.5% of transactions. A model predicts “not fraud” for every transaction and gets 99.5% accuracy. What should the team conclude?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The model is production-ready because accuracy is high"
+        },
+        {
+          "id": "b",
+          "text": "The baseline catches no fraud, so evaluate recall/precision and compare better models"
+        },
+        {
+          "id": "c",
+          "text": "Calibration is automatically perfect"
+        },
+        {
+          "id": "d",
+          "text": "F1 must be 99.5%"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "The majority class dominates accuracy, while fraud recall is zero. Report a confusion matrix and positive-class metrics; compare against this baseline before claiming model value."
+    },
+    {
+      "id": "calibration",
+      "type": "single_select",
+      "prompt": "A risk model assigns probability 0.8 to 100 comparable cases, but only 50 turn positive. What issue should be investigated?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The model is well calibrated because 0.8 is a high score"
+        },
+        {
+          "id": "b",
+          "text": "The model may be overconfident or miscalibrated for this group"
+        },
+        {
+          "id": "c",
+          "text": "Recall must equal 80%"
+        },
+        {
+          "id": "d",
+          "text": "The model should always use 0.8 as its decision threshold"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "Calibration asks whether groups assigned probability 0.8 are positive about 80% of the time. An observed rate near 50% suggests overprediction, subject to sample uncertainty and correct label timing."
+    },
+    {
+      "id": "threshold-fixed",
+      "type": "true_false",
+      "prompt": "A threshold of 0.5 is always optimal for every classifier and business task.",
+      "correctAnswer": false,
+      "explanation": "The best threshold depends on calibration, costs, prevalence, and operational constraints."
+    },
+    {
+      "id": "f1-context-free",
+      "type": "true_false",
+      "prompt": "F1 captures every relevant cost of a classifier.",
+      "correctAnswer": false,
+      "explanation": "F1 balances precision and recall but does not directly encode review capacity, error severity, or calibration."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "rare-positive-evaluation",
+      "prompt": "A defect detector has 99.5% accuracy but misses many defects. What metrics and experiments do you use?",
+      "skillsTested": [
+        "class imbalance",
+        "metric selection",
+        "thresholding"
+      ],
+      "strongAnswerPoints": [
+        "Build the confusion matrix and report defect precision and recall.",
+        "Compare with a majority-class baseline.",
+        "Inspect precision-recall behavior and review volume across thresholds.",
+        "Choose threshold based on missed-defect cost and inspection capacity."
+      ],
+      "pitfalls": [
+        "Presenting accuracy as sufficient evidence"
+      ],
+      "referenceAnswer": "I would inspect defect recall and precision first. With rare defects, a majority-class baseline can have excellent accuracy. I would examine precision-recall trade-offs and select a threshold based on missed-defect cost and review capacity."
+    },
+    {
+      "id": "probability-quality",
+      "prompt": "A model performs well on a random offline split but poorly after launch. How do you investigate leakage and split strategy, then choose and monitor a production threshold?",
+      "skillsTested": [
+        "prediction-time data availability",
+        "time/entity split design",
+        "precision and recall",
+        "threshold and review capacity",
+        "population drift",
+        "cost per successful decision"
+      ],
+      "strongAnswerPoints": [
+        "Check whether any features use information created after the prediction timestamp and fit preprocessing only on training data.",
+        "Use a time-based or group/entity split if it better represents production; rerun baselines and the confusion matrix on held-out data.",
+        "Compare threshold options with precision, recall, false-positive/false-negative cost and expected review volume.",
+        "Monitor prevalence, calibration, subgroup performance, delayed labels, latency and cost after launch; revisit the threshold when the population or capacity changes."
+      ],
+      "pitfalls": [
+        "Tuning a threshold on the final test set and repeatedly reusing it",
+        "Using accuracy alone on imbalanced outcomes",
+        "Assuming a high AUC proves calibrated probabilities or immunity to drift"
+      ],
+      "referenceAnswer": "I would first check the prediction-time boundary, remove post-outcome features and fit preprocessing on training data only. I would choose a time-based or entity-based holdout that matches deployment, compare a baseline and inspect precision/recall at multiple thresholds, and choose according to miss costs and review capacity. After release I would monitor prevalence, calibration, subgroup errors, latency and cost, then reevaluate when the population or workflow changes."
+    }
+  ]
+}

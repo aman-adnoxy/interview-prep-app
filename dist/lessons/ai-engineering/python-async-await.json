@@ -1,0 +1,314 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "python-async-await",
+  "topicId": "ai-engineering-python-data-backend",
+  "sectionId": "python-async-await",
+  "title": "Python Async and Await: Event Loops, Coroutines, and I/O",
+  "description": "Explain how asynchronous I/O lets a Python service make progress while network or database operations wait.",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 36,
+  "learningObjectives": [
+    "Explain coroutines, await, and the event loop in plain language.",
+    "Use async concurrency for independent I/O-bound operations and interpret the resulting control flow.",
+    "Recognize blocking calls, unbounded fan-out, timeouts, and cancellation behavior.",
+    "Distinguish asynchronous I/O from CPU parallelism."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "An `async` function can pause at `await` while an operation waits for I/O, allowing the event loop to run other ready tasks. It is cooperative concurrency: your code must yield control, and blocking work can still freeze the whole loop."
+  },
+  "concepts": [
+    {
+      "id": "coroutines-and-event-loop",
+      "title": "A coroutine gives control back while waiting",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Run independent I/O operations concurrently",
+          "source": "import asyncio\n\nasync def fetch_record(record_id: str) -> str:\n    await asyncio.sleep(0.1)  # stands in for network/database I/O\n    return f\"record:{record_id}\"\n\nasync def main() -> None:\n    results = await asyncio.gather(\n        fetch_record(\"A\"),\n        fetch_record(\"B\"),\n        fetch_record(\"C\"),\n    )\n    print(results)\n\nasyncio.run(main())"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `['record:A', 'record:B', 'record:C']`. Each `fetch_record` call creates a coroutine. `gather` schedules the independent operations together and waits for their results. The sleep is only a stand-in for I/O; it does not occupy the event loop the way a blocking `time.sleep()` would."
+        },
+        {
+          "type": "paragraph",
+          "text": "The event loop runs one piece of Python code at a time on its thread until it finishes or reaches an `await` that yields. While one request awaits a socket or asynchronous database driver, the loop can advance another task."
+        }
+      ]
+    },
+    {
+      "id": "await-and-blocking-calls",
+      "title": "Awaitable does not mean every call is non-blocking",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Adding `async` to a function does not automatically make its body concurrent. A synchronous HTTP client, large CPU loop, `time.sleep()`, or blocking database driver can occupy the event-loop thread. While it is blocked, other coroutines on that loop cannot make progress."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Move a legacy blocking I/O call off the event-loop thread",
+          "source": "import asyncio\n\ndef blocking_lookup(key: str) -> str:\n    # Placeholder for a synchronous file or network SDK call.\n    return f\"value-for-{key}\"\n\nasync def handler(key: str) -> str:\n    return await asyncio.to_thread(blocking_lookup, key)"
+        },
+        {
+          "type": "paragraph",
+          "text": "`asyncio.to_thread` is useful for adapting many synchronous I/O functions, not as a general way to speed up pure-Python CPU loops. Prefer a native async client when one is available and its behavior fits the application."
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Do not call `asyncio.run()` inside a running event loop",
+          "content": "A web framework usually owns the event loop. Inside an async handler, await the coroutine or create tasks using the framework's intended lifecycle instead of trying to start another event loop."
+        }
+      ]
+    },
+    {
+      "id": "limits-timeouts-cancellation",
+      "title": "Bound concurrency and handle cancellation",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Put a timeout around a slow dependency",
+          "source": "import asyncio\n\nasync def get_profile(client, user_id: str):\n    try:\n        return await asyncio.wait_for(\n            client.fetch_profile(user_id),\n            timeout=2.0,\n        )\n    except asyncio.TimeoutError:\n        # Translate or record a timeout at the appropriate boundary.\n        raise"
+        },
+        {
+          "type": "paragraph",
+          "text": "A timeout bounds how long the caller waits; it does not prove the remote service did no work. Cancellation can propagate through awaited tasks, but external requests or database operations may already have reached the remote system. Write operations therefore still need idempotency and explicit outcome handling."
+        },
+        {
+          "type": "paragraph",
+          "text": "When a request fans out to hundreds of independent dependencies, a semaphore or bounded worker pool can limit simultaneous work. Unbounded `gather` across an enormous list can exhaust connections, sockets, memory, or a downstream provider's quota."
+        }
+      ]
+    },
+    {
+      "id": "async-use-cases",
+      "title": "Where async helps—and where it does not",
+      "blocks": [
+        {
+          "type": "table",
+          "title": "Workload",
+          "columns": [
+            "Workload",
+            "Useful default",
+            "Reason and caveat"
+          ],
+          "rows": [
+            [
+              "Many network/database calls waiting on I/O",
+              "Async I/O with async-compatible clients",
+              "Can overlap waiting; still needs bounded concurrency."
+            ],
+            [
+              "CPU-heavy Python calculation",
+              "Process pool or separate worker",
+              "Async alone does not run Python CPU work in parallel."
+            ],
+            [
+              "A blocking legacy I/O SDK",
+              "Native async client or `asyncio.to_thread`",
+              "Thread offloading has scheduling overhead and uses a thread pool."
+            ],
+            [
+              "One tiny sequential script",
+              "Ordinary synchronous code may be clearer",
+              "Async adds lifecycle and cancellation complexity."
+            ]
+          ]
+        },
+        {
+          "type": "worked_example",
+          "problem": "An AI endpoint fetches a user profile, policy document, and model configuration from three independent services.",
+          "reasoning": [
+            "If calls wait mainly on network I/O and do not depend on each other's results, schedule them concurrently.",
+            "Set per-call timeouts and bound concurrency so one dependency cannot hold the request forever or create a fan-out storm.",
+            "Record which dependency failed and decide whether the request should fail, use a safe cached value, or degrade gracefully."
+          ],
+          "outcome": "Use async when overlapping I/O improves end-to-end latency, not simply because the application is written in Python."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "paragraph",
+      "text": "Async I/O can support many waiting operations with fewer threads, but cancellation, task ownership, timeout propagation, and library compatibility add complexity. Measure end-to-end latency and resource use; do not use async as a substitute for a sound concurrency limit."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Calling an async function creates a coroutine; it must be awaited or scheduled to run."
+    },
+    {
+      "type": "paragraph",
+      "text": "`await` yields control while a real awaitable waits; synchronous blocking work can freeze the event loop."
+    },
+    {
+      "type": "paragraph",
+      "text": "Async is especially useful for I/O-bound concurrency, not pure-Python CPU parallelism."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use timeouts, bounded concurrency, cancellation-safe cleanup, and idempotency for uncertain writes."
+    }
+  ],
+  "questions": [
+    {
+      "id": "async-python-q1",
+      "type": "single_select",
+      "prompt": "What allows another coroutine to make progress while a task waits on network I/O?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The awaited operation yields control to the event loop"
+        },
+        {
+          "id": "b",
+          "text": "Python automatically creates a process for every await"
+        },
+        {
+          "id": "c",
+          "text": "The GIL disappears"
+        },
+        {
+          "id": "d",
+          "text": "The database finishes the request before it starts"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The event loop can run other ready tasks while the first task is waiting at an awaitable."
+    },
+    {
+      "id": "async-python-q2",
+      "type": "single_select",
+      "prompt": "What is the likely result of calling `time.sleep(2)` directly inside an async handler running on an event-loop thread?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It blocks that thread and stalls other tasks on the loop"
+        },
+        {
+          "id": "b",
+          "text": "It always runs in a separate process"
+        },
+        {
+          "id": "c",
+          "text": "It never affects other requests"
+        },
+        {
+          "id": "d",
+          "text": "It automatically becomes `await asyncio.sleep(2)`"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Synchronous sleep blocks the thread. `await asyncio.sleep(2)` yields to the loop."
+    },
+    {
+      "id": "async-python-q3",
+      "type": "single_select",
+      "prompt": "Which workload usually benefits most from async I/O?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Many independent remote calls waiting on network responses"
+        },
+        {
+          "id": "b",
+          "text": "A single pure-Python CPU loop with no waiting"
+        },
+        {
+          "id": "c",
+          "text": "Sorting a million integers on the event-loop thread"
+        },
+        {
+          "id": "d",
+          "text": "A constant-time local arithmetic expression"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Async primarily overlaps I/O wait; CPU-heavy work needs a different execution strategy."
+    },
+    {
+      "id": "async-python-q4",
+      "type": "single_select",
+      "prompt": "A coroutine times out while calling a remote service. What is safest to assume about a write request?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The remote service definitely did not perform it"
+        },
+        {
+          "id": "b",
+          "text": "The operation outcome may be uncertain; use idempotency or reconcile safely"
+        },
+        {
+          "id": "c",
+          "text": "The timeout automatically rolls back the remote database"
+        },
+        {
+          "id": "d",
+          "text": "The request will always finish later"
+        }
+      ],
+      "correctOptionId": "b",
+      "explanation": "A caller-side timeout is not proof the remote system did no work."
+    },
+    {
+      "id": "async-python-q5",
+      "type": "true_false",
+      "prompt": "A function declared `async def` makes every synchronous function it calls non-blocking.",
+      "correctAnswer": false,
+      "explanation": "Synchronous blocking code can still block the event-loop thread."
+    },
+    {
+      "id": "async-python-q6",
+      "type": "true_false",
+      "prompt": "A semaphore can be used to cap how many downstream operations run concurrently.",
+      "correctAnswer": true,
+      "explanation": "A semaphore or equivalent limiter can bound in-flight work and protect a dependency."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "async-scenario-1",
+      "prompt": "An AI API's p95 latency is close to the sum of three independent 300 ms service calls. What change might improve latency?",
+      "skillsTested": [
+        "Async control flow",
+        "Dependency calls",
+        "Latency reasoning"
+      ],
+      "strongAnswerPoints": [
+        "Confirm the calls are independent and mostly I/O-bound.",
+        "Use async-compatible clients and await the calls concurrently, with per-call timeouts.",
+        "Measure end-to-end p95 and downstream saturation; bound fan-out."
+      ],
+      "pitfalls": [
+        "Launching unbounded background tasks",
+        "Assuming concurrent calls always finish at the slowest call regardless of dependencies or queuing"
+      ],
+      "referenceAnswer": "If the three calls are independent I/O, I would issue them concurrently instead of sequentially. I'd also use timeouts and a concurrency limit, then measure tail latency and downstream load."
+    },
+    {
+      "id": "async-scenario-2",
+      "prompt": "A service uses an async web framework but all requests pause whenever one endpoint calls a slow legacy SDK. Why?",
+      "skillsTested": [
+        "Blocking I/O",
+        "Event loop",
+        "Migration strategy"
+      ],
+      "strongAnswerPoints": [
+        "Identify synchronous work running directly on the event-loop thread.",
+        "Use an async replacement when practical or isolate the blocking I/O with a thread pool.",
+        "Add timeouts and verify cancellation/resource cleanup."
+      ],
+      "pitfalls": [
+        "Adding `async` to the enclosing function without changing the blocking call"
+      ],
+      "referenceAnswer": "The legacy call blocks the loop despite the handler being async. I'd choose a native async client or move this blocking I/O to a bounded thread pool and validate behavior under load."
+    }
+  ]
+}

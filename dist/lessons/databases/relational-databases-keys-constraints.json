@@ -441,6 +441,24 @@
               "Does not replace durable constraints such as uniqueness."
             ]
           ]
+        },
+        {
+          "type": "paragraph",
+          "text": "### Add a uniqueness rule safely on a busy table"
+        },
+        {
+          "type": "paragraph",
+          "text": "Adding a unique constraint is not only a DDL operation; it is a data cleanup and deployment problem. First find existing duplicates, decide how to resolve them, and account for writes that can create new duplicates while the migration is running. For a large live PostgreSQL table, one common path is to build a unique index concurrently, verify that it is valid, then attach it as a constraint. The details depend on version, partitioning, and the exact constraint."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "source": "-- Step 1: find duplicate business keys before the migration\nSELECT email, count(*) AS row_count\nFROM users\nGROUP BY email\nHAVING count(*) > 1\nORDER BY row_count DESC\nLIMIT 100;\n\n-- Step 2: after duplicates are resolved and new duplicates are prevented,\n-- build a unique index while allowing ordinary writes to continue.\nCREATE UNIQUE INDEX CONCURRENTLY users_email_uq_idx\nON users (email);\n\n-- Step 3: attach the existing index as a named constraint.\nALTER TABLE users\nADD CONSTRAINT users_email_key UNIQUE USING INDEX users_email_uq_idx;",
+          "title": "Safe deployment pattern for a unique constraint"
+        },
+        {
+          "type": "paragraph",
+          "text": "`CREATE UNIQUE INDEX CONCURRENTLY` cannot run inside an explicit transaction block. It performs more work and takes longer than a regular index build. If it fails, it can leave an INVALID index that is ignored by queries but still adds write overhead; inspect `pg_index.indisvalid`, drop the invalid index, resolve the cause, and retry. The precheck alone is not enough if writes can insert duplicates during the gap, so coordinate application validation or a staged write rule until uniqueness enforcement is active. Monitor lock waits, replication lag, and index-build progress."
         }
       ]
     },

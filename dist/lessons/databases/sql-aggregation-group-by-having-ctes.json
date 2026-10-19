@@ -197,6 +197,24 @@
           "source": "WITH customer_revenue AS (\n  SELECT customer_id, SUM(total_amount) AS revenue\n  FROM orders\n  WHERE status = 'paid'\n  GROUP BY customer_id\n)\nSELECT customer_id, revenue\nFROM customer_revenue\nWHERE revenue >= 10000\nORDER BY revenue DESC;"
         },
         {
+          "type": "table",
+          "title": "Expected result for the sample paid orders",
+          "columns": [
+            "customer_id",
+            "revenue"
+          ],
+          "rows": [
+            [
+              "7",
+              "12000"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Customer 7's paid orders total ₹4,000 + ₹3,000 + ₹5,000 = ₹12,000, so the outer `WHERE revenue >= 10000` keeps that one row. Customer 9's ₹2,000 does not meet the threshold. The `customer_revenue` CTE has one row per customer because its inner query groups by customer_id; the outer query then filters those already-aggregated customer rows."
+        },
+        {
           "type": "paragraph",
           "text": "Use a CTE when naming a meaningful intermediate relation improves comprehension. Use a subquery when the expression is small. Use a join when combining related row sets is the clearest model. Validate performance from the actual plan rather than choosing syntax based on folklore."
         },

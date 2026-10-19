@@ -1,0 +1,345 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "numpy-vectorized-computation",
+  "topicId": "ai-engineering-python-data-backend",
+  "sectionId": "numpy-vectorized-computation",
+  "title": "NumPy and Vectorized Computation: Arrays, Shapes, and Broadcasting",
+  "description": "Understand array dimensions and vectorized numerical operations used in data preparation and model inputs.",
+  "difficulty": "beginner",
+  "estimatedMinutes": 36,
+  "learningObjectives": [
+    "Explain NumPy arrays, shape, dimensions, dtype, and axis in concrete examples.",
+    "Read vectorized operations and compare them with Python loops.",
+    "Predict how broadcasting combines compatible shapes.",
+    "Recognize shape, dtype, and copy/view pitfalls when preparing model inputs."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "A NumPy array is a typed block of values with a shape. Vectorized operations describe work on whole arrays, letting optimized numerical code process many values without writing a Python loop for each element."
+  },
+  "concepts": [
+    {
+      "id": "arrays-and-shapes",
+      "title": "Shape tells you what each axis means",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Inspect a small array",
+          "source": "import numpy as np\n\nX = np.array([[1, 2, 3], [4, 5, 6]])\nprint(X.shape)\nprint(X.ndim)\nprint(X.dtype)\nprint(X.sum(axis=0))"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output is `(2, 3)`, `2`, an integer dtype such as `int64`, and `[5 7 9]`. The array has two rows and three columns. `axis=0` reduces the row axis, leaving one sum per column. `axis=1` would return one sum per row: `[6 15]`."
+        },
+        {
+          "type": "table",
+          "title": "Reading shapes",
+          "columns": [
+            "Shape",
+            "Meaning",
+            "Example use"
+          ],
+          "rows": [
+            [
+              "`(n,)`",
+              "One-dimensional array",
+              "n scores"
+            ],
+            [
+              "`(n, d)`",
+              "n rows, d features per row",
+              "Feature matrix"
+            ],
+            [
+              "`(n, h, w, c)`",
+              "Four axes, often batch/height/width/channels",
+              "Image batches; exact convention varies"
+            ],
+            [
+              "`(n, 1)` vs `(n,)`",
+              "Different shapes even if values look similar",
+              "Can change broadcasting and downstream APIs"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Always confirm the semantic meaning of each axis. A shape alone does not say whether a dimension represents samples, time, channels, classes, or features."
+        }
+      ]
+    },
+    {
+      "id": "vectorized-operations",
+      "title": "Vectorization avoids Python-level element loops",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Apply one transformation to many values",
+          "source": "import numpy as np\n\nscores = np.array([0.2, 0.5, 0.9])\nadjusted = scores * 100 + 5\nprint(adjusted)"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `[25. 55. 95.]`. NumPy applies multiplication and addition elementwise through optimized array operations. A Python loop can be clear for branching or irregular objects, but for large numeric arrays vectorization is often faster and more compact."
+        },
+        {
+          "type": "worked_example",
+          "problem": "An inference preprocessor normalizes one million numeric feature values.",
+          "reasoning": [
+            "A Python loop executes the arithmetic operation at Python level for each element.",
+            "A NumPy expression applies the same transformation to the array using optimized compiled loops.",
+            "Check output shape, dtype, missing values, and numerical equivalence before comparing speed. Vectorization may allocate additional intermediate arrays, so memory also matters."
+          ],
+          "outcome": "Use vectorization for regular numerical transformations, but inspect allocations as well as runtime."
+        }
+      ]
+    },
+    {
+      "id": "broadcasting",
+      "title": "Broadcasting aligns compatible dimensions",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Scale each feature column",
+          "source": "import numpy as np\n\nX = np.array([[1, 2], [3, 4], [5, 6]])\nscale = np.array([10, 100])\nprint(X * scale)"
+        },
+        {
+          "type": "paragraph",
+          "text": "Output: `[[ 10 200] [ 30 400] [ 50 600]]`. The matrix has shape `(3, 2)` and the scale vector has shape `(2,)`. NumPy aligns dimensions from the right; the vector matches the two-column dimension and is applied to each row."
+        },
+        {
+          "type": "table",
+          "title": "Broadcasting rule",
+          "columns": [
+            "Dimensions aligned from the right",
+            "Compatible when"
+          ],
+          "rows": [
+            [
+              "Sizes equal",
+              "The values line up directly"
+            ],
+            [
+              "One size is 1",
+              "That dimension can be expanded logically"
+            ],
+            [
+              "A dimension is missing",
+              "It is treated like a size of 1"
+            ],
+            [
+              "Other size mismatch",
+              "The operation raises a shape error"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "A broadcast can be legal but semantically wrong",
+          "content": "If predictions have shape `(n, 1)` and labels have shape `(n,)`, combining them can produce an `(n, n)` result instead of n pairwise results. Inspect shapes and intentionally reshape arrays before arithmetic."
+        }
+      ]
+    },
+    {
+      "id": "dtype-memory-and-indexing",
+      "title": "Dtype, views, and memory",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "NumPy arrays usually store values in a fixed dtype. Mixing numbers and strings may coerce an array to a string/object representation, which can use more memory and disable efficient numerical operations. Inspect `dtype` at ingestion boundaries."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Make the intended shape and dtype explicit",
+          "source": "values = np.asarray([1, 2, 3], dtype=np.float32)\ncolumn = values.reshape(-1, 1)\nprint(values.shape, column.shape, values.dtype)"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `(3,) (3, 1) float32`. `reshape` changes the logical shape without changing the number of elements. Some operations return a view sharing underlying memory; others allocate a copy. If mutation matters, do not assume two arrays are independent—check the operation's behavior or copy explicitly."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "paragraph",
+      "text": "Vectorized expressions reduce Python overhead but can create large temporary arrays. A loop can be clearer for irregular control flow or small inputs. Use the simplest implementation that fits memory and has measured performance."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Shape is the length of each axis; ndim is the number of axes; dtype describes element representation."
+    },
+    {
+      "type": "paragraph",
+      "text": "`axis=0` usually reduces rows and leaves columns; `axis=1` reduces columns and leaves rows for a 2-D matrix."
+    },
+    {
+      "type": "paragraph",
+      "text": "Broadcasting aligns dimensions from the right; dimensions must match or be 1."
+    },
+    {
+      "type": "paragraph",
+      "text": "Vectorization is not a guarantee of low memory: intermediate arrays and dtype changes matter."
+    }
+  ],
+  "questions": [
+    {
+      "id": "numpy-shapes-q1",
+      "type": "single_select",
+      "prompt": "An array has shape `(100, 8)`. What does that normally describe for a tabular feature matrix?",
+      "options": [
+        {
+          "id": "a",
+          "text": "100 rows/samples and 8 features per row"
+        },
+        {
+          "id": "b",
+          "text": "8 samples and 100 feature columns"
+        },
+        {
+          "id": "c",
+          "text": "A one-dimensional vector"
+        },
+        {
+          "id": "d",
+          "text": "800 separate axes"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "A two-dimensional array shape lists its first dimension then its second, often samples and features for a feature matrix."
+    },
+    {
+      "id": "numpy-shapes-q2",
+      "type": "single_select",
+      "prompt": "For `X` with shape `(3, 2)`, what shape does `X.sum(axis=0)` produce?",
+      "options": [
+        {
+          "id": "a",
+          "text": "(3, 2)"
+        },
+        {
+          "id": "b",
+          "text": "(3,)"
+        },
+        {
+          "id": "c",
+          "text": "(2,)"
+        },
+        {
+          "id": "d",
+          "text": "(1, 3, 2)"
+        }
+      ],
+      "correctOptionId": "c",
+      "explanation": "Reducing axis 0 combines the three rows and leaves one result per column."
+    },
+    {
+      "id": "numpy-shapes-q3",
+      "type": "single_select",
+      "prompt": "Why can broadcasting `predictions` shaped `(n, 1)` with labels shaped `(n,)` be dangerous?",
+      "options": [
+        {
+          "id": "a",
+          "text": "It can create an `(n, n)` array by pairing each prediction with every label"
+        },
+        {
+          "id": "b",
+          "text": "It always returns one scalar"
+        },
+        {
+          "id": "c",
+          "text": "NumPy automatically detects intended row pairing"
+        },
+        {
+          "id": "d",
+          "text": "Arrays cannot broadcast at all"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Right-aligned shape rules can broadcast `(n,1)` and `(n,)` to `(n,n)`; reshape the labels or predictions deliberately."
+    },
+    {
+      "id": "numpy-shapes-q4",
+      "type": "single_select",
+      "prompt": "What is a common benefit of vectorized NumPy operations?",
+      "options": [
+        {
+          "id": "a",
+          "text": "They often avoid Python-level loops for regular numeric work"
+        },
+        {
+          "id": "b",
+          "text": "They guarantee no memory allocation"
+        },
+        {
+          "id": "c",
+          "text": "They remove the need to inspect dtype"
+        },
+        {
+          "id": "d",
+          "text": "They make every algorithm O(1)"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Vectorization uses optimized array operations, but performance and allocations depend on the operation."
+    },
+    {
+      "id": "numpy-shapes-q5",
+      "type": "true_false",
+      "prompt": "Two arrays with the same shape necessarily use the same dtype.",
+      "correctAnswer": false,
+      "explanation": "Shape describes dimensions; dtype separately describes how values are represented."
+    },
+    {
+      "id": "numpy-shapes-q6",
+      "type": "true_false",
+      "prompt": "A legal broadcasting operation is always semantically correct for the application.",
+      "correctAnswer": false,
+      "explanation": "Shape compatibility only defines whether NumPy can perform the operation; it cannot know what each axis means."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "numpy-scenario-1",
+      "prompt": "A model metric unexpectedly returns a matrix instead of one error per row. What NumPy issue would you inspect?",
+      "skillsTested": [
+        "Array shape",
+        "Broadcasting",
+        "Numerical debugging"
+      ],
+      "strongAnswerPoints": [
+        "Print the shapes of predictions, labels, and intermediate expressions.",
+        "Check for `(n,1)` versus `(n,)` alignment and reshape intentionally.",
+        "Confirm the final output shape and compare a tiny hand-calculated example."
+      ],
+      "pitfalls": [
+        "Assuming broadcasting follows business intent"
+      ],
+      "referenceAnswer": "I would log each shape. If predictions are `(n,1)` and labels `(n,)`, right-aligned broadcasting may produce `(n,n)`. I would reshape one operand and test a small example against expected pairwise errors."
+    },
+    {
+      "id": "numpy-scenario-2",
+      "prompt": "A preprocessing step runs quickly on a small batch but crashes on a large batch with memory exhaustion.",
+      "skillsTested": [
+        "Vectorization",
+        "Memory usage",
+        "Profiling"
+      ],
+      "strongAnswerPoints": [
+        "Look for repeated copies and large intermediate arrays.",
+        "Check dtype and array shape, and consider chunked operations when a full array does not fit comfortably.",
+        "Measure peak memory as well as runtime after the change."
+      ],
+      "pitfalls": [
+        "Assuming vectorization automatically minimizes memory"
+      ],
+      "referenceAnswer": "Vectorized operations can create full-size intermediates. I would inspect allocation and dtype, avoid unnecessary copies, or process bounded chunks while preserving numerical behavior."
+    }
+  ]
+}

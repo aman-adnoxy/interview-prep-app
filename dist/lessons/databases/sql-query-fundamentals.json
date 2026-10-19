@@ -92,6 +92,140 @@
       ]
     },
     {
+      "id": "filter-patterns-and-pagination",
+      "title": "Common filters and pagination",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "SQL filters can express a set of allowed values, a range, or a text pattern. PostgreSQL `ILIKE` matches text without case sensitivity under the applicable collation; `LIKE` is case-sensitive in ordinary PostgreSQL collations. `%` means any sequence of characters and `_` means one character."
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Combine IN and BETWEEN",
+          "source": "SELECT order_id, customer_id, status, amount\nFROM orders\nWHERE status IN ('paid', 'pending')\n  AND amount BETWEEN 2000 AND 4000\nORDER BY order_id;"
+        },
+        {
+          "type": "table",
+          "title": "Expected result using the Orders sample above",
+          "columns": [
+            "order_id",
+            "customer_id",
+            "status",
+            "amount"
+          ],
+          "rows": [
+            [
+              "101",
+              "7",
+              "paid",
+              "4000"
+            ],
+            [
+              "102",
+              "7",
+              "pending",
+              "3000"
+            ],
+            [
+              "104",
+              "9",
+              "paid",
+              "2000"
+            ]
+          ]
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "LIKE and PostgreSQL ILIKE",
+          "source": "SELECT email FROM customers WHERE email LIKE '%@example.com';\nSELECT name FROM customers WHERE name ILIKE 'aman%';"
+        },
+        {
+          "type": "paragraph",
+          "text": "The first pattern matches email addresses ending in `@example.com`. The second matches names beginning with `aman`, including capitalization variants such as `Aman` or `AMAN`. A leading wildcard such as `'%aman%'` often cannot use a normal B-tree index efficiently; text-search or trigram indexing may be more appropriate if that search is important."
+        },
+        {
+          "type": "paragraph",
+          "text": "For the pagination example only, assume a separate orders feed contains the ten unique order IDs 101 through 110. The smaller four-row Orders table earlier in the lesson was used for filtering and should not be mistaken for this feed."
+        },
+        {
+          "type": "table",
+          "title": "Pagination example input",
+          "columns": [
+            "order_id"
+          ],
+          "rows": [
+            [
+              "101"
+            ],
+            [
+              "102"
+            ],
+            [
+              "103"
+            ],
+            [
+              "104"
+            ],
+            [
+              "105"
+            ],
+            [
+              "106"
+            ],
+            [
+              "107"
+            ],
+            [
+              "108"
+            ],
+            [
+              "109"
+            ],
+            [
+              "110"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "### Offset pagination versus keyset pagination"
+        },
+        {
+          "type": "code",
+          "language": "sql",
+          "title": "Two ways to fetch the next page",
+          "source": "-- Page 3 with page size 2: skip the first four rows\nSELECT order_id\nFROM orders\nORDER BY order_id\nLIMIT 2 OFFSET 4;\n\n-- Keyset pagination: pass the last ID from the previous page\nSELECT order_id\nFROM orders\nWHERE order_id > 104\nORDER BY order_id\nLIMIT 2;"
+        },
+        {
+          "type": "table",
+          "title": "With ordered IDs 101–110 and page size 2",
+          "columns": [
+            "Method",
+            "Rows in the requested page",
+            "Work as pages get deeper"
+          ],
+          "rows": [
+            [
+              "OFFSET 4 LIMIT 2",
+              "105, 106",
+              "The database still has to walk past skipped rows; deep offsets can become expensive."
+            ],
+            [
+              "Keyset: order_id > 104 LIMIT 2",
+              "105, 106",
+              "Can seek from the last key using a suitable index rather than count through prior rows."
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "For a stable keyset cursor, the `ORDER BY` must be deterministic and the cursor must include every ordering key. If the order is `created_at DESC, id DESC`, the next-page predicate must compare that pair, not only the timestamp. Keyset pagination avoids deep offset work and is less likely to duplicate or skip rows as new rows arrive before the cursor, but it does not provide a frozen snapshot of the entire result set."
+        }
+      ]
+    },
+    {
       "id": "filters-expressions",
       "title": "WHERE, expressions, and CASE",
       "blocks": [
@@ -497,6 +631,106 @@
       "prompt": "Adding a unique tie-breaker to ORDER BY can make a LIMIT query deterministic when the main sort key ties.",
       "correctAnswer": true,
       "explanation": "A unique secondary key defines the order among rows tied on the primary sort key."
+    },
+    {
+      "id": "filter-patterns",
+      "type": "single_select",
+      "prompt": "A report must select orders whose status is either paid or pending and whose amount is between ₹2,000 and ₹4,000 inclusive. Which filter matches that request?",
+      "options": [
+        {
+          "id": "a",
+          "text": "`status IN ('paid','pending') AND amount BETWEEN 2000 AND 4000`"
+        },
+        {
+          "id": "b",
+          "text": "`status = 'paid' OR amount > 4000`"
+        },
+        {
+          "id": "c",
+          "text": "`status BETWEEN 'paid' AND 'pending'`"
+        },
+        {
+          "id": "d",
+          "text": "`amount = 2000 AND amount = 4000`"
+        }
+      ],
+      "explanation": "IN checks membership in an allowed set. BETWEEN includes its two endpoints in SQL.",
+      "correctOptionId": "a"
+    },
+    {
+      "id": "keyset-pagination",
+      "type": "single_select",
+      "prompt": "A feed uses `ORDER BY created_at DESC, id DESC` and needs the next page after the last row. Which design is correct?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Use `OFFSET 100000` regardless of the last row"
+        },
+        {
+          "id": "b",
+          "text": "Use a cursor containing both created_at and id and a predicate that compares the same ordered pair"
+        },
+        {
+          "id": "c",
+          "text": "Filter only by created_at even when many rows share it"
+        },
+        {
+          "id": "d",
+          "text": "Drop ORDER BY to make pagination faster"
+        }
+      ],
+      "explanation": "The cursor must uniquely identify the position in the full order. Including the tie-breaker prevents skipped or repeated rows when timestamps tie.",
+      "correctOptionId": "b"
+    },
+    {
+      "id": "distinct-whole-row",
+      "type": "single_select",
+      "prompt": "`SELECT DISTINCT customer_id, status FROM orders` returns two rows for one customer with different statuses. Why?",
+      "options": [
+        {
+          "id": "a",
+          "text": "DISTINCT only checks customer_id"
+        },
+        {
+          "id": "b",
+          "text": "DISTINCT removes duplicates of the complete selected tuple, so the different statuses make rows distinct"
+        },
+        {
+          "id": "c",
+          "text": "DISTINCT chooses the newest order automatically"
+        },
+        {
+          "id": "d",
+          "text": "The database ignored DISTINCT"
+        }
+      ],
+      "explanation": "DISTINCT applies to all selected expressions together; it is not a per-customer row-selection operation.",
+      "correctOptionId": "b"
+    },
+    {
+      "id": "like-operator",
+      "type": "single_select",
+      "prompt": "Which statement about PostgreSQL `LIKE` and `ILIKE` is correct?",
+      "options": [
+        {
+          "id": "a",
+          "text": "`ILIKE` is PostgreSQL's case-insensitive pattern-match operator"
+        },
+        {
+          "id": "b",
+          "text": "`LIKE` always ignores case"
+        },
+        {
+          "id": "c",
+          "text": "`%` matches exactly one character"
+        },
+        {
+          "id": "d",
+          "text": "Leading-wildcard patterns always use a normal B-tree efficiently"
+        }
+      ],
+      "explanation": "ILIKE is PostgreSQL-specific case-insensitive pattern matching in the ordinary usage shown. `%` matches zero or more characters; a leading wildcard often limits a normal B-tree's usefulness.",
+      "correctOptionId": "a"
     }
   ],
   "interviewScenarios": [

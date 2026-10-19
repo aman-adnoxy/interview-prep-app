@@ -1,0 +1,339 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "authentication-authorization-tenant-isolation",
+  "topicId": "ai-engineering-python-data-backend",
+  "sectionId": "authentication-authorization-tenant-isolation",
+  "title": "Authentication, Authorization, and Tenant Isolation",
+  "description": "Protect API endpoints, queries, caches, and background work using verified identity and tenant-scoped permissions.",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 40,
+  "learningObjectives": [
+    "Distinguish authentication, authorization, and tenant scoping.",
+    "Derive tenant identity from trusted authenticated context rather than request-controlled values.",
+    "Apply tenant filters to database operations and cache/resource lookup.",
+    "Recognize IDOR/BOLA, confused-deputy, logging, and background-job authorization risks."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "Authentication answers who is making the request; authorization answers what that identity may do; tenant isolation ensures one customer cannot access another customer's data. A model's answer, a supplied tenant ID, or an opaque resource ID is not proof of permission."
+  },
+  "concepts": [
+    {
+      "id": "identity-and-permissions",
+      "title": "Authentication is different from authorization",
+      "blocks": [
+        {
+          "type": "table",
+          "title": "Security checks",
+          "columns": [
+            "Question",
+            "Example",
+            "Where to enforce"
+          ],
+          "rows": [
+            [
+              "Authentication: who are you?",
+              "Verify session/token signature, expiry, issuer, audience, and identity",
+              "Trusted middleware or identity layer"
+            ],
+            [
+              "Authorization: may you do this?",
+              "Can this identity read invoice 42?",
+              "Application policy/resource check"
+            ],
+            [
+              "Tenant isolation: which customer scope applies?",
+              "Does the row belong to the principal's tenant?",
+              "Query/data access and downstream layers"
+            ],
+            [
+              "Audit: what happened?",
+              "Record actor, action, resource ID, and outcome",
+              "Structured logs with sensitive fields redacted"
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Passing authentication does not imply permission for every resource. A user can have a valid token yet lack access to another customer's invoice. Check the actual object and requested action for every sensitive read/write, not just at login or route entry."
+        }
+      ]
+    },
+    {
+      "id": "trusted-tenant-context",
+      "title": "Derive tenant scope from verified identity",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Use authenticated principal context for the tenant filter",
+          "source": "def get_invoice(db, principal, invoice_id: str):\n    # principal.tenant_id comes from verified server-side identity context.\n    return db.fetch_one(\n        \"SELECT id, total FROM invoices WHERE tenant_id = :tenant AND id = :id\",\n        {\"tenant\": principal.tenant_id, \"id\": invoice_id},\n    )"
+        },
+        {
+          "type": "paragraph",
+          "text": "This is schematic database-client code; `principal` must already come from successful authentication. Do not use `tenant_id` supplied in the URL/body as the authority for the query. If the API allows an explicit tenant selection for an authorized admin, verify that grant before using the selected tenant."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A user changes `/tenants/acme/invoices/42` to `/tenants/other/invoices/42` and receives a response.",
+          "reasoning": [
+            "Treat the route tenant as input, not proof of access.",
+            "Derive or verify the authorized tenant from the authenticated principal and policy.",
+            "Query by both tenant scope and resource ID; decide whether unauthorized and absent objects intentionally share a 404-style response.",
+            "Add adversarial tests that substitute IDs and tenant values across every endpoint and export path."
+          ],
+          "outcome": "Opaque IDs reduce guessing but never replace object-level authorization and tenant-scoped data access."
+        }
+      ]
+    },
+    {
+      "id": "cache-and-background-isolation",
+      "title": "Propagate the security boundary to caches and workers",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "The authorization boundary can be lost after the endpoint. A cache key missing tenant identity can return the wrong tenant's value. A background job that stores only `invoice_id` may later run without enough context to verify ownership or policy. Treat queued jobs and caches as separate trust boundaries."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Include tenant and representation identity in a cache key",
+          "source": "key = f\"invoice:v2:tenant:{principal.tenant_id}:invoice:{invoice_id}\"\n# Still check authorization before returning or mutating a protected resource."
+        },
+        {
+          "type": "paragraph",
+          "text": "Every dimension that changes a response may belong in the key: tenant, permission/version scope, locale, filters, and pagination. A key is not itself authorization; protect cache access and re-check policy when needed."
+        },
+        {
+          "type": "paragraph",
+          "text": "For queued work, store the requesting principal/tenant, resource identity, intended action, and a durable authorization decision/context appropriate to the business policy. Re-check permissions at execution if access may change while the job waits."
+        }
+      ]
+    },
+    {
+      "id": "least-privilege-and-audit",
+      "title": "Least privilege and secure failure behavior",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Use least-privilege database credentials, service identities, and tool/API scopes. Separate tenant data from logs/telemetry, never log raw access tokens or complete private document bodies by default, and ensure error responses do not reveal another tenant's record existence or contents."
+        },
+        {
+          "type": "table",
+          "title": "Common failure",
+          "columns": [
+            "Common failure",
+            "Safer handling"
+          ],
+          "rows": [
+            [
+              "IDOR/BOLA: guess another object's ID",
+              "Authorize the caller against the specific object/action on every request"
+            ],
+            [
+              "Client controls tenant ID",
+              "Use trusted claims/policy and explicit admin delegation checks"
+            ],
+            [
+              "Cross-tenant cache collision",
+              "Include tenant/response scope in keys and retain authorization checks"
+            ],
+            [
+              "Worker runs after permissions change",
+              "Re-evaluate policy at execution where required and audit the actor/action"
+            ],
+            [
+              "LLM asks to access another tenant",
+              "Treat model text as untrusted; only authorized server-side tools can access data"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Do not let the LLM grant permissions",
+          "content": "A model can suggest actions or summarize content, but permissions must be enforced by trusted identity and application policy outside the model. Tool allowlists, scoped credentials, and audit trails limit impact."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "paragraph",
+      "text": "Returning 404 for an unauthorized resource can reduce existence disclosure but makes debugging and client behavior less explicit; returning 403 may be appropriate when the contract permits it. Choose a consistent policy, avoid leaking data, and test it on all access paths."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Authentication verifies identity; authorization evaluates action/resource permissions; tenant scoping enforces customer boundaries."
+    },
+    {
+      "type": "paragraph",
+      "text": "Never trust a client-supplied tenant ID without verifying authority for that scope."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use tenant-scoped queries and cache keys, but do not treat either as a substitute for authorization."
+    },
+    {
+      "type": "paragraph",
+      "text": "Re-check the boundary in exports, workers, retries, logs, and LLM/tool integrations."
+    }
+  ],
+  "questions": [
+    {
+      "id": "auth-tenant-q1",
+      "type": "single_select",
+      "prompt": "A valid token identifies a user from Tenant A. The user requests an invoice belonging to Tenant B. What is required?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Object-level authorization and tenant scope checks for this specific invoice"
+        },
+        {
+          "id": "b",
+          "text": "No check, because authentication succeeded"
+        },
+        {
+          "id": "c",
+          "text": "Ask the LLM whether the user seems trustworthy"
+        },
+        {
+          "id": "d",
+          "text": "Return the object if its ID is hard to guess"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Authentication establishes identity; authorization must still permit the action on the specific tenant-owned resource."
+    },
+    {
+      "id": "auth-tenant-q2",
+      "type": "single_select",
+      "prompt": "Where should a normal tenant-scoped database query get its tenant ID?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Trusted authenticated principal/policy context"
+        },
+        {
+          "id": "b",
+          "text": "Whatever tenant ID appears in the request body, without verification"
+        },
+        {
+          "id": "c",
+          "text": "The result generated by an LLM"
+        },
+        {
+          "id": "d",
+          "text": "A random default tenant"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Tenant identity must be derived from verified context or checked through an explicit authorized delegation flow."
+    },
+    {
+      "id": "auth-tenant-q3",
+      "type": "single_select",
+      "prompt": "A cache uses `invoice:42`, but invoice IDs are only unique within each tenant. What is the risk?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Cross-tenant data can collide in the cache"
+        },
+        {
+          "id": "b",
+          "text": "The cache is automatically secure"
+        },
+        {
+          "id": "c",
+          "text": "The database transaction becomes serializable"
+        },
+        {
+          "id": "d",
+          "text": "Every cache hit becomes a miss"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "The key must reflect tenant and other dimensions that change the response, while authorization still applies."
+    },
+    {
+      "id": "auth-tenant-q4",
+      "type": "single_select",
+      "prompt": "A queued export runs 20 minutes after the request and permissions may change during that time. What should the design consider?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Persist actor/tenant/resource context and re-check authorization at execution when policy requires it"
+        },
+        {
+          "id": "b",
+          "text": "Assume enqueue-time authentication permits every future action forever"
+        },
+        {
+          "id": "c",
+          "text": "Trust any tenant ID the worker receives"
+        },
+        {
+          "id": "d",
+          "text": "Skip audit logs for background jobs"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "A queue is another trust boundary. Store trusted context and enforce the policy appropriate to execution time."
+    },
+    {
+      "id": "auth-tenant-q5",
+      "type": "true_false",
+      "prompt": "A random or unguessable resource ID eliminates the need for authorization checks.",
+      "correctAnswer": false,
+      "explanation": "IDs are not permissions. Every protected operation must authorize the caller against the resource."
+    },
+    {
+      "id": "auth-tenant-q6",
+      "type": "true_false",
+      "prompt": "An LLM response saying that a user is allowed to access a record is sufficient authorization evidence.",
+      "correctAnswer": false,
+      "explanation": "Permissions belong in trusted, deterministic application policy based on verified identity and resource scope."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "auth-tenant-scenario-1",
+      "prompt": "A multi-tenant AI assistant occasionally returns document titles from the wrong customer's knowledge base. How do you investigate?",
+      "skillsTested": [
+        "Tenant security",
+        "Retrieval/data access",
+        "Cache design"
+      ],
+      "strongAnswerPoints": [
+        "Trace principal-to-tenant mapping through retrieval filters and data access.",
+        "Inspect cache keys, background ingestion metadata, and any shared/global context missing tenant scope.",
+        "Add cross-tenant adversarial tests and enforce server-side filters/authorization on every retrieval path."
+      ],
+      "pitfalls": [
+        "Treating the leak as merely a retrieval relevance issue",
+        "Trusting the model to filter other tenants out of prompt context"
+      ],
+      "referenceAnswer": "I'd trace identity, tenant-scoped retrieval and cache keys end to end. The model must never be relied on to enforce isolation; the server should filter authorized sources before content reaches the model and test cross-tenant access explicitly."
+    },
+    {
+      "id": "auth-tenant-scenario-2",
+      "prompt": "An API accepts a `tenant_id` in JSON and uses it directly to query invoices after validating a user token. What is wrong?",
+      "skillsTested": [
+        "Authentication and authorization",
+        "Trust boundaries",
+        "API design"
+      ],
+      "strongAnswerPoints": [
+        "The tenant supplied by the client is untrusted input.",
+        "Derive tenant scope from the verified principal or authorize an explicit delegated tenant selection.",
+        "Scope the query by tenant and invoice ID, and audit privileged cross-tenant actions."
+      ],
+      "pitfalls": [
+        "Assuming authentication means the client may select any tenant"
+      ],
+      "referenceAnswer": "The token authenticates the user but does not grant arbitrary tenant selection. I'd derive the tenant from trusted claims, enforce explicit policy for administrative cross-tenant access, and apply the tenant filter in the query."
+    }
+  ]
+}

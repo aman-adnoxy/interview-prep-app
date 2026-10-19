@@ -8,7 +8,12 @@ import {
   Sparkles
 } from 'lucide-react';
 import { sound } from '../services/sound';
-import { getTopicTheme } from '../topicThemes';
+import { getTopicTheme, getStageTheme } from '../topicThemes';
+import {
+  groupSectionsByStage,
+  countPublishedSections,
+  countCompletedSections,
+} from '../services/stages';
 
 export default function TopicLearningPath({
   topic,
@@ -18,13 +23,29 @@ export default function TopicLearningPath({
 }) {
   const config = getTopicTheme(topic?.id);
   const Icon = config.icon;
-  const sections = topic?.sections || [];
 
-  const totalSections = sections.length;
-  const completedSections = sections.filter((s) => progressMap[s.id]?.completed).length;
+  const stageGroups = groupSectionsByStage(topic);
+  const sections = stageGroups.flatMap((group) => group.sections);
 
-  // Zig-zag offsets for Duolingo winding path
+  // Progress counts are published-section based (upcoming excluded)
+  const totalSections = sections.filter((s) => s?.status === 'published').length;
+  const completedSections = sections.filter(
+    (s) => s?.status === 'published' && progressMap[s.id]?.completed
+  ).length;
+
+  // Zig-zag offsets for Duolingo winding path (per stone inside a stage)
   const offsets = [0, 42, -36, 48, -42, 24, -24];
+
+  // "Current" semantics preserved: first published section whose predecessor
+  // in overall manifest order is completed (or the very first one)
+  const isCurrentSection = (section) => {
+    if (section?.status !== 'published') return false;
+    if (progressMap[section.id]?.completed) return false;
+    const flatIndex = sections.findIndex((s) => s.id === section.id);
+    if (flatIndex <= 0) return true;
+    const previous = sections[flatIndex - 1];
+    return Boolean(previous?.status !== 'published' || progressMap[previous.id]?.completed);
+  };
 
   return (
     <div className="duo-path-page animate-slide-up">
@@ -50,102 +71,159 @@ export default function TopicLearningPath({
             <Icon size={28} color="#ffffff" />
           </div>
           <div>
-            <div className="unit-super-tag" style={{ color: config.colorDark }}>SECTION 1</div>
+            <div className="unit-super-tag" style={{ color: config.colorDark }}>LEARNING TRACK</div>
             <h1 className="unit-main-title" style={{ color: config.titleColor }}>{topic.title}</h1>
             <p className="unit-tagline">{topic.description}</p>
           </div>
         </div>
       </header>
 
-      {/* Stepping Stones Course Path */}
+      {/* Stepping Stones Course Path — grouped into manifest-defined stages */}
       <div className="course-stones-track">
-        {sections.length > 0 ? (
-          sections.map((section, idx) => {
-            const prog = progressMap[section.id];
-            const isCompleted = Boolean(prog?.completed);
-            const isPublished = section.status === 'published';
-            const isCurrent = isPublished && !isCompleted && (idx === 0 || progressMap[sections[idx - 1]?.id]?.completed);
-            const isLocked = !isPublished;
-            const scoreTotal = section.questionCount ?? prog?.totalQuestions;
-            const xOffset = offsets[idx % offsets.length];
-
-            return (
-              <div 
-                key={section.id} 
-                className="stone-node-wrap"
-                style={{ transform: `translateX(${xOffset}px)` }}
-              >
-                {/* Connecting Dotted Line */}
-                {idx < sections.length - 1 && (
-                  <div className="stone-connector-line" />
-                )}
-
-                <div className="node-assembly">
-                  <button
-                    className={`chunky-stone ${isCompleted ? 'completed' : ''} ${isCurrent ? 'active' : ''} ${isLocked ? 'locked' : ''}`}
-                    onClick={() => {
-                      if (isLocked) return;
-                      sound.playTap();
-                      onSelectSection(section);
-                    }}
-                    disabled={isLocked}
-                    title={
-                      !isPublished 
-                        ? `${section.title} (Upcoming)` 
-                        : section.title
-                    }
-                  >
-                    {isCompleted ? (
-                      <Check size={32} color="#ffffff" strokeWidth={3} />
-                    ) : isCurrent ? (
-                      <Play size={28} color="#ffffff" fill="#ffffff" />
-                    ) : (
-                      <Lock size={24} color="#94a3b8" />
-                    )}
-
-                    {isCurrent && (
-                      <div className="start-banner-badge">
-                        <Sparkles size={12} fill="#ffffff" />
-                        <span>START</span>
-                      </div>
-                    )}
-                  </button>
-
-                  {/* Section Label Card below stone */}
-                  <div 
-                    className={`stone-label-box ${isLocked ? 'locked-box' : ''}`} 
-                    onClick={() => {
-                      if (isLocked) return;
-                      sound.playTap();
-                      onSelectSection(section);
-                    }}
-                  >
-                    <div className="label-badge-row">
-                      <span className={`badge badge-${section.difficulty || 'beginner'}`}>
-                        {section.difficulty}
-                      </span>
-                      {!isPublished ? (
-                        <span className="upcoming-tag">Upcoming</span>
-                      ) : isCompleted ? (
-                        <span className="passed-badge">
-                          {(prog?.bestScore ?? prog?.lastScore)}/{scoreTotal} Correct
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="label-title">{section.title}</div>
-                    <div className="label-footer">{Number.isInteger(section.questionCount) ? `${section.questionCount} Questions • 1 Case` : 'Lesson coming soon'}</div>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        ) : (
+        {sections.length === 0 && (
           <div className="empty-topic-banner">
             <Lock size={36} color="#94a3b8" />
             <h3>Curriculum Launching Soon</h3>
             <p>New interactive sections for {topic.title} are in the content pipeline.</p>
           </div>
         )}
+
+        {stageGroups.map((group, groupIdx) => {
+          const stageTheme = getStageTheme(group.stage?.id, groupIdx);
+          const stagePublished = countPublishedSections(group);
+          const stageCompleted = countCompletedSections(group, progressMap);
+          const previousGroupLast = groupIdx > 0
+            ? stageGroups[groupIdx - 1].sections[stageGroups[groupIdx - 1].sections.length - 1]
+            : null;
+
+          if (group.sections.length === 0 && !group.stage) return null;
+
+          return (
+            <section
+              key={group.stage?.id || `stage-${groupIdx}`}
+              className="stage-band"
+              style={{ background: stageTheme.bg, borderColor: stageTheme.border }}
+              aria-labelledby={group.stage?.id ? `stage-title-${group.stage.id}` : undefined}
+            >
+              {group.stage ? (
+                <header className="stage-header">
+                  <span className="stage-order-chip" style={{ background: stageTheme.border, color: stageTheme.textColor }}>
+                    {Number.isFinite(group.stage.order) ? `STAGE ${group.stage.order}` : 'STAGE'}
+                  </span>
+                  <div className="stage-heading-block">
+                    <h2 id={group.stage?.id ? `stage-title-${group.stage.id}` : undefined} className="stage-title" style={{ color: stageTheme.textColor }}>
+                      {group.title}
+                    </h2>
+                    {group.description && <p className="stage-description">{group.description}</p>}
+                  </div>
+                  {stagePublished > 0 && (
+                    <span className="stage-progress-chip" style={{ color: stageTheme.textColor }}>
+                      {stageCompleted}/{stagePublished}
+                    </span>
+                  )}
+                </header>
+              ) : (
+                <header className="stage-header">
+                  <div className="stage-heading-block">
+                    <h2 className="stage-title" style={{ color: stageTheme.textColor }}>More lessons</h2>
+                    <p className="stage-description">Lessons awaiting stage assignment in the curriculum.</p>
+                  </div>
+                </header>
+              )}
+
+              <div className="stage-stones">
+                {group.sections.length === 0 ? (
+                  <p className="stage-empty-note">Lessons for this stage are coming soon.</p>
+                ) : group.sections.map((section, idx) => {
+                  const prog = progressMap[section.id];
+                  const isCompleted = Boolean(prog?.completed);
+                  const isPublished = section.status === 'published';
+                  const isCurrent = isCurrentSection(section);
+                  const isLastInStage = idx === group.sections.length - 1;
+                  // Connect within a stage; the stage band boundary visually
+                  // separates stages unless the previous stage ended completed
+                  const drawConnector = !isLastInStage || Boolean(
+                    groupIdx === stageGroups.length - 1 ? false
+                      : previousGroupLast && progressMap[previousGroupLast.id]?.completed
+                  );
+                  const scoreTotal = section.questionCount ?? prog?.totalQuestions;
+                  const xOffset = offsets[idx % offsets.length];
+
+                  return (
+                    <div 
+                      key={section.id} 
+                      className="stone-node-wrap"
+                      style={{ transform: `translateX(${xOffset}px)` }}
+                    >
+                      {drawConnector && (
+                        <div className="stone-connector-line" />
+                      )}
+
+                      <div className="node-assembly">
+                        <button
+                          className={`chunky-stone ${isCompleted ? 'completed' : ''} ${isCurrent ? 'active' : ''} ${!isPublished ? 'locked' : ''}`}
+                          onClick={() => {
+                            if (!isPublished) return;
+                            sound.playTap();
+                            onSelectSection(section);
+                          }}
+                          disabled={!isPublished}
+                          title={
+                            !isPublished 
+                              ? `${section.title} (Upcoming)` 
+                              : section.title
+                          }
+                        >
+                          {isCompleted ? (
+                            <Check size={32} color="#ffffff" strokeWidth={3} />
+                          ) : isCurrent ? (
+                            <Play size={28} color="#ffffff" fill="#ffffff" />
+                          ) : (
+                            <Lock size={24} color="#94a3b8" />
+                          )}
+
+                          {isCurrent && (
+                            <div className="start-banner-badge">
+                              <Sparkles size={12} fill="#ffffff" />
+                              <span>START</span>
+                            </div>
+                          )}
+                        </button>
+
+                        {/* Section Label Card below stone */}
+                        <button
+                          type="button"
+                          className={`stone-label-box ${!isPublished ? 'locked-box' : ''}`} 
+                          onClick={() => {
+                            if (!isPublished) return;
+                            sound.playTap();
+                            onSelectSection(section);
+                          }}
+                          disabled={!isPublished}
+                        >
+                          <div className="label-badge-row">
+                            <span className={`badge badge-${section.difficulty || 'beginner'}`}>
+                              {section.difficulty}
+                            </span>
+                            {!isPublished ? (
+                              <span className="upcoming-tag">Upcoming</span>
+                            ) : isCompleted ? (
+                              <span className="passed-badge">
+                                {(prog?.bestScore ?? prog?.lastScore)}/{scoreTotal} Correct
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="label-title">{section.title}</div>
+                          <div className="label-footer">{Number.isInteger(section.questionCount) ? `${section.questionCount} Questions • 1 Case` : 'Lesson coming soon'}</div>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
       </div>
 
       <style>{`
@@ -236,14 +314,81 @@ export default function TopicLearningPath({
           margin-top: 2px;
         }
 
-        /* Stepping Stones Path */
-        .course-stones-track {
-          padding: 40px 20px 60px 20px;
+        /* Stage bands: manifest-owned stages, subtle presentation tints */
+        .stage-band {
+          width: 100%;
+          max-width: 480px;
+          border: 2px solid;
+          border-radius: var(--radius-lg);
+          padding: 18px 14px 26px 14px;
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 52px;
+        }
+
+        .stage-header {
+          width: 100%;
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          margin-bottom: 26px;
+          padding: 0 6px;
+        }
+
+        .stage-order-chip {
+          flex-shrink: 0;
+          font-size: 0.62rem;
+          font-weight: 900;
+          letter-spacing: 0.06em;
+          padding: 4px 9px;
+          border-radius: var(--radius-full);
+          margin-top: 2px;
+        }
+
+        .stage-heading-block {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .stage-title {
+          font-size: 1.02rem;
+          font-weight: 900;
+          line-height: 1.3;
+        }
+
+        .stage-description {
+          font-size: 0.78rem;
+          color: #64748b;
+          line-height: 1.45;
+          margin-top: 2px;
+        }
+
+        .stage-progress-chip {
+          flex-shrink: 0;
+          font-size: 0.74rem;
+          font-weight: 900;
+          background: #ffffff;
+          border: 2px solid rgba(0, 0, 0, 0.06);
+          padding: 3px 10px;
+          border-radius: var(--radius-full);
+          margin-top: 2px;
+        }
+
+        .stage-stones {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 48px;
           position: relative;
+          width: 100%;
+        }
+
+        .stage-empty-note {
+          font-size: 0.82rem;
+          color: #94a3b8;
+          font-weight: 700;
+          text-align: center;
+          padding: 12px;
         }
 
         .stone-node-wrap {
@@ -283,6 +428,13 @@ export default function TopicLearningPath({
           position: relative;
           outline: none;
           transition: all 0.12s ease;
+        }
+
+        .chunky-stone:focus-visible,
+        .stone-label-box:focus-visible,
+        .btn-back-tracks:focus-visible {
+          outline: 3px solid #2563eb;
+          outline-offset: 3px;
         }
 
         .chunky-stone.completed {
@@ -342,6 +494,7 @@ export default function TopicLearningPath({
           text-align: center;
           cursor: pointer;
           transition: all 0.12s ease;
+          font-family: inherit;
         }
         .stone-label-box:hover {
           border-color: #cbd5e1;

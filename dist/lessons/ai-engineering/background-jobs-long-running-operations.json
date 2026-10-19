@@ -1,0 +1,352 @@
+{
+  "schemaVersion": "2.0.0",
+  "id": "background-jobs-long-running-operations",
+  "topicId": "ai-engineering-python-data-backend",
+  "sectionId": "background-jobs-long-running-operations",
+  "title": "Background Jobs and Long-Running Operations: Queues, Status, Cancellation, Recovery",
+  "description": "Design API workflows for operations that outlast a normal request without losing status, results, or security context.",
+  "difficulty": "intermediate",
+  "estimatedMinutes": 42,
+  "learningObjectives": [
+    "Explain when a request should return a job ID rather than hold an HTTP connection open.",
+    "Design durable job states, status polling, result persistence, and tenant-aware access.",
+    "Handle duplicate delivery, bounded retries, cancellation, worker failure, and recovery.",
+    "Explain when an outbox or idempotency key is needed to coordinate job creation with database state."
+  ],
+  "mentalModel": {
+    "type": "paragraph",
+    "text": "A long-running operation is a workflow with a lifecycle, not a slow HTTP request. Accept it durably, return an identifier, track progress and terminal state, persist the result, and make every transition safe when messages repeat or workers crash."
+  },
+  "concepts": [
+    {
+      "id": "accept-and-track",
+      "title": "Accept work and return a job resource",
+      "blocks": [
+        {
+          "type": "table",
+          "title": "Example asynchronous job contract",
+          "columns": [
+            "Operation",
+            "Example response",
+            "Meaning"
+          ],
+          "rows": [
+            [
+              "POST /v1/exports",
+              "202 Accepted plus `job_id` and `status_url`",
+              "The request has been accepted; work is not complete."
+            ],
+            [
+              "GET /v1/jobs/{id}",
+              "Status, progress, created/updated time, safe error code",
+              "Client can poll without holding original connection."
+            ],
+            [
+              "GET /v1/jobs/{id}/result",
+              "Result or temporary result URL",
+              "Available only when job completes and caller is authorized."
+            ],
+            [
+              "POST /v1/jobs/{id}/cancel",
+              "Accepted/cancelled/conflict response",
+              "Cancellation is a request to change state, not necessarily instantaneous."
+            ]
+          ]
+        },
+        {
+          "type": "code",
+          "language": "json",
+          "title": "Example accepted-job response",
+          "source": "{\n  \"job_id\": \"job_01JABC\",\n  \"status\": \"queued\",\n  \"status_url\": \"/v1/jobs/job_01JABC\"\n}"
+        },
+        {
+          "type": "paragraph",
+          "text": "A 202 response means the server accepted the work, not that it has completed. Persist the job and its stable ID before confirming acceptance. Expose progress and errors through a status contract instead of keeping an HTTP connection open for the entire operation."
+        }
+      ]
+    },
+    {
+      "id": "durable-state-and-result",
+      "title": "Persist state transitions and result ownership",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A queue message is not a complete source of truth for status. Persist job state in a database or other durable store so a worker restart does not erase whether the job was queued, running, retrying, completed, failed, or cancelled. Define allowed transitions and how a worker claims a job so multiple workers do not process it concurrently by accident."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Represent the durable job fields with a typed Python dataclass",
+          "source": "from dataclasses import dataclass, field\nfrom datetime import datetime, timezone\n\n\n@dataclass\nclass JobRecord:\n    job_id: str\n    tenant_id: str\n    requested_by: str\n    operation_type: str\n    status: str = \"queued\"\n    progress: float = 0.0\n    idempotency_key: str | None = None\n    attempt_count: int = 0\n    result_location: str | None = None\n    error_code: str | None = None\n    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))\n    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))\n\n\njob = JobRecord(\n    job_id=\"job_01JABC\",\n    tenant_id=\"tenant-42\",\n    requested_by=\"user-17\",\n    operation_type=\"export\",\n)\nprint(job.status, job.progress)"
+        },
+        {
+          "type": "paragraph",
+          "text": "Expected output: `queued 0.0`. This is executable Python 3.10+ code: the dataclass gives the fields explicit types and defaults, and each timestamp uses a timezone-aware UTC value. The example models metadata only; actual state transitions still need transactional persistence, validation, and authorization."
+        },
+        {
+          "type": "paragraph",
+          "text": "Large results are often better stored in object storage or a database record than embedded in every status response. Store a stable result reference and enforce the same tenant/resource access rules when the result is downloaded."
+        },
+        {
+          "type": "worked_example",
+          "problem": "A worker finishes generating an export but crashes before acknowledging the queue message.",
+          "reasoning": [
+            "The queue may redeliver the message because the acknowledgement was not recorded.",
+            "The worker should identify the existing job and make completion idempotent instead of creating a second export or overwriting a newer state.",
+            "Persist the result with a stable key or version, commit terminal job state, and acknowledge the message according to the queue's semantics."
+          ],
+          "outcome": "Assume deliveries may repeat. Durable state, stable job identity, and idempotent completion prevent redelivery from becoming duplicate business work."
+        }
+      ]
+    },
+    {
+      "id": "retries-cancellation-recovery",
+      "title": "Retries, cancellation, and worker recovery",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A robust worker distinguishes transient failure from permanent invalid input. Retry transient dependency failures with bounded attempts and exponential backoff plus jitter; route exhausted or poison messages to a review/dead-letter path. Repeated retries without backpressure can amplify the outage."
+        },
+        {
+          "type": "paragraph",
+          "text": "Cancellation is usually cooperative. The worker checks a cancellation flag at safe checkpoints, stops starting new steps, releases resources, and marks the result/state according to a documented contract. If a payment or external API call already happened, setting a flag cannot undo that side effect."
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Worker lifecycle outline (schematic pseudocode)",
+          "source": "claim_job(job_id)\nif cancellation_requested(job_id):\n    mark_cancelled(job_id)\nelse:\n    mark_running(job_id)\n    try:\n        for step in workflow_steps(job_id):\n            if cancellation_requested(job_id):\n                mark_cancelled(job_id)\n                break\n            result = run_step_idempotently(step)\n            persist_checkpoint(job_id, result)\n        else:\n            mark_completed_with_result(job_id)\n    except TransientError:\n        schedule_bounded_retry(job_id)\n    except PermanentError:\n        mark_failed_with_safe_error_code(job_id)"
+        },
+        {
+          "type": "paragraph",
+          "text": "This is a lifecycle outline, not executable Python. The implementation must make state changes conditional and transactional where needed, record attempt number and safe error class, and make external effects idempotent or compensatable."
+        }
+      ]
+    },
+    {
+      "id": "enqueue-consistency-and-observability",
+      "title": "Ensure work is not lost between the database and the queue",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A dual-write bug appears when an API commits a database row but fails before publishing its queue message—or publishes a message but then rolls back the database row. If losing or duplicating a job is unacceptable, store an outbox record in the same database transaction as the business/job record. A separate publisher sends the outbox message and marks it delivered; consumers must still tolerate duplicates."
+        },
+        {
+          "type": "table",
+          "title": "Operational signals",
+          "columns": [
+            "Signal",
+            "What it reveals"
+          ],
+          "rows": [
+            [
+              "Queue depth and oldest-message age",
+              "Whether work arrives faster than workers complete it"
+            ],
+            [
+              "Job duration by operation type",
+              "Slow workflow stages and capacity planning"
+            ],
+            [
+              "Retry count and dead-letter count",
+              "Dependency instability or invalid/poison jobs"
+            ],
+            [
+              "Queued/running/stuck jobs",
+              "Claim/lease recovery and worker liveness"
+            ],
+            [
+              "Result/error rates by tenant-safe dimensions",
+              "Correctness and service health without leaking customer content"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "kind": "pitfall",
+          "title": "Keep status polling cheap and secure",
+          "content": "Poll only a status resource, use bounded intervals/backoff or server push where appropriate, and authorize status/result access by tenant. Never return another customer's job status because a guessed job ID exists."
+        }
+      ]
+    }
+  ],
+  "tradeoffsAndPitfalls": [
+    {
+      "type": "paragraph",
+      "text": "Polling is simple but creates repeated reads; webhooks or server-sent events can reduce polling but add delivery/reconnect complexity. A queue adds durability and decoupling, yet requires monitoring, idempotency, retries, worker recovery, and dead-letter operations."
+    }
+  ],
+  "revisionSheet": [
+    {
+      "type": "paragraph",
+      "text": "Return 202 plus a stable job ID when work outlasts a normal request; persist the job before claiming acceptance."
+    },
+    {
+      "type": "paragraph",
+      "text": "Track queued/running/retrying/completed/failed/cancelled states and persist results/progress safely."
+    },
+    {
+      "type": "paragraph",
+      "text": "Assume queue delivery and client requests may repeat; use idempotency and conditional state transitions."
+    },
+    {
+      "type": "paragraph",
+      "text": "Use cooperative cancellation, bounded retries/backoff, dead-letter handling, tenant-aware result access, and an outbox when DB+queue dual-write loss matters."
+    }
+  ],
+  "questions": [
+    {
+      "id": "background-q1",
+      "type": "single_select",
+      "prompt": "Why might a long-running export endpoint return 202 Accepted with a job ID?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The job was accepted but will finish later, and the client can query its status"
+        },
+        {
+          "id": "b",
+          "text": "The job is guaranteed completed"
+        },
+        {
+          "id": "c",
+          "text": "The response authorizes all users to read its result"
+        },
+        {
+          "id": "d",
+          "text": "The server can discard the request without recording it"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "202 distinguishes acceptance from completion; the server should persist a job identity and expose a status contract."
+    },
+    {
+      "id": "background-q2",
+      "type": "single_select",
+      "prompt": "A worker finishes a job but crashes before acknowledging the queue message. What should the system expect?",
+      "options": [
+        {
+          "id": "a",
+          "text": "The message may be delivered again; completion needs idempotent handling"
+        },
+        {
+          "id": "b",
+          "text": "The queue must know the external side effect was undone"
+        },
+        {
+          "id": "c",
+          "text": "The job can never run again"
+        },
+        {
+          "id": "d",
+          "text": "The browser will repair the database"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Many queues provide at-least-once delivery, so repeated processing must be safe."
+    },
+    {
+      "id": "background-q3",
+      "type": "single_select",
+      "prompt": "A user requests cancellation while a worker is midway through a document workflow. What design is appropriate?",
+      "options": [
+        {
+          "id": "a",
+          "text": "Cooperative cancellation at safe checkpoints and a documented terminal state"
+        },
+        {
+          "id": "b",
+          "text": "Assume all external effects can instantly be reversed"
+        },
+        {
+          "id": "c",
+          "text": "Delete the job row immediately even if work is running"
+        },
+        {
+          "id": "d",
+          "text": "Ignore cancellation forever"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Cancellation is a workflow transition; worker checks, cleanup, and external side-effect semantics must be explicit."
+    },
+    {
+      "id": "background-q4",
+      "type": "single_select",
+      "prompt": "When is a transactional outbox useful?",
+      "options": [
+        {
+          "id": "a",
+          "text": "When database state and queue publication must not silently diverge across a dual write"
+        },
+        {
+          "id": "b",
+          "text": "When a Python list needs sorting"
+        },
+        {
+          "id": "c",
+          "text": "To make every external API exactly-once automatically"
+        },
+        {
+          "id": "d",
+          "text": "To avoid persisting job state"
+        }
+      ],
+      "correctOptionId": "a",
+      "explanation": "Writing an outbox row with the business record lets a publisher retry queue delivery; consumers still need idempotency."
+    },
+    {
+      "id": "background-q5",
+      "type": "true_false",
+      "prompt": "The presence of a queue message alone is enough to provide durable, user-visible job status after worker restarts.",
+      "correctAnswer": false,
+      "explanation": "Status and results should be persisted in a durable record; queue retention/acknowledgement is a different concern."
+    },
+    {
+      "id": "background-q6",
+      "type": "true_false",
+      "prompt": "An idempotent worker should assume a queue message may be delivered more than once.",
+      "correctAnswer": true,
+      "explanation": "Redelivery is normal in many queue systems, especially when a worker fails before acknowledgement."
+    }
+  ],
+  "interviewScenarios": [
+    {
+      "id": "background-scenario-1",
+      "prompt": "A report takes 90 seconds to generate, and clients frequently disconnect before it finishes. How would you redesign the endpoint?",
+      "skillsTested": [
+        "Async job pattern",
+        "API contract",
+        "Durability"
+      ],
+      "strongAnswerPoints": [
+        "Create and persist a job with a stable ID before returning 202.",
+        "Run work in a queue/worker and expose authenticated status/result endpoints.",
+        "Persist progress, terminal state, and a safe error code; support retries and cancellation deliberately."
+      ],
+      "pitfalls": [
+        "Holding the HTTP request open for the entire export",
+        "Storing the only copy of status in worker memory"
+      ],
+      "referenceAnswer": "I'd turn the request into job submission: persist the job, return 202 and its status URL, process through a worker, and store result/status durably. Client disconnection would no longer cancel work accidentally."
+    },
+    {
+      "id": "background-scenario-2",
+      "prompt": "A job row is committed to PostgreSQL, but queue publication intermittently fails. Some jobs remain queued forever.",
+      "skillsTested": [
+        "Database/queue consistency",
+        "Observability",
+        "Recovery"
+      ],
+      "strongAnswerPoints": [
+        "Identify the dual-write gap between committing job state and publishing the queue message.",
+        "Use a transactional outbox or a reconciler that safely republishes unqueued jobs.",
+        "Make publication/consumption idempotent and monitor oldest queued-job age, retries, and outbox backlog."
+      ],
+      "pitfalls": [
+        "Blindly inserting a new job row each retry"
+      ],
+      "referenceAnswer": "I'd persist an outbox row in the same transaction as the job, let a publisher retry sending it, and make consumers idempotent. Monitoring queued-job age makes lost dispatch visible."
+    }
+  ]
+}

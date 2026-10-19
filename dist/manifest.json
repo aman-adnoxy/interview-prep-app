@@ -11,9 +11,53 @@
   "topics": [
     {
       "id": "databases",
-      "title": "Databases",
-      "description": "SQL fundamentals, schema design, indexes, query performance, caching, database trade-offs and scale.",
+      "title": "Database Engineering",
+      "description": "A practical database engineering track covering SQL, data modeling, transactions, indexes, query execution, caching, scaling, and production operations.",
       "order": 1,
+      "stages": [
+        {
+          "id": "sql-relational-foundations",
+          "title": "SQL and Relational Foundations",
+          "description": "Query fundamentals, relational modeling, joins, aggregation, NULL behavior, normalization, and advanced SQL.",
+          "order": 1
+        },
+        {
+          "id": "transactions-concurrency",
+          "title": "Transactions and Concurrency",
+          "description": "ACID, isolation, locking, anomalies, safe retries, and concurrent updates.",
+          "order": 2
+        },
+        {
+          "id": "indexes-query-performance",
+          "title": "Indexes and Query Performance",
+          "description": "Index structures, index families, composite design, query plans, and index selection.",
+          "order": 3
+        },
+        {
+          "id": "database-internals",
+          "title": "Database Internals",
+          "description": "Storage pages, execution internals, MVCC, memory, and engine behavior.",
+          "order": 4
+        },
+        {
+          "id": "caching",
+          "title": "Redis and Caching",
+          "description": "Cache design, TTLs, invalidation, cache stampedes, and isolation.",
+          "order": 5
+        },
+        {
+          "id": "database-choice-and-scaling",
+          "title": "Database Choice, Scaling and Reliability",
+          "description": "Relational vs. document databases, replication, distribution, scaling, and reliability.",
+          "order": 6
+        },
+        {
+          "id": "production-operations",
+          "title": "Production Operations",
+          "description": "Backups, migrations, monitoring, safe index and constraint changes, and operational recovery.",
+          "order": 7
+        }
+      ],
       "sections": [
         {
           "id": "sql-query-fundamentals",
@@ -22,8 +66,9 @@
           "order": 1,
           "status": "published",
           "lessonPath": "/lessons/databases/sql-query-fundamentals.json",
-          "questionCount": 8,
-          "lessonId": "sql-query-fundamentals"
+          "questionCount": 12,
+          "lessonId": "sql-query-fundamentals",
+          "stageId": "sql-relational-foundations"
         },
         {
           "id": "relational-databases-keys-constraints",
@@ -33,67 +78,74 @@
           "status": "published",
           "lessonPath": "/lessons/databases/relational-databases-keys-constraints.json",
           "questionCount": 12,
-          "lessonId": "relational-databases-keys-constraints"
-        },
-        {
-          "id": "database-transactions-isolation",
-          "title": "Database Transactions and Isolation: ACID, Locks, and Concurrency",
-          "difficulty": "intermediate",
-          "order": 3,
-          "status": "published",
-          "lessonPath": "/lessons/databases/database-transactions-isolation.json",
-          "questionCount": 8,
-          "lessonId": "database-transactions-isolation"
+          "lessonId": "relational-databases-keys-constraints",
+          "stageId": "sql-relational-foundations"
         },
         {
           "id": "sql-joins",
           "title": "SQL Joins: INNER, LEFT, RIGHT, and FULL OUTER JOIN",
           "difficulty": "beginner",
-          "order": 4,
+          "order": 3,
           "status": "published",
           "lessonPath": "/lessons/databases/sql-joins.json",
           "questionCount": 12,
-          "lessonId": "sql-joins-inner-left-right-full"
+          "lessonId": "sql-joins-inner-left-right-full",
+          "stageId": "sql-relational-foundations"
         },
         {
           "id": "sql-aggregation-group-by-having-ctes",
           "title": "Aggregations, GROUP BY, HAVING, Subqueries, and CTEs",
           "difficulty": "intermediate",
-          "order": 5,
+          "order": 4,
           "status": "published",
           "lessonPath": "/lessons/databases/sql-aggregation-group-by-having-ctes.json",
           "questionCount": 12,
-          "lessonId": "sql-aggregation-group-by-having-ctes"
+          "lessonId": "sql-aggregation-group-by-having-ctes",
+          "stageId": "sql-relational-foundations"
         },
         {
           "id": "sql-null-semantics",
           "title": "NULL Semantics, Three-Valued Logic, and Common SQL Pitfalls",
           "difficulty": "intermediate",
-          "order": 6,
+          "order": 5,
           "status": "published",
           "lessonPath": "/lessons/databases/sql-null-semantics.json",
           "questionCount": 12,
-          "lessonId": "sql-null-three-valued-logic"
+          "lessonId": "sql-null-three-valued-logic",
+          "stageId": "sql-relational-foundations"
         },
         {
           "id": "schema-design-normalization",
           "title": "Database Schema Design, Normalization (1NF–3NF), and Denormalization",
           "difficulty": "intermediate",
-          "order": 7,
+          "order": 6,
           "status": "published",
           "lessonPath": "/lessons/databases/schema-design-normalization.json",
           "questionCount": 12,
-          "lessonId": "database-schema-design-normalization"
+          "lessonId": "database-schema-design-normalization",
+          "stageId": "sql-relational-foundations"
         },
         {
           "id": "advanced-sql-window-functions-set-operations",
           "title": "Advanced SQL: Window Functions, Ranking, Set Operations, and Latest-Row-per-Group Queries",
           "difficulty": "intermediate",
-          "order": 8,
+          "order": 7,
           "status": "published",
           "lessonPath": "/lessons/databases/advanced-sql-window-functions-set-operations.json",
           "questionCount": 12,
-          "lessonId": "advanced-sql-window-functions-set-operations"
+          "lessonId": "advanced-sql-window-functions-set-operations",
+          "stageId": "sql-relational-foundations"
+        },
+        {
+          "id": "database-transactions-isolation",
+          "title": "Database Transactions and Isolation: ACID, Locks, and Concurrency",
+          "difficulty": "intermediate",
+          "order": 8,
+          "status": "published",
+          "lessonPath": "/lessons/databases/database-transactions-isolation.json",
+          "questionCount": 12,
+          "lessonId": "database-transactions-isolation",
+          "stageId": "transactions-concurrency"
         },
         {
           "id": "index-fundamentals",
@@ -102,8 +154,9 @@
           "order": 9,
           "status": "published",
           "lessonPath": "/lessons/databases/index-fundamentals.json",
-          "questionCount": 8,
-          "lessonId": "database-index-fundamentals"
+          "questionCount": 12,
+          "lessonId": "database-index-fundamentals",
+          "stageId": "indexes-query-performance"
         },
         {
           "id": "index-design-performance",
@@ -113,7 +166,8 @@
           "status": "published",
           "lessonPath": "/lessons/databases/index-design-performance.json",
           "questionCount": 12,
-          "lessonId": "database-btree-structure-traversal-splits"
+          "lessonId": "database-btree-structure-traversal-splits",
+          "stageId": "indexes-query-performance"
         },
         {
           "id": "database-clustered-vs-nonclustered-indexes",
@@ -123,7 +177,8 @@
           "status": "published",
           "lessonPath": "/lessons/databases/database-clustered-vs-nonclustered-indexes.json",
           "questionCount": 12,
-          "lessonId": "database-clustered-vs-nonclustered-indexes"
+          "lessonId": "database-clustered-vs-nonclustered-indexes",
+          "stageId": "indexes-query-performance"
         },
         {
           "id": "database-composite-indexes-column-order-leftmost-prefix",
@@ -133,7 +188,8 @@
           "status": "published",
           "lessonPath": "/lessons/databases/database-composite-indexes-column-order-leftmost-prefix.json",
           "questionCount": 12,
-          "lessonId": "database-composite-indexes-column-order-leftmost-prefix"
+          "lessonId": "database-composite-indexes-column-order-leftmost-prefix",
+          "stageId": "indexes-query-performance"
         },
         {
           "id": "database-postgresql-index-types",
@@ -143,7 +199,8 @@
           "status": "published",
           "lessonPath": "/lessons/databases/database-postgresql-index-types.json",
           "questionCount": 12,
-          "lessonId": "database-postgresql-index-types"
+          "lessonId": "database-postgresql-index-types",
+          "stageId": "indexes-query-performance"
         },
         {
           "id": "database-query-plan-analysis-explain-analyze-joins-sorts-spills",
@@ -153,7 +210,8 @@
           "status": "published",
           "lessonPath": "/lessons/databases/database-query-plan-analysis-explain-analyze-joins-sorts-spills.json",
           "questionCount": 12,
-          "lessonId": "database-query-plan-analysis-explain-analyze-joins-sorts-spills"
+          "lessonId": "database-query-plan-analysis-explain-analyze-joins-sorts-spills",
+          "stageId": "indexes-query-performance"
         },
         {
           "id": "database-index-selection-selectivity-sequential-scans-index-costs",
@@ -163,7 +221,8 @@
           "status": "published",
           "lessonPath": "/lessons/databases/database-index-selection-selectivity-sequential-scans-index-costs.json",
           "questionCount": 12,
-          "lessonId": "database-index-selection-selectivity-sequential-scans-index-costs"
+          "lessonId": "database-index-selection-selectivity-sequential-scans-index-costs",
+          "stageId": "indexes-query-performance"
         },
         {
           "id": "advanced-database-internals",
@@ -173,7 +232,8 @@
           "status": "published",
           "lessonPath": "/lessons/databases/advanced-database-internals.json",
           "questionCount": 12,
-          "lessonId": "advanced-database-internals"
+          "lessonId": "advanced-database-internals",
+          "stageId": "database-internals"
         },
         {
           "id": "redis-and-caching",
@@ -182,8 +242,9 @@
           "order": 17,
           "status": "published",
           "lessonPath": "/lessons/databases/redis-and-caching.json",
-          "questionCount": 8,
-          "lessonId": "redis-and-caching"
+          "questionCount": 12,
+          "lessonId": "redis-and-caching",
+          "stageId": "caching"
         },
         {
           "id": "postgresql-vs-mongodb",
@@ -193,7 +254,8 @@
           "status": "published",
           "lessonPath": "/lessons/databases/postgresql-vs-mongodb.json",
           "questionCount": 12,
-          "lessonId": "postgresql-vs-mongodb"
+          "lessonId": "postgresql-vs-mongodb",
+          "stageId": "database-choice-and-scaling"
         },
         {
           "id": "scaling-and-reliability",
@@ -203,7 +265,8 @@
           "status": "published",
           "lessonPath": "/lessons/databases/scaling-and-reliability.json",
           "questionCount": 12,
-          "lessonId": "scaling-and-reliability"
+          "lessonId": "scaling-and-reliability",
+          "stageId": "database-choice-and-scaling"
         },
         {
           "id": "database-production-operations",
@@ -212,8 +275,9 @@
           "order": 20,
           "status": "published",
           "lessonPath": "/lessons/databases/database-production-operations.json",
-          "questionCount": 8,
-          "lessonId": "database-production-operations"
+          "questionCount": 12,
+          "lessonId": "database-production-operations",
+          "stageId": "production-operations"
         }
       ]
     },
@@ -248,9 +312,244 @@
     {
       "id": "ai-engineering",
       "title": "AI Engineering",
-      "description": "RAG, agents, evaluation and production AI systems.",
+      "description": "A unified AI Engineering track from AI/ML foundations through Python, data handling, backend services, and reliable AI application foundations.",
       "order": 6,
-      "sections": []
+      "stages": [
+        {
+          "id": "ai-ml-foundations",
+          "title": "AI and ML Foundations",
+          "description": "Core AI/ML concepts, data preparation, training, generalization, and model evaluation.",
+          "order": 1
+        },
+        {
+          "id": "python-data-backend",
+          "title": "Python, Data and Backend Foundations",
+          "description": "Python, data processing, async/concurrency, APIs, security boundaries, and durable background work for AI applications.",
+          "order": 2
+        }
+      ],
+      "sections": [
+        {
+          "id": "ai-vs-ml-deep-learning-generative-ai",
+          "title": "AI vs Machine Learning vs Deep Learning vs Generative AI",
+          "difficulty": "beginner",
+          "order": 1,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/ai-vs-ml-deep-learning-generative-ai.json",
+          "questionCount": 6,
+          "lessonId": "ai-vs-ml-deep-learning-generative-ai",
+          "stageId": "ai-ml-foundations"
+        },
+        {
+          "id": "machine-learning-types",
+          "title": "Types of Machine Learning: Supervised, Unsupervised, Self-Supervised, and Reinforcement Learning",
+          "difficulty": "beginner",
+          "order": 2,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/machine-learning-types.json",
+          "questionCount": 6,
+          "lessonId": "machine-learning-types",
+          "stageId": "ai-ml-foundations"
+        },
+        {
+          "id": "classification-regression-clustering",
+          "title": "Classification, Regression, and Clustering",
+          "difficulty": "beginner",
+          "order": 3,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/classification-regression-clustering.json",
+          "questionCount": 6,
+          "lessonId": "classification-regression-clustering",
+          "stageId": "ai-ml-foundations"
+        },
+        {
+          "id": "training-validation-test-splits",
+          "title": "Training, Validation, and Test Datasets",
+          "difficulty": "beginner",
+          "order": 4,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/training-validation-test-splits.json",
+          "questionCount": 6,
+          "lessonId": "training-validation-test-splits",
+          "stageId": "ai-ml-foundations"
+        },
+        {
+          "id": "features-labels-parameters-hyperparameters",
+          "title": "Features, Labels, Parameters, and Hyperparameters",
+          "difficulty": "beginner",
+          "order": 5,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/features-labels-parameters-hyperparameters.json",
+          "questionCount": 6,
+          "lessonId": "features-labels-parameters-hyperparameters",
+          "stageId": "ai-ml-foundations"
+        },
+        {
+          "id": "feature-engineering-preprocessing",
+          "title": "Feature Engineering and Data Preprocessing",
+          "difficulty": "intermediate",
+          "order": 6,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/feature-engineering-preprocessing.json",
+          "questionCount": 6,
+          "lessonId": "feature-engineering-preprocessing",
+          "stageId": "ai-ml-foundations"
+        },
+        {
+          "id": "loss-optimization-gradient-descent",
+          "title": "Loss Functions, Optimization, and Gradient Descent",
+          "difficulty": "intermediate",
+          "order": 7,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/loss-optimization-gradient-descent.json",
+          "questionCount": 6,
+          "lessonId": "loss-optimization-gradient-descent",
+          "stageId": "ai-ml-foundations"
+        },
+        {
+          "id": "overfitting-underfitting-regularization",
+          "title": "Overfitting, Underfitting, and Regularization",
+          "difficulty": "intermediate",
+          "order": 8,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/overfitting-underfitting-regularization.json",
+          "questionCount": 6,
+          "lessonId": "overfitting-underfitting-regularization",
+          "stageId": "ai-ml-foundations"
+        },
+        {
+          "id": "bias-variance-data-leakage",
+          "title": "Bias–Variance Trade-off and Data Leakage",
+          "difficulty": "intermediate",
+          "order": 9,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/bias-variance-data-leakage.json",
+          "questionCount": 6,
+          "lessonId": "bias-variance-data-leakage",
+          "stageId": "ai-ml-foundations"
+        },
+        {
+          "id": "ml-evaluation-fundamentals",
+          "title": "ML Evaluation Fundamentals: Baselines, Precision, Recall, F1, Thresholds, and Calibration",
+          "difficulty": "intermediate",
+          "order": 10,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/ml-evaluation-fundamentals.json",
+          "questionCount": 6,
+          "lessonId": "ml-evaluation-fundamentals",
+          "stageId": "ai-ml-foundations"
+        },
+        {
+          "id": "python-for-ai-engineering",
+          "title": "Python for AI Engineering: Functions, Classes, Modules, and Clean Code",
+          "difficulty": "beginner",
+          "order": 11,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/python-for-ai-engineering.json",
+          "questionCount": 6,
+          "lessonId": "python-for-ai-engineering",
+          "stageId": "python-data-backend"
+        },
+        {
+          "id": "data-structures-algorithmic-complexity",
+          "title": "Data Structures and Algorithmic Complexity for AI Services",
+          "difficulty": "beginner",
+          "order": 12,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/data-structures-algorithmic-complexity.json",
+          "questionCount": 6,
+          "lessonId": "data-structures-algorithmic-complexity",
+          "stageId": "python-data-backend"
+        },
+        {
+          "id": "numpy-vectorized-computation",
+          "title": "NumPy and Vectorized Computation: Arrays, Shapes, and Broadcasting",
+          "difficulty": "beginner",
+          "order": 13,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/numpy-vectorized-computation.json",
+          "questionCount": 6,
+          "lessonId": "numpy-vectorized-computation",
+          "stageId": "python-data-backend"
+        },
+        {
+          "id": "pandas-dataset-preparation",
+          "title": "Pandas and Dataset Preparation: Read, Filter, Join, Group, Transform",
+          "difficulty": "beginner",
+          "order": 14,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/pandas-dataset-preparation.json",
+          "questionCount": 6,
+          "lessonId": "pandas-dataset-preparation",
+          "stageId": "python-data-backend"
+        },
+        {
+          "id": "missing-values-duplicates-outliers",
+          "title": "Missing Values, Duplicates, and Outliers: Clean Without Hiding Errors",
+          "difficulty": "intermediate",
+          "order": 15,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/missing-values-duplicates-outliers.json",
+          "questionCount": 6,
+          "lessonId": "missing-values-duplicates-outliers",
+          "stageId": "python-data-backend"
+        },
+        {
+          "id": "python-async-await",
+          "title": "Python Async and Await: Event Loops, Coroutines, and I/O",
+          "difficulty": "intermediate",
+          "order": 16,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/python-async-await.json",
+          "questionCount": 6,
+          "lessonId": "python-async-await",
+          "stageId": "python-data-backend"
+        },
+        {
+          "id": "concurrency-parallelism",
+          "title": "Concurrency and Parallelism: Threads, Processes, and Async I/O",
+          "difficulty": "intermediate",
+          "order": 17,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/concurrency-parallelism.json",
+          "questionCount": 6,
+          "lessonId": "concurrency-parallelism",
+          "stageId": "python-data-backend"
+        },
+        {
+          "id": "http-rest-apis-contracts",
+          "title": "HTTP, REST APIs, and API Contracts: Requests, Responses, Validation",
+          "difficulty": "beginner",
+          "order": 18,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/http-rest-apis-contracts.json",
+          "questionCount": 6,
+          "lessonId": "http-rest-apis-contracts",
+          "stageId": "python-data-backend"
+        },
+        {
+          "id": "authentication-authorization-tenant-isolation",
+          "title": "Authentication, Authorization, and Tenant Isolation",
+          "difficulty": "intermediate",
+          "order": 19,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/authentication-authorization-tenant-isolation.json",
+          "questionCount": 6,
+          "lessonId": "authentication-authorization-tenant-isolation",
+          "stageId": "python-data-backend"
+        },
+        {
+          "id": "background-jobs-long-running-operations",
+          "title": "Background Jobs and Long-Running Operations: Queues, Status, Cancellation, Recovery",
+          "difficulty": "intermediate",
+          "order": 20,
+          "status": "published",
+          "lessonPath": "/lessons/ai-engineering/background-jobs-long-running-operations.json",
+          "questionCount": 6,
+          "lessonId": "background-jobs-long-running-operations",
+          "stageId": "python-data-backend"
+        }
+      ]
     }
   ]
 }
